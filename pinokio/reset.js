@@ -4,7 +4,7 @@ module.exports = {
       method: "shell.run",
       params: {
         message: [
-          "Remove-Item -Recurse -Force env",
+          "cd ..; Remove-Item -Recurse -Force env",
         ]
       }
     }

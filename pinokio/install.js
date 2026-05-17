@@ -4,7 +4,7 @@ module.exports = {
       method: "shell.run",
       params: {
         message: [
-          "python -m venv env",
+          "cd ..; python -m venv env",
         ]
       }
     },
@@ -12,7 +12,7 @@ module.exports = {
       method: "shell.run",
       params: {
         venv: "env",
-        path: "app",
+        path: "../app",
         message: [
           "uv pip install -r requirements.txt",
         ]

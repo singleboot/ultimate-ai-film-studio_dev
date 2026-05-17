@@ -5,7 +5,7 @@ module.exports = {
       method: "shell.run",
       params: {
         venv: "env",
-        path: "app",
+        path: "../app",
         message: [
           "python main.py",
         ],
