@@ -60,8 +60,11 @@ class ApprovalAction(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the main UI."""
-    if templates:
-        return templates.TemplateResponse("index.html", {"request": {}})
+    try:
+        if templates:
+            return templates.TemplateResponse("index.html", {"request": request})
+    except Exception:
+        pass
     return HTMLResponse(content=get_default_html())
 
 @app.get("/api/templates")
