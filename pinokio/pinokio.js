@@ -4,20 +4,7 @@ module.exports = {
   title: "Ultimate AI Film Studio",
   description: "A prompt-to-media pipeline with human-in-the-loop approval workflow - generate characters, locations, scenes, and videos through LLM-powered prompts and ComfyUI integration.",
   icon: "icon.png",
-  pre: [
-    {
-      icon: "ollama.png",
-      title: "Ollama",
-      description: "Local LLM runtime",
-      href: "https://ollama.com/"
-    },
-    {
-      icon: "comfyui.png",
-      title: "ComfyUI",
-      description: "AI image/video generation",
-      href: "https://github.com/comfyanonymous/ComfyUI"
-    }
-  ],
+  pre: [],
   menu: async (kernel, info) => {
     let installed = info.exists("app/env")
     let running = {
