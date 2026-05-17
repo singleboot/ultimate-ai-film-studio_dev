@@ -4,8 +4,8 @@ module.exports = {
     {
       method: "shell.run",
       params: {
-        venv: "../env",
-        path: "../app",
+        venv: "D:\\Pinokio_new\\api\\ultimate-ai-film-studio\\env",
+        path: "D:\\Pinokio_new\\api\\ultimate-ai-film-studio\\app",
         message: [
           "python main.py",
         ],
