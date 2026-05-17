@@ -1,14 +1,11 @@
 @echo off
 title Ultimate AI Film Studio
 
-REM Check if env exists
-if not exist "env\Scripts\python.exe" (
-    echo Virtual environment not found. Run setup.bat first!
-    pause
-    exit /b 1
+REM Kill any existing process on port 7860
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :7860 ^| findstr LISTENING') do (
+    taskkill /PID %%a /F >nul 2>&1
 )
 
-echo Starting Ultimate AI Film Studio...
-call env\Scripts\activate.bat
-python app\main.py
+cd app
+..\env\Scripts\python.exe main.py
 pause
