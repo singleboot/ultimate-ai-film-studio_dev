@@ -34,13 +34,10 @@ llm_engine = LLMEngine() if HAS_LLM else None
 project_manager = ProjectManager() if HAS_LLM else None
 approval_workflow = ApprovalWorkflow() if HAS_LLM else None
 
-# ComfyUI client - placeholder since ComfyUI is optional
-try:
-    from core.comfyui_client import ComfyUIClient
-    comfyui_client = ComfyUIClient()
-except Exception:
-    from core.comfyui_client_placeholder import ComfyUIClient
-    comfyui_client = ComfyUIClient()
+# ComfyUI client - ALWAYS use placeholder to avoid auto-connect issues
+# User can manually connect ComfyUI when they want to use it
+from core.comfyui_client_placeholder import ComfyUIClient
+comfyui_client = ComfyUIClient()
 
 class GenerateRequest(BaseModel):
     provider: str
