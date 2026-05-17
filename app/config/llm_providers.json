@@ -1,0 +1,46 @@
+{
+  "providers": {
+    "ollama": {
+      "name": "Ollama",
+      "type": "local",
+      "host": "http://localhost:11434",
+      "default_model": "llama3.1",
+      "api_endpoint": "/api/generate",
+      "requires_api_key": false
+    },
+    "lm_studio": {
+      "name": "LM Studio",
+      "type": "local",
+      "host": "http://localhost:1234/v1",
+      "default_model": "llama-3.1-8b",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": false
+    },
+    "llama_cpp": {
+      "name": "llama.cpp",
+      "type": "local",
+      "binary_path": "llama-server",
+      "default_model": "models/mistral-7b.gguf",
+      "api_endpoint": "/v1/chat/completions",
+      "requires_api_key": false
+    },
+    "openrouter": {
+      "name": "OpenRouter",
+      "type": "cloud",
+      "host": "https://openrouter.ai/api/v1",
+      "default_model": "anthropic/claude-3.5-sonnet",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": true,
+      "api_key_env": "OPENROUTER_API_KEY"
+    },
+    "gemini": {
+      "name": "Gemini",
+      "type": "cloud",
+      "host": "https://generativelanguage.googleapis.com/v1beta",
+      "default_model": "gemini-2.0-flash",
+      "api_endpoint": "/models/:runChat",
+      "requires_api_key": true,
+      "api_key_env": "GEMINI_API_KEY"
+    }
+  }
+}

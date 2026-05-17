@@ -1,0 +1,22 @@
+{
+  "name": "Basic Image Prompt",
+  "description": "Simple prompt template for generating images with various styles",
+  "category": "general",
+  "variables": [
+    {"name": "SUBJECT", "type": "textarea", "default": "", "description": "Main subject description"},
+    {"name": "ENVIRONMENT", "type": "textarea", "default": "", "description": "Setting/background description"},
+    {"name": "STYLE", "type": "select", "default": "photorealistic", "options": ["photorealistic", "anime", "oil painting", "watercolor", "digital art", "cinematic"]},
+    {"name": "LIGHTING", "type": "select", "default": "natural", "options": ["natural", "golden hour", "blue hour", "studio", "neon", "dramatic"]},
+    {"name": "CAMERA_ANGLE", "type": "select", "default": "eye level", "options": ["eye level", "high angle", "low angle", "dutch angle", "overhead", "close-up"]},
+    {"name": "ASPECT_RATIO", "type": "select", "default": "16:9", "options": ["16:9", "4:3", "1:1", "9:16", "2.35:1"]}
+  ],
+  "stages": [
+    {
+      "name": "generate",
+      "title": "Generate Image Prompt",
+      "description": "Create an optimized prompt for image generation",
+      "prompt_template": "Create a detailed image generation prompt based on the following inputs:\n\nSubject: {{SUBJECT}}\nEnvironment: {{ENVIRONMENT}}\nStyle: {{STYLE}}\nLighting: {{LIGHTING}}\nCamera Angle: {{CAMERA_ANGLE}}\nAspect Ratio: {{ASPECT_RATIO}}\n\nFormat the prompt with:\n1. Detailed subject description including pose, expression, clothing\n2. Environment/setting with atmosphere\n3. Technical specs (lighting, camera, style)\n4. Quality tags for best results\n\nOutput ONLY the prompt, nothing else.",
+      "output_format": "plain"
+    }
+  ]
+}

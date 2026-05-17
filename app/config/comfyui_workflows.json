@@ -1,0 +1,129 @@
+{
+  "connection": {
+    "local": {
+      "host": "http://localhost:8188",
+      "api_endpoint": "/api"
+    },
+    "remote": {
+      "enabled": true,
+      "url": ""
+    }
+  },
+  "categories": {
+    "image_generation": {
+      "name": "Image Generation",
+      "models": {
+        "zimage_turbo": {
+          "name": "ZImage Turbo",
+          "workflow_file": "zimage_turbo.json",
+          "params": ["prompt", "width", "height", "seed"]
+        },
+        "hidream": {
+          "name": "HiDream",
+          "workflow_file": "hidream.json",
+          "params": ["prompt", "width", "height", "seed"]
+        },
+        "flux": {
+          "name": "FLUX",
+          "workflow_file": "flux.json",
+          "params": ["prompt", "width", "height", "seed"]
+        },
+        "qwen_image": {
+          "name": "Qwen Image",
+          "workflow_file": "qwen_image.json",
+          "params": ["prompt", "width", "height", "seed"]
+        },
+        "stable_diffusion": {
+          "name": "Stable Diffusion",
+          "workflow_file": "sd_xl.json",
+          "params": ["prompt", "width", "height", "seed", "steps"]
+        }
+      }
+    },
+    "image_edit": {
+      "name": "Image Edit",
+      "models": {
+        "flux_klein": {
+          "name": "Flux2 Klein",
+          "workflow_file": "flux_klein_edit.json",
+          "params": ["input_image", "prompt", "strength"]
+        },
+        "qwen_edit": {
+          "name": "Qwen Image Edit",
+          "workflow_file": "qwen_edit.json",
+          "params": ["input_image", "prompt"]
+        },
+        "ernie_edit": {
+          "name": "Ernie Vision Edit",
+          "workflow_file": "ernie_edit.json",
+          "params": ["input_image", "prompt"]
+        },
+        "inpainting": {
+          "name": "Inpainting",
+          "workflow_file": "inpainting.json",
+          "params": ["input_image", "mask", "prompt"]
+        }
+      }
+    },
+    "video_generation": {
+      "name": "Video Generation",
+      "types": {
+        "text_to_video": {
+          "name": "Text-to-Video",
+          "models": {
+            "ltx_23": {
+              "name": "LTX 2.3",
+              "workflow_file": "ltx2_text_to_video.json",
+              "params": ["prompt", "width", "height", "frames", "fps"]
+            },
+            "ltx_23_distilled": {
+              "name": "LTX 2.3 Distilled",
+              "workflow_file": "ltx2_distilled.json",
+              "params": ["prompt", "width", "height", "frames", "fps"]
+            },
+            "wan_21": {
+              "name": "Wan 2.1",
+              "workflow_file": "wan21_text_to_video.json",
+              "params": ["prompt", "width", "height", "frames", "fps"]
+            },
+            "hunyuan_video": {
+              "name": "Hunyuan Video",
+              "workflow_file": "hunyuan_video.json",
+              "params": ["prompt", "width", "height", "frames", "fps"]
+            }
+          }
+        },
+        "image_to_video": {
+          "name": "Image-to-Video",
+          "models": {
+            "ltx_23_i2v": {
+              "name": "LTX 2.3 I2V",
+              "workflow_file": "ltx2_image_to_video.json",
+              "params": ["input_image", "prompt", "frames", "fps"]
+            },
+            "wan_21_i2v": {
+              "name": "Wan 2.1 I2V",
+              "workflow_file": "wan21_image_to_video.json",
+              "params": ["input_image", "prompt", "frames", "fps"]
+            },
+            "zanimation": {
+              "name": "ZAnimation",
+              "workflow_file": "zanimation.json",
+              "params": ["input_image", "prompt", "frames", "fps"]
+            }
+          }
+        },
+        "text_image_to_video": {
+          "name": "Text+Image-to-Video",
+          "models": {
+            "ltx_combined": {
+              "name": "LTX Combined",
+              "workflow_file": "ltx2_combined.json",
+              "params": ["input_image", "prompt", "frames", "fps", "strength"]
+            }
+          }
+        }
+      }
+    }
+  }
+}
