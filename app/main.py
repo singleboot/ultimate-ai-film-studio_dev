@@ -61,10 +61,12 @@ class ApprovalAction(BaseModel):
 async def root():
     """Serve the main UI."""
     try:
-        if templates:
-            return templates.TemplateResponse("index.html", {"request": request})
-    except Exception:
-        pass
+        html_file = base_dir / "ui" / "templates" / "index.html"
+        if html_file.exists():
+            with open(html_file, 'r', encoding='utf-8') as f:
+                return HTMLResponse(content=f.read())
+    except Exception as e:
+        print(f"Error serving HTML: {e}")
     return HTMLResponse(content=get_default_html())
 
 @app.get("/api/templates")
