@@ -209,35 +209,43 @@ class ComfyUIClient:
 
     def _create_image_workflow(self, prompt: str, model: str, width: int, height: int, seed: int, **kwargs) -> Dict:
         """Create a basic image generation workflow."""
-        model_mapping = {
-            "zimage_turbo": "juggernaut_xl.safetensors",
-            "hidream": "hidream.safetensors",
-            "flux": "flux1-dev.safetensors",
-            "qwen_image": "qwen.safetensors",
-            "stable_diffusion": "sd_xl_base_1.0.safetensors"
-        }
-        
-        # Check if model is a config key or an actual checkpoint name
-        # If it contains .safetensors or /, it's likely an actual checkpoint name
-        if model and (".safetensors" in model or "/" in model or "\\" in model):
-            checkpoint_name = model
-        else:
-            checkpoint_name = model_mapping.get(model, "juggernaut_xl.safetensors")
+        # Use the model name directly - user must select a model that's installed
+        # If model contains .safetensors, use it as checkpoint name
+        # Otherwise, assume it's already a valid checkpoint name
+        checkpoint_name = model if model else "model.safetensors"
         
         workflow = {}
+        
+        # 1. Load checkpoint
         workflow["1"] = {
             "class_type": "CheckpointLoaderSimple",
             "inputs": {"ckpt_name": checkpoint_name}
         }
+        
+        # 2. Positive prompt
         workflow["2"] = {
             "class_type": "CLIPTextEncode",
             "inputs": {"text": prompt, "clip": ["1", 0]}
         }
+        
+        # 3. Negative prompt
         workflow["3"] = {
             "class_type": "CLIPTextEncode",
-            "inputs": {"text": "low quality, blurry, distorted, watermark, text", "clip": ["1", 1]}
+            "inputs": {"text": "low quality, blurry, distorted, watermark, text, logo", "clip": ["1", 1]}
         }
+        
+        # 4. Empty latent
         workflow["4"] = {
+            "class_type": "EmptyLatentImage",
+            "inputs": {
+                "width": width,
+                "height": height,
+                "batch_size": 1
+            }
+        }
+        
+        # 5. Sampler
+        workflow["5"] = {
             "class_type": "KSampler",
             "inputs": {
                 "seed": seed,
@@ -247,25 +255,22 @@ class ComfyUIClient:
                 "scheduler": "normal",
                 "positive": ["2", 0],
                 "negative": ["3", 0],
-                "latent_image": ["5", 0]
+                "latent_image": ["4", 0]
             }
         }
-        workflow["5"] = {
-            "class_type": "EmptyLatentImage",
-            "inputs": {
-                "width": width,
-                "height": height,
-                "batch_size": 1
-            }
-        }
+        
+        # 6. VAE Decode
         workflow["6"] = {
             "class_type": "VAEDecode",
-            "inputs": {"samples": ["4", 0], "vae": ["1", 2]}
+            "inputs": {"samples": ["5", 0], "vae": ["1", 2]}
         }
+        
+        # 7. Save Image
         workflow["7"] = {
             "class_type": "SaveImage",
             "inputs": {"filename_prefix": "ultimate_ai_film_studio", "images": ["6", 0]}
         }
+        
         return workflow
 
     def generate_video(self, prompt: str, model: str, input_image: str = None, width: int = 1280, height: int = 720, frames: int = 81, fps: int = 24, **kwargs) -> Dict:
