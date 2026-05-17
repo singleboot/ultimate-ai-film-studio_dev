@@ -8,11 +8,14 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
 
-from core.template_manager import TemplateManager
-from core.llm_engine import LLMEngine
-from core.comfyui_client import ComfyUIClient
-from core.project_manager import ProjectManager
-from core.approval_workflow import ApprovalWorkflow
+try:
+    from core.template_manager import TemplateManager
+    from core.llm_engine import LLMEngine
+    from core.project_manager import ProjectManager
+    from core.approval_workflow import ApprovalWorkflow
+    HAS_LLM = True
+except ImportError:
+    HAS_LLM = False
 
 app = FastAPI(title="Ultimate AI Film Studio")
 
@@ -25,11 +28,19 @@ if static_dir.exists():
 
 templates = Jinja2Templates(directory=str(templates_dir)) if templates_dir.exists() else None
 
-template_manager = TemplateManager()
-llm_engine = LLMEngine()
-comfyui_client = ComfyUIClient()
-project_manager = ProjectManager()
-approval_workflow = ApprovalWorkflow()
+# Initialize core modules
+template_manager = TemplateManager() if HAS_LLM else None
+llm_engine = LLMEngine() if HAS_LLM else None
+project_manager = ProjectManager() if HAS_LLM else None
+approval_workflow = ApprovalWorkflow() if HAS_LLM else None
+
+# ComfyUI client - placeholder since ComfyUI is optional
+try:
+    from core.comfyui_client import ComfyUIClient
+    comfyui_client = ComfyUIClient()
+except Exception:
+    from core.comfyui_client_placeholder import ComfyUIClient
+    comfyui_client = ComfyUIClient()
 
 class GenerateRequest(BaseModel):
     provider: str
