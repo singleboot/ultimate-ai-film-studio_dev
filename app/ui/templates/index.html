@@ -848,7 +848,14 @@
                     body: JSON.stringify({ prompt, model })
                 });
                 const data = await response.json();
-                alert(data.success ? 'Image generated: ' + data.filename : 'Error: ' + data.error);
+                
+                if (data.success) {
+                    alert('Image generated: ' + data.filename);
+                } else if (data.connected === false) {
+                    alert('ComfyUI not connected yet.\n\n' + data.error + '\n\nYou can still use the LLM to generate prompts without image generation.');
+                } else {
+                    alert('Error: ' + data.error);
+                }
             } catch (e) {
                 alert('Error: ' + e.message);
             }

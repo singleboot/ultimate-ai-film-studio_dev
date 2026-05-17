@@ -142,10 +142,14 @@ async def generate_image(
     seed: int = -1
 ):
     """Generate an image."""
-    # First test connection
+    # Try to test connection first, but don't block if it fails
     conn_test = comfyui_client.test_connection()
     if not conn_test.get("success"):
-        return {"success": False, "error": f"ComfyUI not connected: {conn_test.get('error', 'Unknown error')}. Make sure ComfyUI is running on http://localhost:8188"}
+        return {
+            "success": False, 
+            "error": f"ComfyUI not connected: {conn_test.get('error', 'Unknown error')}. Make sure ComfyUI is running on http://localhost:8188. You can still generate prompts without ComfyUI.",
+            "connected": False
+        }
     
     result = comfyui_client.generate_image(prompt, model, width, height, seed)
     return result
