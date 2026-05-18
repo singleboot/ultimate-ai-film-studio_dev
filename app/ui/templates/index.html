@@ -1412,12 +1412,56 @@ Format as numbered list.`
         }
 
         // Image to Image
+        function showError(message, details = '') {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #dc2626; color: white; padding: 15px 20px; border-radius: 8px; z-index: 9999; max-width: 400px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+            errorDiv.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 5px;">⚠️ Error</div>
+                <div>${message}</div>
+                ${details ? `<div style="font-size: 0.85rem; opacity: 0.8; margin-top: 8px;">${details}</div>` : ''}
+                <button onclick="this.parentElement.remove()" style="margin-top: 10px; padding: 5px 10px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; cursor: pointer;">Dismiss</button>
+            `;
+            document.body.appendChild(errorDiv);
+            setTimeout(() => errorDiv.remove(), 10000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.createElement('div');
+            successDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #16a34a; color: white; padding: 15px 20px; border-radius: 8px; z-index: 9999; max-width: 400px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+            successDiv.innerHTML = `
+                <div style="font-weight: bold;">✓ ${message}</div>
+                <button onclick="this.parentElement.remove()" style="margin-top: 10px; padding: 5px 10px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; cursor: pointer;">Dismiss</button>
+            `;
+            document.body.appendChild(successDiv);
+            setTimeout(() => successDiv.remove(), 5000);
+        }
+
         function generateFromImage() {
-            alert('Image to Image generation - connect ComfyUI first');
+            const refImage = document.getElementById('char-ref-image-input').files[0];
+            if (!refImage) {
+                showError('No reference image selected', 'Please upload an image first');
+                return;
+            }
+            const editPrompt = document.getElementById('char-image-edit-prompt').value;
+            if (!editPrompt) {
+                showError('Edit prompt is empty', 'Please describe what you want to change in the image');
+                return;
+            }
+            showError('Image to Image requires ComfyUI', 'Make sure ComfyUI is running and connected in Settings');
         }
 
         function generateLocFromImage() {
-            alert('Image to Image generation - connect ComfyUI first');
+            const refImage = document.getElementById('loc-ref-image-input').files[0];
+            if (!refImage) {
+                showError('No reference image selected', 'Please upload an image first');
+                return;
+            }
+            const editPrompt = document.getElementById('loc-image-edit-prompt').value;
+            if (!editPrompt) {
+                showError('Edit prompt is empty', 'Please describe what you want to change in the image');
+                return;
+            }
+            showError('Image to Image requires ComfyUI', 'Make sure ComfyUI is running and connected in Settings');
         }
 
         // Settings Functions
@@ -1450,6 +1494,15 @@ Format as numbered list.`
             const model = document.getElementById('llm-model').value;
             const apiKey = document.getElementById('llm-api-key').value;
             
+            if (!provider) {
+                showError('No provider selected', 'Please select an LLM provider first');
+                return;
+            }
+            if (!model) {
+                showError('No model selected', 'Please select a model from the dropdown');
+                return;
+            }
+            
             document.getElementById('llm-test-result').textContent = 'Testing...';
             
             try {
@@ -1463,13 +1516,16 @@ Format as numbered list.`
                     document.getElementById('llm-test-result').textContent = '✓ Connected';
                     document.getElementById('llm-test-result').style.color = '#4ade80';
                     document.getElementById('llm-status').textContent = 'LLM: Connected - ' + model;
+                    showSuccess('LLM connected successfully!');
                 } else {
                     document.getElementById('llm-test-result').textContent = '✗ ' + data.message;
                     document.getElementById('llm-test-result').style.color = '#f87171';
+                    showError('LLM Connection Failed', data.message || 'Check if Ollama is running');
                 }
             } catch (e) {
                 document.getElementById('llm-test-result').textContent = '✗ Connection failed';
                 document.getElementById('llm-test-result').style.color = '#f87171';
+                showError('Cannot connect to LLM', 'Make sure Ollama is running at ' + host);
             }
         }
 
