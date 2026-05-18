@@ -254,6 +254,17 @@ async def set_comfyui_host(host: str):
     comfyui_client.set_host(host)
     return {"success": True, "message": f"ComfyUI host set to {host}"}
 
+@app.get("/api/comfyui/view")
+async def view_comfyui_image(filename: str):
+    """View an image from ComfyUI output."""
+    try:
+        import requests
+        response = requests.get(f"http://localhost:8188/view?filename={filename}")
+        from fastapi.responses import Response
+        return Response(content=response.content, media_type="image/png")
+    except Exception as e:
+        return {"error": str(e)}
+
 
 def get_default_html() -> str:
     """Get default HTML if templates not available."""

@@ -18,11 +18,7 @@
             --border-color: #333355;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -33,8 +29,8 @@
 
         .app-container {
             display: grid;
-            grid-template-columns: 260px 1fr;
-            grid-template-rows: auto 1fr auto;
+            grid-template-columns: 250px 1fr;
+            grid-template-rows: 60px 1fr 40px;
             min-height: 100vh;
         }
 
@@ -42,82 +38,52 @@
             grid-column: 1 / -1;
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border-color);
-            padding: 15px 25px;
+            padding: 10px 20px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
         }
 
         .logo {
-            font-size: 1.4rem;
+            font-size: 1.2rem;
             font-weight: 700;
             color: var(--accent-primary);
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }
 
-        .logo-icon {
-            width: 32px;
-            height: 32px;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .header-controls {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
-
-        .header-btn {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
+        .project-name {
+            color: var(--text-secondary);
             font-size: 0.9rem;
-            transition: all 0.2s;
-        }
-
-        .header-btn:hover {
-            background: var(--accent-primary);
-            color: var(--bg-primary);
         }
 
         .sidebar {
             background: var(--bg-secondary);
             border-right: 1px solid var(--border-color);
-            padding: 20px;
+            padding: 15px;
             overflow-y: auto;
         }
 
         .sidebar-section {
-            margin-bottom: 25px;
+            margin-bottom: 20px;
         }
 
         .sidebar-title {
             font-size: 0.75rem;
             text-transform: uppercase;
             color: var(--text-secondary);
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             letter-spacing: 1px;
         }
 
         .nav-item {
-            display: flex;
-            align-items: center;
             padding: 10px 12px;
             color: var(--text-secondary);
-            text-decoration: none;
             border-radius: 6px;
             margin-bottom: 4px;
             cursor: pointer;
             transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .nav-item:hover, .nav-item.active {
@@ -130,76 +96,35 @@
             color: var(--bg-primary);
         }
 
-        .nav-icon {
-            width: 20px;
-            margin-right: 10px;
-            text-align: center;
+        .badge {
+            background: var(--accent-secondary);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
         }
 
-        main {
-            padding: 25px;
-            overflow-y: auto;
-            max-height: calc(100vh - 130px);
-        }
-
-        .stage-bar {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 25px;
-            flex-wrap: wrap;
-        }
-
-        .stage-btn {
-            padding: 12px 24px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            color: var(--text-secondary);
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-
-        .stage-btn:hover {
-            border-color: var(--accent-primary);
-            color: var(--text-primary);
-        }
-
-        .stage-btn.active {
-            background: var(--accent-primary);
-            color: var(--bg-primary);
-            border-color: var(--accent-primary);
-        }
-
-        .stage-btn.completed {
-            border-color: var(--accent-success);
-            color: var(--accent-success);
-        }
-
-        .panel {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
+        .main-content {
             padding: 20px;
+            overflow-y: auto;
+        }
+
+        .page { display: none; }
+        .page.active { display: block; }
+
+        .page-header {
+            font-size: 1.5rem;
             margin-bottom: 20px;
+            color: var(--accent-primary);
         }
 
-        .panel-title {
-            font-size: 1rem;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: var(--text-primary);
-        }
-
-        .form-group {
-            margin-bottom: 18px;
-        }
-
+        .form-group { margin-bottom: 15px; }
+        
         .form-label {
             display: block;
             font-size: 0.85rem;
             color: var(--text-secondary);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .form-input, .form-select, .form-textarea {
@@ -210,7 +135,6 @@
             border-radius: 6px;
             color: var(--text-primary);
             font-size: 0.95rem;
-            transition: border-color 0.2s;
         }
 
         .form-input:focus, .form-select:focus, .form-textarea:focus {
@@ -218,25 +142,16 @@
             border-color: var(--accent-primary);
         }
 
-        .form-textarea {
-            min-height: 100px;
-            resize: vertical;
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-        }
+        .form-textarea { min-height: 80px; resize: vertical; }
 
         .btn {
-            padding: 12px 24px;
-            border-radius: 8px;
+            padding: 10px 20px;
+            border-radius: 6px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
             border: none;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
+            transition: all 0.2s;
         }
 
         .btn-primary {
@@ -244,9 +159,7 @@
             color: var(--bg-primary);
         }
 
-        .btn-primary:hover {
-            background: #00b8e0;
-        }
+        .btn-primary:hover { background: #00b8e0; }
 
         .btn-secondary {
             background: var(--bg-tertiary);
@@ -254,704 +167,723 @@
             border: 1px solid var(--border-color);
         }
 
-        .btn-success {
-            background: var(--accent-success);
-            color: white;
-        }
+        .btn-success { background: var(--accent-success); color: white; }
+        .btn-danger { background: var(--accent-danger); color: white; }
 
-        .btn-danger {
-            background: var(--accent-danger);
-            color: white;
-        }
-
-        .btn-group {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .preview-area {
-            background: var(--bg-tertiary);
+        .idea-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
-            min-height: 300px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 20px;
-            overflow: hidden;
+            padding: 15px;
+            margin-bottom: 15px;
         }
 
-        .preview-area img, .preview-area video {
-            max-width: 100%;
-            max-height: 400px;
-            object-fit: contain;
+        .idea-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+            margin-bottom: 8px;
         }
 
-        .preview-placeholder {
+        .idea-hook {
             color: var(--text-secondary);
-            text-align: center;
-            padding: 40px;
-        }
-
-        .progress-bar {
-            height: 8px;
-            background: var(--bg-tertiary);
-            border-radius: 4px;
-            overflow: hidden;
+            font-size: 0.9rem;
             margin-bottom: 10px;
         }
 
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-            transition: width 0.3s;
-        }
-
-        .progress-text {
-            font-size: 0.85rem;
+        .idea-scene {
             color: var(--text-secondary);
-            text-align: center;
+            font-size: 0.85rem;
+            font-style: italic;
         }
 
-        footer {
-            grid-column: 1 / -1;
-            background: var(--bg-secondary);
-            border-top: 1px solid var(--border-color);
-            padding: 12px 25px;
+        .idea-actions {
+            margin-top: 12px;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.85rem;
+            gap: 10px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 6px;
             color: var(--text-secondary);
         }
 
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        .tab.active {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
         }
 
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--accent-success);
-        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
 
-        .status-dot.offline {
-            background: var(--accent-danger);
-        }
-
-        .connection-status {
-            display: flex;
-            gap: 15px;
-        }
-
-        .connection-item {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .hidden {
-            display: none !important;
-        }
-
-        .output-list {
+        .generation-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 15px;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .preview-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            min-height: 400px;
+        }
+
+        .preview-image {
+            width: 100%;
+            max-height: 350px;
+            object-fit: contain;
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+        }
+
+        .prompt-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .prompt-text {
+            background: var(--bg-tertiary);
+            padding: 15px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            font-size: 0.9rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .approval-buttons {
+            display: flex;
+            gap: 10px;
             margin-top: 15px;
         }
 
-        .output-item {
+        .status-bar {
+            grid-column: 1 / -1;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            padding: 8px 20px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .project-files {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .project-file {
             background: var(--bg-tertiary);
-            border-radius: 8px;
+            border-radius: 6px;
             padding: 10px;
             text-align: center;
             cursor: pointer;
-            transition: all 0.2s;
         }
 
-        .output-item:hover {
-            border-color: var(--accent-primary);
-        }
-
-        .output-item img {
+        .project-file img {
             width: 100%;
-            height: 100px;
+            height: 80px;
             object-fit: cover;
             border-radius: 4px;
         }
 
-        .output-name {
-            font-size: 0.8rem;
-            margin-top: 8px;
+        .project-file-name {
+            font-size: 0.75rem;
+            margin-top: 5px;
             color: var(--text-secondary);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
         }
 
-        .template-card {
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .progress-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .progress-step {
+            padding: 8px 16px;
             background: var(--bg-tertiary);
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border: 1px solid transparent;
-        }
-
-        .template-card:hover {
-            border-color: var(--accent-primary);
-        }
-
-        .template-card.selected {
-            border-color: var(--accent-primary);
-            background: rgba(0, 212, 255, 0.1);
-        }
-
-        .template-name {
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .template-desc {
+            border-radius: 20px;
             font-size: 0.85rem;
             color: var(--text-secondary);
         }
 
-        @media (max-width: 768px) {
-            .app-container {
-                grid-template-columns: 1fr;
-            }
-            .sidebar {
-                display: none;
-            }
+        .progress-step.active {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
         }
+
+        .progress-step.completed {
+            background: var(--accent-success);
+            color: white;
+        }
+
+        .arrow { color: var(--text-secondary); }
     </style>
 </head>
 <body>
     <div class="app-container">
         <header>
-            <div class="logo">
-                <div class="logo-icon">🎬</div>
-                <span>Ultimate AI Film Studio</span>
-            </div>
-            <div class="header-controls">
-                <button class="header-btn" onclick="showSettings()">⚙️ Settings</button>
-                <button class="header-btn" onclick="createNewProject()">+ New Project</button>
-            </div>
+            <div class="logo">🎬 Ultimate AI Film Studio</div>
+            <span class="project-name" id="project-name">No Project</span>
         </header>
 
         <aside class="sidebar">
             <div class="sidebar-section">
-                <div class="sidebar-title">Navigation</div>
-                <div class="nav-item active" onclick="showSection('templates')">
-                    <span class="nav-icon">📝</span> Templates
+                <div class="sidebar-title">Workflow</div>
+                <div class="nav-item active" onclick="showPage('ideas')" id="nav-ideas">
+                    📝 Topic Ideas
                 </div>
-                <div class="nav-item" onclick="showSection('generation')">
-                    <span class="nav-icon">🎨</span> Generation
+                <div class="nav-item" onclick="showPage('selection')" id="nav-selection">
+                    ⚙️ Selection
                 </div>
-                <div class="nav-item" onclick="showSection('approval')">
-                    <span class="nav-icon">✅</span> Approval
+                <div class="nav-item" onclick="showPage('characters')" id="nav-characters">
+                    👤 Characters <span class="badge" id="char-count">0</span>
                 </div>
-                <div class="nav-item" onclick="showSection('projects')">
-                    <span class="nav-icon">📁</span> Projects
+                <div class="nav-item" onclick="showPage('locations')" id="nav-locations">
+                    🏠 Locations <span class="badge" id="loc-count">0</span>
+                </div>
+                <div class="nav-item" onclick="showPage('scenes')" id="nav-scenes">
+                    🎬 Scenes
+                </div>
+                <div class="nav-item" onclick="showPage('videos')" id="nav-videos">
+                    🎥 Videos
                 </div>
             </div>
+
             <div class="sidebar-section">
-                <div class="sidebar-title">Workflow Stages</div>
-                <div class="nav-item" onclick="setStage('characters')">
-                    <span class="nav-icon">👤</span> Characters
+                <div class="sidebar-title">Project Files</div>
+                <div id="sidebar-files">
+                    <div class="empty-state">No files yet</div>
                 </div>
-                <div class="nav-item" onclick="setStage('locations')">
-                    <span class="nav-icon">🏠</span> Locations
+            </div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-title">New Project</div>
+                <div class="form-group">
+                    <input type="text" class="form-input" id="new-project-name" placeholder="Project Name">
                 </div>
-                <div class="nav-item" onclick="setStage('scenes')">
-                    <span class="nav-icon">🎬</span> Scenes
-                </div>
-                <div class="nav-item" onclick="setStage('videos')">
-                    <span class="nav-icon">🎥</span> Videos
-                </div>
+                <button class="btn btn-primary" style="width:100%" onclick="createProject()">Create Project</button>
             </div>
         </aside>
 
-        <main id="main-content">
-            <!-- Templates Section -->
-            <section id="section-templates">
-                <div class="panel">
-                    <div class="panel-title">Select Template</div>
-                    <div id="template-list"></div>
-                </div>
-                <div class="panel" id="template-variables-panel">
-                    <div class="panel-title">Template Variables</div>
-                    <div id="template-variables"></div>
-                    <div class="btn-group" style="margin-top: 20px;">
-                        <button class="btn btn-primary" onclick="startWithTemplate()">Start with Template</button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Generation Section -->
-            <section id="section-generation" class="hidden">
-                <div class="stage-bar">
-                    <button class="stage-btn active" onclick="setStage('characters')">Characters</button>
-                    <button class="stage-btn" onclick="setStage('locations')">Locations</button>
-                    <button class="stage-btn" onclick="setStage('scenes')">Scenes</button>
-                    <button class="stage-btn" onclick="setStage('videos')">Videos</button>
+        <main class="main-content">
+            <!-- PAGE 1: Topic Ideas Generator -->
+            <div class="page active" id="page-ideas">
+                <h1 class="page-header">📝 Topic Ideas Generator</h1>
+                
+                <div class="form-group">
+                    <label class="form-label">Select Genre</label>
+                    <select class="form-select" id="genre-select">
+                        <option value="Indian 90s">Indian 90s</option>
+                        <option value="Japanese 80s">Japanese 80s</option>
+                        <option value="American 70s">American 70s</option>
+                        <option value="European 90s">European 90s</option>
+                        <option value="Korean 2000s">Korean 2000s</option>
+                        <option value="Chinese 80s">Chinese 80s</option>
+                    </select>
                 </div>
 
-                <div class="panel">
-                    <div class="panel-title">LLM Configuration</div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Provider</label>
-                            <select class="form-select" id="llm-provider" onchange="loadModels()">
-                                <option value="">Select Provider</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Model</label>
-                            <select class="form-select" id="llm-model">
-                                <option value="">Select Model</option>
-                            </select>
-                        </div>
+                <button class="btn btn-primary" onclick="generateTopicIdeas()">Generate 5 Ideas</button>
+
+                <div id="ideas-container" style="margin-top: 20px;"></div>
+            </div>
+
+            <!-- PAGE 2: Selection Module -->
+            <div class="page" id="page-selection">
+                <h1 class="page-header">⚙️ Selection Module</h1>
+                
+                <div class="form-group">
+                    <label class="form-label">Selected Topic</label>
+                    <div id="selected-topic" style="padding: 10px; background: var(--bg-tertiary); border-radius: 6px;">
+                        No topic selected
                     </div>
-                    <button class="btn btn-secondary" onclick="testLLMConnection()">Test Connection</button>
                 </div>
 
-                <div class="panel" id="comfyui-panel">
-                    <div class="panel-title">ComfyUI Configuration</div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Connection Type</label>
-                            <select class="form-select" id="comfyui-connection">
-                                <option value="local">Local</option>
-                                <option value="remote">Remote</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Host URL</label>
-                            <input type="text" class="form-input" id="comfyui-host" value="http://localhost:8188">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Image Generation</label>
-                            <select class="form-select" id="image-model">
-                                <option value="">Select Model</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Video Generation Type</label>
-                            <select class="form-select" id="video-type">
-                                <option value="">Select Type</option>
-                            </select>
-                        </div>
-                    </div>
-                    <button class="btn btn-secondary" onclick="testComfyUIConnection()">Test ComfyUI</button>
+                <div class="form-group">
+                    <label class="form-label">Visual Style</label>
+                    <select class="form-select" id="visual-style">
+                        <option value="Studio Ghibli">Studio Ghibli</option>
+                        <option value="PIXAR">PIXAR</option>
+                        <option value="Disney Classic">Disney Classic</option>
+                        <option value="Anime">Anime</option>
+                        <option value="Watercolor">Watercolor</option>
+                        <option value="Oil Painting">Oil Painting</option>
+                        <option value="Cyberpunk">Cyberpunk</option>
+                        <option value="Film Noir">Film Noir</option>
+                        <option value="Photorealistic">Photorealistic</option>
+                    </select>
                 </div>
 
-                <div class="panel">
-                    <div class="panel-title">Generate Content</div>
+                <div class="form-group">
+                    <label class="form-label">Character Count</label>
+                    <input type="number" class="form-input" id="character-count" value="3" min="1" max="10">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Location Count</label>
+                    <input type="number" class="form-input" id="location-count" value="3" min="1" max="6">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Scene Count</label>
+                    <input type="number" class="form-input" id="scene-count" value="50" min="10" max="500">
+                </div>
+
+                <button class="btn btn-primary" onclick="startGeneration()">Start Generation →</button>
+            </div>
+
+            <!-- PAGE 3: Character Generation -->
+            <div class="page" id="page-characters">
+                <h1 class="page-header">👤 Character Generation</h1>
+                
+                <div class="tabs">
+                    <div class="tab active" onclick="switchCharTab('text-image')">Text to Image</div>
+                    <div class="tab" onclick="switchCharTab('image-image')">Image to Image (Reference)</div>
+                </div>
+
+                <div id="char-text-image" class="tab-content active">
+                    <div class="generation-grid">
+                        <div class="prompt-panel">
+                            <h3>Character Prompt</h3>
+                            <div id="current-char-prompt" class="prompt-text">No prompt loaded</div>
+                            <button class="btn btn-primary" style="margin-top:10px" onclick="generateCharImage()">Generate Image</button>
+                        </div>
+                        <div class="preview-panel">
+                            <h3>Preview</h3>
+                            <img id="char-preview" class="preview-image" src="" style="display:none">
+                            <div id="char-preview-placeholder" class="empty-state">No image generated yet</div>
+                            <div class="approval-buttons" id="char-approval" style="display:none">
+                                <button class="btn btn-success" onclick="approveChar()">✓ Approve</button>
+                                <button class="btn btn-danger" onclick="rejectChar()">✗ Reject</button>
+                                <button class="btn btn-secondary" onclick="skipChar()">→ Skip</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="char-image-image" class="tab-content">
                     <div class="form-group">
-                        <label class="form-label">Prompt</label>
-                        <textarea class="form-textarea" id="generate-prompt" placeholder="Enter your prompt here..."></textarea>
+                        <label class="form-label">Upload Reference Image</label>
+                        <input type="file" class="form-input" id="ref-image-input" accept="image/*">
                     </div>
-                    <div class="btn-group">
-                        <button class="btn btn-primary" onclick="generatePrompt()">Generate with LLM</button>
-                        <button class="btn btn-secondary" onclick="generateMedia()">Generate Media</button>
+                    <div class="form-group">
+                        <label class="form-label">Edit Prompt</label>
+                        <textarea class="form-textarea" id="image-edit-prompt" placeholder="Describe what to change..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="generateFromImage()">Generate from Image</button>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <h3>Generated Characters</h3>
+                    <div id="char-files" class="project-files"></div>
+                </div>
+            </div>
+
+            <!-- PAGE 4: Location Generation -->
+            <div class="page" id="page-locations">
+                <h1 class="page-header">🏠 Location Generation</h1>
+                
+                <div class="tabs">
+                    <div class="tab active" onclick="switchLocTab('text-image')">Text to Image</div>
+                    <div class="tab" onclick="switchLocTab('image-image')">Image to Image</div>
+                </div>
+
+                <div id="loc-text-image" class="tab-content active">
+                    <div class="generation-grid">
+                        <div class="prompt-panel">
+                            <h3>Location Prompt</h3>
+                            <div id="current-loc-prompt" class="prompt-text">No prompt loaded</div>
+                            <button class="btn btn-primary" style="margin-top:10px" onclick="generateLocImage()">Generate Image</button>
+                        </div>
+                        <div class="preview-panel">
+                            <h3>Preview</h3>
+                            <img id="loc-preview" class="preview-image" src="" style="display:none">
+                            <div id="loc-preview-placeholder" class="empty-state">No image generated yet</div>
+                            <div class="approval-buttons" id="loc-approval" style="display:none">
+                                <button class="btn btn-success" onclick="approveLoc()">✓ Approve</button>
+                                <button class="btn btn-danger" onclick="rejectLoc()">✗ Reject</button>
+                                <button class="btn btn-secondary" onclick="skipLoc()">→ Skip</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="panel">
-                    <div class="panel-title">Generated Output</div>
-                    <pre id="generated-output" style="background: var(--bg-tertiary); padding: 15px; border-radius: 8px; white-space: pre-wrap; max-height: 400px; overflow-y: auto;"></pre>
-                </div>
-            </section>
-
-            <!-- Approval Section -->
-            <section id="section-approval" class="hidden">
-                <div class="panel">
-                    <div class="panel-title">Approval Workflow</div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="approval-progress" style="width: 0%"></div>
+                <div id="loc-image-image" class="tab-content">
+                    <div class="form-group">
+                        <label class="form-label">Upload Reference Image</label>
+                        <input type="file" class="form-input" id="loc-ref-image-input" accept="image/*">
                     </div>
-                    <div class="progress-text" id="approval-progress-text">0 / 0 items approved</div>
+                    <div class="form-group">
+                        <label class="form-label">Edit Prompt</label>
+                        <textarea class="form-textarea" id="loc-image-edit-prompt" placeholder="Describe what to change..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="generateLocFromImage()">Generate from Image</button>
                 </div>
 
-                <div class="panel">
-                    <div class="panel-title">Current Item</div>
-                    <div class="preview-area" id="approval-preview">
-                        <div class="preview-placeholder">No item to review</div>
-                    </div>
-                    <div id="approval-details" class="form-group"></div>
-                    <div class="btn-group">
-                        <button class="btn btn-success" onclick="approveItem()">✓ Approve</button>
-                        <button class="btn btn-danger" onclick="rejectItem()">✗ Reject</button>
-                        <button class="btn btn-secondary" onclick="skipItem()">→ Skip</button>
-                    </div>
+                <div style="margin-top: 20px;">
+                    <h3>Generated Locations</h3>
+                    <div id="loc-files" class="project-files"></div>
                 </div>
-            </section>
+            </div>
 
-            <!-- Projects Section -->
-            <section id="section-projects" class="hidden">
-                <div class="panel">
-                    <div class="panel-title">Your Projects</div>
-                    <div id="projects-list"></div>
-                </div>
-            </section>
+            <!-- PAGE 5: Scene Prompts -->
+            <div class="page" id="page-scenes">
+                <h1 class="page-header">🎬 Scene Prompts</h1>
+                <p style="color: var(--text-secondary)">Scene prompt generation coming soon...</p>
+            </div>
+
+            <!-- PAGE 6: Video Generation -->
+            <div class="page" id="page-videos">
+                <h1 class="page-header">🎥 Video Generation</h1>
+                <p style="color: var(--text-secondary)">Video generation coming soon...</p>
+            </div>
         </main>
 
-        <footer>
-            <div class="status-indicator">
-                <div class="status-dot" id="status-dot"></div>
-                <span id="status-text">Ready</span>
-            </div>
-            <div class="connection-status">
-                <div class="connection-item">
-                    <span>LLM:</span>
-                    <span id="llm-status">-</span>
-                </div>
-                <div class="connection-item">
-                    <span>ComfyUI:</span>
-                    <span id="comfyui-status">-</span>
-                </div>
-            </div>
+        <footer class="status-bar">
+            <span id="status-text">Ready</span>
+            <span id="llm-status">LLM: Not connected</span>
         </footer>
     </div>
 
     <script>
-        let currentSection = 'templates';
-        let currentStage = 'characters';
-        let selectedTemplate = null;
+        // State
         let currentProject = null;
-        let templates = [];
-        let providers = [];
-        let comfyuiCategories = {};
-        let approvalQueue = [];
-
-        async function init() {
-            await loadTemplates();
-            await loadProviders();
-            await loadComfyUICategories();
-            await loadProjects();
-        }
-
-        async function loadTemplates() {
-            try {
-                const response = await fetch('/api/templates');
-                const data = await response.json();
-                templates = data.templates || [];
-                renderTemplates();
-            } catch (e) {
-                console.error('Failed to load templates:', e);
-            }
-        }
-
-        function renderTemplates() {
-            const container = document.getElementById('template-list');
-            container.innerHTML = templates.map(t => `
-                <div class="template-card ${selectedTemplate === t.name ? 'selected' : ''}" onclick="selectTemplate('${t.name}')">
-                    <div class="template-name">${t.name}</div>
-                    <div class="template-desc">${t.description || 'No description'}</div>
-                </div>
-            `).join('');
-        }
-
-        async function selectTemplate(name) {
-            selectedTemplate = name;
-            renderTemplates();
-
-            try {
-                const response = await fetch(`/api/templates/${name}`);
-                const data = await response.json();
-                const template = data.template;
-
-                const varsContainer = document.getElementById('template-variables');
-                varsContainer.innerHTML = template.variables.map(v => {
-                    if (v.type === 'select') {
-                        return `
-                            <div class="form-group">
-                                <label class="form-label">${v.name}</label>
-                                <select class="form-select" id="var-${v.name}">
-                                    ${(v.options || []).map(o => `<option value="${o}">${o}</option>`).join('')}
-                                </select>
-                            </div>
-                        `;
-                    } else if (v.type === 'textarea') {
-                        return `
-                            <div class="form-group">
-                                <label class="form-label">${v.name}</label>
-                                <textarea class="form-textarea" id="var-${v.name}" placeholder="${v.description || ''}">${v.default || ''}</textarea>
-                            </div>
-                        `;
-                    } else {
-                        return `
-                            <div class="form-group">
-                                <label class="form-label">${v.name}</label>
-                                <input type="${v.type === 'number' ? 'number' : 'text'}" class="form-input" id="var-${v.name}" value="${v.default || ''}" ${v.min ? `min="${v.min}"` : ''} ${v.max ? `max="${v.max}"` : ''}>
-                            </div>
-                        `;
-                    }
-                }).join('');
-            } catch (e) {
-                console.error('Failed to load template details:', e);
-            }
-        }
-
-        async function loadProviders() {
-            try {
-                const response = await fetch('/api/providers');
-                const data = await response.json();
-                providers = data.providers || [];
-
-                const select = document.getElementById('llm-provider');
-                select.innerHTML = '<option value="">Select Provider</option>' +
-                    providers.map(p => `<option value="${p.id}">${p.name} (${p.type})</option>`).join('');
-            } catch (e) {
-                console.error('Failed to load providers:', e);
-            }
-        }
-
-        async function loadModels() {
-            const provider = document.getElementById('llm-provider').value;
-            if (!provider) return;
-
-            try {
-                const response = await fetch(`/api/providers/${provider}/models`);
-                const data = await response.json();
-                const models = data.models || [];
-
-                const select = document.getElementById('llm-model');
-                select.innerHTML = '<option value="">Select Model</option>' +
-                    models.map(m => `<option value="${m}">${m}</option>`).join('');
-            } catch (e) {
-                console.error('Failed to load models:', e);
-            }
-        }
-
-        async function testLLMConnection() {
-            const provider = document.getElementById('llm-provider').value;
-            if (!provider) return;
-
-            try {
-                const response = await fetch(`/api/providers/${provider}/test`, { method: 'POST' });
-                const data = await response.json();
-                document.getElementById('llm-status').textContent = data.success ? 'Connected' : 'Failed';
-            } catch (e) {
-                document.getElementById('llm-status').textContent = 'Error';
-            }
-        }
-
-        async function loadComfyUICategories() {
-            try {
-                const response = await fetch('/api/comfyui/categories');
-                const data = await response.json();
-                comfyuiCategories = data.categories || {};
-                updateComfyUISelects();
-            } catch (e) {
-                console.error('Failed to load ComfyUI categories:', e);
-            }
-        }
-
-        async function updateComfyUISelects() {
-            const imageSelect = document.getElementById('image-model');
-            const videoTypeSelect = document.getElementById('video-type');
-
-            // Try to get actual checkpoints from ComfyUI
-            try {
-                const response = await fetch('/api/comfyui/checkpoints');
-                const data = await response.json();
-                if (data.success && data.checkpoints && data.checkpoints.length > 0) {
-                    imageSelect.innerHTML = '<option value="">Select Model (from ComfyUI)</option>' +
-                        data.checkpoints.map(c => `<option value="${c}">${c}</option>`).join('');
-                } else {
-                    // Fallback to config if no checkpoints found
-                    updateFromConfig();
-                }
-            } catch (e) {
-                console.log('Could not fetch checkpoints, using config:', e);
-                updateFromConfig();
-            }
-
-            // Update video types from config
-            if (comfyuiCategories.video_generation) {
-                const types = comfyuiCategories.video_generation.types || {};
-                videoTypeSelect.innerHTML = '<option value="">Select Type</option>' +
-                    Object.entries(types).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
-            }
-        }
-
-        function updateFromConfig() {
-            const imageSelect = document.getElementById('image-model');
-            if (comfyuiCategories.image_generation) {
-                const models = comfyuiCategories.image_generation.models || {};
-                imageSelect.innerHTML = '<option value="">Select Model</option>' +
-                    Object.entries(models).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
-            }
-        }
-
-        async function testComfyUIConnection() {
-            try {
-                const response = await fetch('/api/comfyui/test', { method: 'POST' });
-                const data = await response.json();
-                document.getElementById('comfyui-status').textContent = data.success ? 'Connected' : 'Failed';
-            } catch (e) {
-                document.getElementById('comfyui-status').textContent = 'Error';
-            }
-        }
-
-        async function generatePrompt() {
-            const provider = document.getElementById('llm-provider').value;
-            const model = document.getElementById('llm-model').value;
-            const prompt = document.getElementById('generate-prompt').value;
-
-            if (!provider || !model || !prompt) {
-                alert('Please fill in all fields');
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ provider, model, prompt })
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    document.getElementById('generated-output').textContent = data.response;
-                } else {
-                    alert('Generation failed: ' + data.error);
-                }
-            } catch (e) {
-                alert('Error: ' + e.message);
-            }
-        }
-
-        async function generateMedia() {
-            const prompt = document.getElementById('generate-prompt').value;
-            const model = document.getElementById('image-model').value;
-
-            if (!prompt || !model) {
-                alert('Please enter a prompt and select a model');
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/comfyui/generate/image', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt, model })
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    alert('Image generated: ' + data.filename);
-                } else if (data.connected === false) {
-                    alert('ComfyUI not connected yet.\n\n' + data.error + '\n\nYou can still use the LLM to generate prompts without image generation.');
-                } else {
-                    alert('Error: ' + data.error);
-                }
-            } catch (e) {
-                alert('Error: ' + e.message);
-            }
-        }
-
-        async function loadProjects() {
-            try {
-                const response = await fetch('/api/projects');
-                const data = await response.json();
-                const projects = data.projects || [];
-
-                const container = document.getElementById('projects-list');
-                if (projects.length === 0) {
-                    container.innerHTML = '<p style="color: var(--text-secondary);">No projects yet. Create one to get started.</p>';
-                } else {
-                    container.innerHTML = projects.map(p => `
-                        <div class="template-card" onclick="openProject('${p.name}')">
-                            <div class="template-name">${p.name}</div>
-                            <div class="template-desc">${p.description || 'No description'} - ${new Date(p.updated_at).toLocaleDateString()}</div>
-                        </div>
-                    `).join('');
-                }
-            } catch (e) {
-                console.error('Failed to load projects:', e);
-            }
-        }
-
-        function showSection(section) {
-            currentSection = section;
-            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
-            document.getElementById(`section-${section}`).classList.remove('hidden');
-
+        let topicIdeas = [];
+        let selectedIdea = null;
+        let charIndex = 0;
+        let locIndex = 0;
+        let generatedCharPrompts = [];
+        let generatedLocPrompts = [];
+        
+        // Page navigation
+        function showPage(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-' + page).classList.add('active');
+            
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            event.target.closest('.nav-item')?.classList.add('active');
+            document.getElementById('nav-' + page).classList.add('active');
         }
 
-        function setStage(stage) {
-            currentStage = stage;
-            showSection('generation');
-            document.querySelectorAll('.stage-btn').forEach(b => b.classList.remove('active'));
-            event.target.closest('.stage-btn')?.classList.add('active');
+        // Tab switching
+        function switchCharTab(tab) {
+            document.querySelectorAll('#page-characters .tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('#page-characters .tab-content').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('char-' + tab).classList.add('active');
         }
 
-        function startWithTemplate() {
-            if (!selectedTemplate) {
-                alert('Please select a template');
-                return;
-            }
-            showSection('generation');
+        function switchLocTab(tab) {
+            document.querySelectorAll('#page-locations .tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('#page-locations .tab-content').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('loc-' + tab).classList.add('active');
         }
 
-        async function createNewProject() {
-            const name = prompt('Enter project name:');
-            if (!name) return;
-
+        // Project management
+        async function createProject() {
+            const name = document.getElementById('new-project-name').value;
+            if (!name) return alert('Please enter a project name');
+            
             try {
                 const response = await fetch('/api/projects', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, template_name: selectedTemplate })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name})
                 });
                 const data = await response.json();
                 if (data.success) {
                     currentProject = name;
-                    loadProjects();
-                } else {
-                    alert('Failed to create project: ' + data.error);
+                    document.getElementById('project-name').textContent = name;
+                    document.getElementById('new-project-name').value = '';
+                    showPage('ideas');
                 }
-            } catch (e) {
-                alert('Error: ' + e.message);
+            } catch(e) {
+                console.error(e);
             }
         }
 
-        function openProject(name) {
-            currentProject = name;
-            showSection('generation');
+        // Topic Ideas Generation
+        async function generateTopicIdeas() {
+            const genre = document.getElementById('genre-select').value;
+            document.getElementById('status-text').textContent = 'Generating ideas...';
+            
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: 'ollama',
+                        model: 'llama3.1',
+                        prompt: `Act as a top 1% YouTube strategist for ${genre} nostalgia content. Generate 5 highly engaging video topic ideas. 
+
+For each idea provide:
+1. **Title:** (powerful, emotional title)
+2. **Core Hook:** (1-2 lines why it's relatable)
+3. **Scene Potential:** (why it can generate 100+ scenes)
+
+Format each idea clearly separated.`
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Parse the response into 5 ideas (simple split)
+                    topicIdeas = data.response.split(/\n\n+/).slice(0, 5);
+                    renderIdeas();
+                }
+            } catch(e) {
+                console.error(e);
+            }
+            document.getElementById('status-text').textContent = 'Ready';
         }
 
-        async function approveItem() {
-            // Implementation for approval
+        function renderIdeas() {
+            const container = document.getElementById('ideas-container');
+            container.innerHTML = topicIdeas.map((idea, i) => `
+                <div class="idea-card">
+                    <div class="idea-title">Idea ${i+1}</div>
+                    <div class="idea-hook">${idea.substring(0, 200)}...</div>
+                    <div class="idea-actions">
+                        <button class="btn btn-primary" onclick="selectIdea(${i})">Select →</button>
+                    </div>
+                </div>
+            `).join('');
         }
 
-        async function rejectItem() {
-            // Implementation for rejection
+        function selectIdea(index) {
+            selectedIdea = topicIdeas[index];
+            document.getElementById('selected-topic').textContent = selectedIdea.substring(0, 100) + '...';
+            showPage('selection');
         }
 
-        async function skipItem() {
-            // Implementation for skip
+        // Start Generation
+        async function startGeneration() {
+            if (!currentProject) return alert('Create a project first');
+            if (!selectedIdea) return alert('Select a topic idea first');
+            
+            const style = document.getElementById('visual-style').value;
+            const charCount = document.getElementById('character-count').value;
+            const locCount = document.getElementById('location-count').value;
+            
+            // Generate character prompts
+            document.getElementById('status-text').textContent = 'Generating character prompts...';
+            
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: 'ollama',
+                        model: 'llama3.1',
+                        prompt: `Generate ${charCount} character prompts for this topic idea: ${selectedIdea}
+
+For each character provide:
+- Name, Age, Physical Appearance
+- Clothing Style (era appropriate)
+- Personality Traits
+- Visual Style: ${style}
+- Full body portrait description for image generation
+
+Format as numbered list.`
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    generatedCharPrompts = data.response.split('\n').filter(p => p.trim());
+                    charIndex = 0;
+                    showCharPrompt();
+                    showPage('characters');
+                }
+            } catch(e) {
+                console.error(e);
+            }
+            
+            document.getElementById('status-text').textContent = 'Ready';
         }
 
-        function showSettings() {
-            alert('Settings panel coming soon!');
+        // Character Generation
+        function showCharPrompt() {
+            if (charIndex >= generatedCharPrompts.length) {
+                document.getElementById('current-char-prompt').textContent = 'All character prompts generated!';
+                return;
+            }
+            document.getElementById('current-char-prompt').textContent = generatedCharPrompts[charIndex];
         }
 
-        // Initialize on load
-        init();
+        async function generateCharImage() {
+            const prompt = document.getElementById('current-char-prompt').textContent;
+            document.getElementById('status-text').textContent = 'Generating image...';
+            
+            try {
+                const response = await fetch('/api/comfyui/generate/image', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        model: 'juggernaut_xl.safetensors'
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('char-preview').src = `/api/comfyui/view?filename=${data.filename}`;
+                    document.getElementById('char-preview').style.display = 'block';
+                    document.getElementById('char-preview-placeholder').style.display = 'none';
+                    document.getElementById('char-approval').style.display = 'flex';
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch(e) {
+                console.error(e);
+            }
+            
+            document.getElementById('status-text').textContent = 'Ready';
+        }
+
+        function approveChar() {
+            alert('Character ' + (charIndex + 1) + ' approved!');
+            charIndex++;
+            document.getElementById('char-count').textContent = charIndex;
+            showCharPrompt();
+            document.getElementById('char-preview').style.display = 'none';
+            document.getElementById('char-approval').style.display = 'none';
+        }
+
+        function rejectChar() {
+            alert('Rejected - will regenerate');
+        }
+
+        function skipChar() {
+            charIndex++;
+            showCharPrompt();
+            document.getElementById('char-preview').style.display = 'none';
+            document.getElementById('char-approval').style.display = 'none';
+        }
+
+        // Location Generation
+        async function startLocGeneration() {
+            const locCount = document.getElementById('location-count').value;
+            
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: 'ollama',
+                        model: 'llama3.1',
+                        prompt: `Generate ${locCount} location prompts for this topic: ${selectedIdea}
+
+For each location provide:
+- Location Name
+- Location Type
+- Layout Details
+- Objects Present
+- Atmosphere
+
+Format as numbered list.`
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    generatedLocPrompts = data.response.split('\n').filter(p => p.trim());
+                    locIndex = 0;
+                    showLocPrompt();
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        function showLocPrompt() {
+            if (locIndex >= generatedLocPrompts.length) {
+                document.getElementById('current-loc-prompt').textContent = 'All location prompts generated!';
+                return;
+            }
+            document.getElementById('current-loc-prompt').textContent = generatedLocPrompts[locIndex];
+        }
+
+        async function generateLocImage() {
+            const prompt = document.getElementById('current-loc-prompt').textContent;
+            document.getElementById('status-text').textContent = 'Generating location image...';
+            
+            try {
+                const response = await fetch('/api/comfyui/generate/image', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        model: 'juggernaut_xl.safetensors'
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('loc-preview').src = `/api/comfyui/view?filename=${data.filename}`;
+                    document.getElementById('loc-preview').style.display = 'block';
+                    document.getElementById('loc-preview-placeholder').style.display = 'none';
+                    document.getElementById('loc-approval').style.display = 'flex';
+                }
+            } catch(e) {
+                console.error(e);
+            }
+            
+            document.getElementById('status-text').textContent = 'Ready';
+        }
+
+        function approveLoc() {
+            alert('Location ' + (locIndex + 1) + ' approved!');
+            locIndex++;
+            document.getElementById('loc-count').textContent = locIndex;
+            showLocPrompt();
+            document.getElementById('loc-preview').style.display = 'none';
+            document.getElementById('loc-approval').style.display = 'none';
+        }
+
+        function rejectLoc() {
+            alert('Rejected - will regenerate');
+        }
+
+        function skipLoc() {
+            locIndex++;
+            showLocPrompt();
+            document.getElementById('loc-preview').style.display = 'none';
+            document.getElementById('loc-approval').style.display = 'none';
+        }
+
+        // Image to Image
+        function generateFromImage() {
+            alert('Image to Image generation - connect ComfyUI first');
+        }
+
+        function generateLocFromImage() {
+            alert('Image to Image generation - connect ComfyUI first');
+        }
     </script>
 </body>
 </html>
