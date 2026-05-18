@@ -448,9 +448,15 @@
 
     <!-- Settings Modal -->
     <div class="modal-overlay" id="settings-modal">
-        <div class="modal" style="max-width:90vw;width:90vw;height:85vh;">
-            <h2>⚙️ Settings</h2>
-            <div style="max-height:calc(85vh - 100px);overflow-y:auto;padding-right:5px;margin-bottom:10px;">
+        <div class="modal" style="max-width:700px;width:90vw;max-height:85vh;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h2 style="margin:0;">⚙️ Settings</h2>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary" onclick="saveSettings()" style="padding:6px 14px;font-size:0.8rem;">Save Settings</button>
+                    <button class="btn btn-secondary" onclick="closeSettings()" style="padding:6px 12px;font-size:0.8rem;">Cancel</button>
+                </div>
+            </div>
+            <div style="max-height:calc(85vh - 90px);overflow-y:auto;padding-right:5px;margin-bottom:10px;">
                 <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
                     <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🧠 LLM</h3>
                     <div class="form-group">
@@ -540,7 +546,7 @@
                 </div>
             </div>
 
-            <div class="modal-actions">
+            <div class="modal-actions" style="border-top:1px solid var(--border-color);padding-top:10px;">
                 <button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>
                 <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
             </div>
@@ -552,7 +558,10 @@
         <div class="modal" style="max-width:90vw;width:90vw;height:85vh;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                 <h2 style="color:var(--accent-primary);margin:0;">🎭 Select Genres</h2>
-                <button class="btn btn-secondary" onclick="closeGenreModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary" onclick="confirmGenreSelection()" style="padding:6px 14px;font-size:0.8rem;">Done</button>
+                    <button class="btn btn-secondary" onclick="closeGenreModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
+                </div>
             </div>
             <div style="display:flex;gap:8px;margin-bottom:10px;">
                 <input type="text" class="form-input" id="genre-search-input" placeholder="Search genres..." oninput="filterGenreGrid()" style="flex:1;">
@@ -895,7 +904,6 @@
                 const data = await res.json();
                 if (data.success) {
                     closeSettings();
-                    notify('✅ Settings Saved', 'Configuration updated', '✅');
                 }
             } catch(e) {
                 notify('Error', 'Could not save settings');
@@ -1282,13 +1290,26 @@
             if (ideasCancel) return;
 
             const context = contextParts.join('\n\n');
-            setProgress(55, '🧠 Generating ideas with LLM...', 'Crafting story concepts');
 
-            // Animate progress from 55 to 95 while LLM runs
-            let animPct = 55;
+            const llmStatuses = [
+                '🔄 Idea is brewing...',
+                '🎨 Shaping the narrative...',
+                '📝 Crafting characters...',
+                '🎬 Building scenes...',
+                '✨ Adding final touches...'
+            ];
+            let statusIdx = 0;
+            setProgress(50, '🧠 Generating ideas...', llmStatuses[0]);
+            const statusInterval = setInterval(() => {
+                statusIdx = (statusIdx + 1) % llmStatuses.length;
+                document.getElementById('progress-sub').textContent = llmStatuses[statusIdx];
+            }, 2000);
+
+            // Animate progress from 50 to 95 while LLM runs
+            let animPct = 50;
             const animInterval = setInterval(() => {
                 if (ideasCancel) { clearInterval(animInterval); return; }
-                animPct = Math.min(95, animPct + (95 - animPct) * 0.08);
+                animPct = Math.min(95, animPct + (95 - animPct) * 0.06);
                 setProgress(Math.round(animPct));
             }, 300);
 
@@ -1312,6 +1333,7 @@
                 );
 
                 clearInterval(animInterval);
+                clearInterval(statusInterval);
                 if (ideasCancel) return;
                 hideProgress();
 
@@ -1319,12 +1341,12 @@
                     topicIdeas = parseIdeas(data.response);
                     selectedIdea = null;
                     renderIdeas();
-                    notify('✅ Ideas Generated', `${topicIdeas.length} concepts ready`, '✅');
                 } else {
                     notify('Generation Failed', data.message || 'Check LLM connection in Settings');
                 }
             } catch(e) {
                 clearInterval(animInterval);
+                clearInterval(statusInterval);
                 if (!ideasCancel) { hideProgress(); notify('Error', e.message); }
             }
         }
