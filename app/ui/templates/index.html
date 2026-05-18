@@ -232,13 +232,15 @@
 
             <h2 style="color:var(--accent-primary);margin-bottom:20px;">📝 Story Hunter</h2>
 
-            <!-- Genre Image Grid -->
+            <!-- Genre Selector Button -->
             <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                    <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);">🎭 Choose a Genre</div>
-                    <span id="genre-selected-label" style="font-size:0.85rem;color:var(--text-secondary);">None selected</span>
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);">🎭 Genre</div>
+                        <div id="genre-selected-label" style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;">None selected</div>
+                    </div>
+                    <button class="btn btn-primary" onclick="openGenreModal()" style="padding:8px 20px;">Select Genre</button>
                 </div>
-                <div id="genre-grid" class="genre-grid"></div>
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;" id="genre-chips"></div>
             </div>
 
@@ -538,6 +540,20 @@
             <div class="modal-actions">
                 <button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>
                 <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Genre Selection Modal -->
+    <div class="modal-overlay" id="genre-modal">
+        <div class="modal" style="max-width:600px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                <h2 style="color:var(--accent-primary);margin:0;">🎭 Select Genres</h2>
+                <button class="btn btn-secondary" onclick="closeGenreModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
+            </div>
+            <div id="genre-modal-grid" class="genre-grid" style="max-height:400px;overflow-y:auto;"></div>
+            <div class="modal-actions" style="margin-top:15px;">
+                <button class="btn btn-primary" onclick="confirmGenreSelection()" style="flex:1">Done</button>
             </div>
         </div>
     </div>
@@ -972,8 +988,8 @@
             });
         }
 
-        async function loadGenreGrid() {
-            const grid = document.getElementById('genre-grid');
+        async function loadGenreModalGrid() {
+            const grid = document.getElementById('genre-modal-grid');
             try {
                 const res = await fetch('/api/genres');
                 const data = await res.json();
@@ -1000,6 +1016,19 @@
             } catch(e) {
                 grid.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">Could not load genres</div>';
             }
+        }
+
+        function openGenreModal() {
+            loadGenreModalGrid();
+            document.getElementById('genre-modal').style.display = 'flex';
+        }
+
+        function closeGenreModal() {
+            document.getElementById('genre-modal').style.display = 'none';
+        }
+
+        function confirmGenreSelection() {
+            closeGenreModal();
         }
 
         function selectGenreCard(el) {
@@ -1267,7 +1296,7 @@
                     genreUploadFile = null;
                     document.getElementById('genre-image-preview').style.display = 'none';
                     await loadCustomGenres();
-                    await loadGenreGrid();
+                    await loadGenreModalGrid();
                     notify('✅ Genre Added', name + ' added to your genres');
                 } else {
                     notify('Error', data.error || 'Failed to add genre');
@@ -1283,7 +1312,7 @@
                 const data = await res.json();
                 if (data.success) {
                     await loadCustomGenres();
-                    await loadGenreGrid();
+                    await loadGenreModalGrid();
                     notify('Deleted', name + ' removed');
                 }
             } catch(e) {}
@@ -1323,7 +1352,7 @@
         document.querySelectorAll('.src-chk').forEach(cb => cb.addEventListener('change', updateIdeaInputs));
         updateIdeaInputs();
         renderRecentProjects();
-        loadGenreGrid();
+        loadGenreModalGrid();
         // Auto-connect LLM on start
         fetch('/api/settings').then(r => r.json()).then(s => {
             if (s.llm && s.llm.host && s.llm.model) {
