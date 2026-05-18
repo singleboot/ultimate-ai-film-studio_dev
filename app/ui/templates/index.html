@@ -724,8 +724,7 @@
                 const data = await res.json();
                 if (data.exists) {
                     addRecentProject(data.name, path);
-                    notify('📂 Opened', '"' + data.name + '" loaded', '✅');
-                    setTimeout(() => openProjectWorkspace(data.name, path), 500);
+                    openProjectWorkspace(data.name, path);
                 } else {
                     notify('Not Found', 'Project no longer exists');
                     recentProjects = recentProjects.filter(p => p.path !== path);
