@@ -353,6 +353,12 @@
 
         <aside class="sidebar">
             <div class="sidebar-section">
+                <div class="nav-item" onclick="showPage('settings')" id="nav-settings" style="margin-bottom:15px; border:1px solid var(--accent-secondary);">
+                    ⚙️ Settings
+                </div>
+            </div>
+
+            <div class="sidebar-section">
                 <div class="sidebar-title">Workflow</div>
                 <div class="nav-item active" onclick="showPage('ideas')" id="nav-ideas">
                     📝 Topic Ideas
@@ -561,6 +567,135 @@
                 <h1 class="page-header">🎥 Video Generation</h1>
                 <p style="color: var(--text-secondary)">Video generation coming soon...</p>
             </div>
+
+            <!-- PAGE: Settings -->
+            <div class="page" id="page-settings">
+                <h1 class="page-header">⚙️ Settings</h1>
+
+                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">🧠 LLM Configuration</h3>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" id="llm-provider" onchange="loadLLMModels()">
+                            <option value="">Select Provider</option>
+                            <option value="ollama">Ollama (Local)</option>
+                            <option value="lm_studio">LM Studio (Local)</option>
+                            <option value="openrouter">OpenRouter (Cloud)</option>
+                            <option value="gemini">Gemini (Cloud)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Model</label>
+                        <select class="form-select" id="llm-model">
+                            <option value="">Select Model</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">API Key (for cloud providers)</label>
+                        <input type="password" class="form-input" id="llm-api-key" placeholder="Enter API key...">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Custom Host URL (for local)</label>
+                        <input type="text" class="form-input" id="llm-host" placeholder="http://localhost:11434">
+                    </div>
+
+                    <button class="btn btn-secondary" onclick="testLLMConnection()">Test Connection</button>
+                    <span id="llm-test-result" style="margin-left: 10px; color: var(--text-secondary);"></span>
+                </div>
+
+                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">🎨 ComfyUI Configuration</h3>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Connection Type</label>
+                        <select class="form-select" id="comfyui-connection-type">
+                            <option value="local">Local</option>
+                            <option value="remote">Remote</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">ComfyUI URL</label>
+                        <input type="text" class="form-input" id="comfyui-url" value="http://localhost:8188" placeholder="http://localhost:8188">
+                    </div>
+
+                    <button class="btn btn-secondary" onclick="testComfyUIConnection()">Test Connection</button>
+                    <span id="comfyui-test-result" style="margin-left: 10px; color: var(--text-secondary);"></span>
+                </div>
+
+                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">🖼️ Image Generation Models</h3>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Default Checkpoint Model</label>
+                        <input type="text" class="form-input" id="image-model" value="juggernaut_xl.safetensors" placeholder="model_name.safetensors">
+                        <small style="color: var(--text-secondary);">Enter the exact checkpoint filename from ComfyUI/models/checkpoints/</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Image Width</label>
+                        <input type="number" class="form-input" id="image-width" value="1024">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Image Height</label>
+                        <input type="number" class="form-input" id="image-height" value="1024">
+                    </div>
+                </div>
+
+                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">🎬 Video Generation Models</h3>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Video Type</label>
+                        <select class="form-select" id="video-type">
+                            <option value="text_to_video">Text to Video</option>
+                            <option value="image_to_video">Image to Video</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Video Model</label>
+                        <select class="form-select" id="video-model">
+                            <option value="ltx_23">LTX 2.3</option>
+                            <option value="ltx_23_distilled">LTX 2.3 Distilled</option>
+                            <option value="wan_21">Wan 2.1</option>
+                            <option value="hunyuan">Hunyuan Video</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Default Frames</label>
+                        <input type="number" class="form-input" id="video-frames" value="81">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">FPS</label>
+                        <input type="number" class="form-input" id="video-fps" value="24">
+                    </div>
+                </div>
+
+                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">📁 Project Settings</h3>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Projects Folder</label>
+                        <input type="text" class="form-input" id="projects-folder" value="projects" placeholder="projects">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Auto-save Prompts</label>
+                        <input type="checkbox" id="auto-save-prompts" checked> Enable
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+                <button class="btn btn-secondary" onclick="resetSettings()" style="margin-left: 10px;">Reset to Default</button>
+            </div>
         </main>
 
         <footer class="status-bar">
@@ -582,10 +717,12 @@
         // Page navigation
         function showPage(page) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById('page-' + page).classList.add('active');
+            const pageEl = document.getElementById('page-' + page);
+            if (pageEl) pageEl.classList.add('active');
             
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            document.getElementById('nav-' + page).classList.add('active');
+            const navEl = document.getElementById('nav-' + page);
+            if (navEl) navEl.classList.add('active');
         }
 
         // Tab switching
@@ -884,6 +1021,176 @@ Format as numbered list.`
         function generateLocFromImage() {
             alert('Image to Image generation - connect ComfyUI first');
         }
+
+        // Settings Functions
+        async function loadLLMModels() {
+            const provider = document.getElementById('llm-provider').value;
+            const modelSelect = document.getElementById('llm-model');
+            modelSelect.innerHTML = '<option value="">Select Model</option>';
+            
+            if (!provider) return;
+            
+            try {
+                const response = await fetch('/api/llm/models?provider=' + provider);
+                const data = await response.json();
+                if (data.models) {
+                    data.models.forEach(m => {
+                        const option = document.createElement('option');
+                        option.value = m;
+                        option.textContent = m;
+                        modelSelect.appendChild(option);
+                    });
+                }
+            } catch (e) {
+                console.log('Could not load models:', e);
+            }
+        }
+
+        async function testLLMConnection() {
+            const provider = document.getElementById('llm-provider').value;
+            const host = document.getElementById('llm-host').value || 'http://localhost:11434';
+            const model = document.getElementById('llm-model').value;
+            const apiKey = document.getElementById('llm-api-key').value;
+            
+            document.getElementById('llm-test-result').textContent = 'Testing...';
+            
+            try {
+                const response = await fetch('/api/llm/test', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({provider, host, model, apiKey})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('llm-test-result').textContent = '✓ Connected';
+                    document.getElementById('llm-test-result').style.color = '#4ade80';
+                    document.getElementById('llm-status').textContent = 'LLM: Connected - ' + model;
+                } else {
+                    document.getElementById('llm-test-result').textContent = '✗ ' + data.message;
+                    document.getElementById('llm-test-result').style.color = '#f87171';
+                }
+            } catch (e) {
+                document.getElementById('llm-test-result').textContent = '✗ Connection failed';
+                document.getElementById('llm-test-result').style.color = '#f87171';
+            }
+        }
+
+        async function testComfyUIConnection() {
+            const url = document.getElementById('comfyui-url').value;
+            document.getElementById('comfyui-test-result').textContent = 'Testing...';
+            
+            try {
+                const response = await fetch('/api/comfyui/connect?url=' + encodeURIComponent(url));
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('comfyui-test-result').textContent = '✓ Connected';
+                    document.getElementById('comfyui-test-result').style.color = '#4ade80';
+                } else {
+                    document.getElementById('comfyui-test-result').textContent = '✗ ' + data.message;
+                    document.getElementById('comfyui-test-result').style.color = '#f87171';
+                }
+            } catch (e) {
+                document.getElementById('comfyui-test-result').textContent = '✗ Connection failed';
+                document.getElementById('comfyui-test-result').style.color = '#f87171';
+            }
+        }
+
+        async function saveSettings() {
+            const settings = {
+                llm: {
+                    provider: document.getElementById('llm-provider').value,
+                    model: document.getElementById('llm-model').value,
+                    apiKey: document.getElementById('llm-api-key').value,
+                    host: document.getElementById('llm-host').value
+                },
+                comfyui: {
+                    url: document.getElementById('comfyui-url').value,
+                    connectionType: document.getElementById('comfyui-connection-type').value
+                },
+                image: {
+                    model: document.getElementById('image-model').value,
+                    width: parseInt(document.getElementById('image-width').value),
+                    height: parseInt(document.getElementById('image-height').value)
+                },
+                video: {
+                    type: document.getElementById('video-type').value,
+                    model: document.getElementById('video-model').value,
+                    frames: parseInt(document.getElementById('video-frames').value),
+                    fps: parseInt(document.getElementById('video-fps').value)
+                },
+                project: {
+                    folder: document.getElementById('projects-folder').value,
+                    autoSavePrompts: document.getElementById('auto-save-prompts').checked
+                }
+            };
+            
+            try {
+                const response = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('Settings saved successfully!');
+                } else {
+                    alert('Failed to save settings');
+                }
+            } catch (e) {
+                alert('Error saving settings');
+            }
+        }
+
+        function resetSettings() {
+            document.getElementById('llm-provider').value = '';
+            document.getElementById('llm-model').innerHTML = '<option value="">Select Model</option>';
+            document.getElementById('llm-api-key').value = '';
+            document.getElementById('llm-host').value = '';
+            document.getElementById('comfyui-url').value = 'http://localhost:8188';
+            document.getElementById('image-model').value = 'juggernaut_xl.safetensors';
+            document.getElementById('image-width').value = '1024';
+            document.getElementById('image-height').value = '1024';
+            document.getElementById('video-model').value = 'ltx_23';
+            document.getElementById('video-frames').value = '81';
+            document.getElementById('video-fps').value = '24';
+            document.getElementById('projects-folder').value = 'projects';
+            document.getElementById('auto-save-prompts').checked = true;
+        }
+
+        // Load settings on page load
+        window.onload = async function() {
+            try {
+                const response = await fetch('/api/settings');
+                const settings = await response.json();
+                if (settings.llm) {
+                    document.getElementById('llm-provider').value = settings.llm.provider || '';
+                    document.getElementById('llm-model').value = settings.llm.model || '';
+                    document.getElementById('llm-api-key').value = settings.llm.apiKey || '';
+                    document.getElementById('llm-host').value = settings.llm.host || '';
+                }
+                if (settings.comfyui) {
+                    document.getElementById('comfyui-url').value = settings.comfyui.url || 'http://localhost:8188';
+                    document.getElementById('comfyui-connection-type').value = settings.comfyui.connectionType || 'local';
+                }
+                if (settings.image) {
+                    document.getElementById('image-model').value = settings.image.model || 'juggernaut_xl.safetensors';
+                    document.getElementById('image-width').value = settings.image.width || 1024;
+                    document.getElementById('image-height').value = settings.image.height || 1024;
+                }
+                if (settings.video) {
+                    document.getElementById('video-type').value = settings.video.type || 'text_to_video';
+                    document.getElementById('video-model').value = settings.video.model || 'ltx_23';
+                    document.getElementById('video-frames').value = settings.video.frames || 81;
+                    document.getElementById('video-fps').value = settings.video.fps || 24;
+                }
+                if (settings.project) {
+                    document.getElementById('projects-folder').value = settings.project.folder || 'projects';
+                    document.getElementById('auto-save-prompts').checked = settings.project.autoSavePrompts !== false;
+                }
+            } catch (e) {
+                console.log('Could not load settings');
+            }
+        };
     </script>
 </body>
 </html>

@@ -265,6 +265,85 @@ async def view_comfyui_image(filename: str):
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/comfyui/connect")
+async def test_comfyui_connect(url: str = "http://localhost:8188"):
+    """Test ComfyUI connection."""
+    try:
+        import requests
+        response = requests.get(f"{url}/system_stats", timeout=5)
+        if response.status_code == 200:
+            return {"success": True, "message": "Connected to ComfyUI"}
+        return {"success": False, "message": f"Status: {response.status_code}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/llm/models")
+async def get_llm_models(provider: str):
+    """Get available models for the provider."""
+    models = []
+    if provider == "ollama":
+        try:
+            import requests
+            resp = requests.get("http://localhost:11434/api/tags", timeout=5)
+            data = resp.json()
+            models = [m["name"] for m in data.get("models", [])]
+        except:
+            pass
+    elif provider == "lm_studio":
+        try:
+            import requests
+            resp = requests.get("http://localhost:1234/v1/models", timeout=5)
+            data = resp.json()
+            models = [m["id"] for m in data.get("data", [])]
+        except:
+            pass
+    return {"models": models}
+
+@app.post("/api/llm/test")
+async def test_llm_connection(data: dict):
+    """Test LLM connection."""
+    provider = data.get("provider", "")
+    host = data.get("host", "http://localhost:11434")
+    model = data.get("model", "")
+    
+    try:
+        import requests
+        if provider == "ollama":
+            resp = requests.post(f"{host}/api/generate", 
+                json={"model": model, "prompt": "Hello", "stream": False}, timeout=10)
+            if resp.status_code == 200:
+                return {"success": True}
+        elif provider == "lm_studio":
+            resp = requests.post(f"{host}/v1/chat/completions",
+                json={"model": model, "messages": [{"role": "user", "content": "Hi"}]}, timeout=10)
+            if resp.status_code == 200:
+                return {"success": True}
+        return {"success": False, "message": "Connection failed"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+# Settings storage
+SETTINGS_FILE = Path(__file__).parent / "settings.json"
+
+def load_settings() -> dict:
+    if SETTINGS_FILE.exists():
+        return json.loads(SETTINGS_FILE.read_text())
+    return {}
+
+def save_settings(settings: dict):
+    SETTINGS_FILE.write_text(json.dumps(settings, indent=2))
+
+@app.get("/api/settings")
+async def get_settings():
+    """Get settings."""
+    return load_settings()
+
+@app.post("/api/settings")
+async def save_settings_endpoint(data: dict):
+    """Save settings."""
+    save_settings(data)
+    return {"success": True}
+
 
 def get_default_html() -> str:
     """Get default HTML if templates not available."""
