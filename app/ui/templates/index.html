@@ -625,13 +625,6 @@
         }
 
         // === PAGE NAVIGATION ===
-        function showPage(page) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById('page-' + page).classList.add('active');
-            const header = document.getElementById('header-bar');
-            header.style.display = page === 'home' ? 'none' : 'flex';
-        }
-
         function navigateToWorkflow(step) {
             const built = { ideas: 1, selection: 1 };
             if (built[step]) {
@@ -656,7 +649,6 @@
                     renderIdeas();
                 }
             }
-        }
         }
 
         function goHome() {
