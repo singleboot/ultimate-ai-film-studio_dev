@@ -292,6 +292,117 @@ class ComfyUIClient:
 
         return {"success": False, "error": "No output generated"}
 
+    def generate_image_ip2p(self, prompt: str, input_image: str, model: str = None, width: int = 1024, height: int = 1024, seed: int = -1, denoise: float = 0.7, **kwargs) -> Dict:
+        """Generate image using Image-to-Image (IP2P) approach."""
+        if seed == -1:
+            import time
+            seed = int(time.time() * 1000) % 1000000
+        
+        checkpoint_name = model if model else "juggernaut_xl.safetensors"
+        
+        workflow = {}
+        
+        # 1. Load checkpoint
+        workflow["1"] = {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": {"ckpt_name": checkpoint_name}
+        }
+        
+        # 2. Load input image
+        workflow["2"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": "input_image.png"}
+        }
+        
+        # 3. Positive prompt
+        workflow["3"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": prompt, "clip": ["1", 0]}
+        }
+        
+        # 4. Negative prompt
+        workflow["4"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "blurry, low quality, distorted, deformed", "clip": ["1", 0]}
+        }
+        
+        # 5. VAE
+        workflow["5"] = {
+            "class_type": "VAELoader",
+            "inputs": {"vae_name": "ae.safetensors"}
+        }
+        
+        # 6. KSampler with image input
+        workflow["6"] = {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": seed,
+                "steps": 25,
+                "cfg": 7,
+                "sampler_name": "euler",
+                "scheduler": "normal",
+                "positive": ["3", 0],
+                "negative": ["4", 0],
+                "latent_image": ["9", 0]
+            }
+        }
+        
+        # 7. VAE Encode (for image)
+        workflow["7"] = {
+            "class_type": "VAEEncode",
+            "inputs": {"pixels": ["2", 0], "vae": ["5", 0]}
+        }
+        
+        # 8. Empty latent
+        workflow["8"] = {
+            "class_type": "EmptyLatentImage",
+            "inputs": {"width": width, "height": height, "batch_size": 1}
+        }
+        
+        # 9. Blend latent (image + noise) - simplified approach
+        workflow["9"] = {
+            "class_type": "LatentAdd",
+            "inputs": {"latent1": ["8", 0], "latent2": ["7", 0]}
+        }
+        
+        # 10. VAE Decode
+        workflow["10"] = {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["6", 0], "vae": ["5", 0]}
+        }
+        
+        # 11. Save Image
+        workflow["11"] = {
+            "class_type": "SaveImage",
+            "inputs": {"filename_prefix": "ultimate_ai_ip2p", "images": ["10", 0]}
+        }
+        
+        # Upload the input image first
+        try:
+            import base64
+            img_data = base64.b64decode(input_image)
+            upload_url = f"{self.host}/upload/image"
+            files = {'image': ('input_image.png', img_data, 'image/png')}
+            requests.post(upload_url, files=files, timeout=30)
+        except Exception as e:
+            return {"success": False, "error": f"Failed to upload image: {str(e)}"}
+        
+        prompt_id = self.queue_prompt(workflow)
+        if not prompt_id:
+            return {"success": False, "error": "Failed to queue prompt - ComfyUI may not support this model for image-to-image"}
+        
+        output = self.get_output(prompt_id, timeout=300)
+        if not output:
+            return {"success": False, "error": "Generation timeout - this model may not support image-to-image"}
+        
+        for node_id, node_output in output.items():
+            if "images" in node_output:
+                images = node_output["images"]
+                if images:
+                    return {"success": True, "filename": images[0].get("filename")}
+        
+        return {"success": False, "error": "No output - this model does not support image input. Use Text-to-Image instead."}
+
     def _create_video_workflow(self, prompt: str, model: str, input_image: str = None, width: int = 1280, height: int = 720, frames: int = 81, fps: int = 24, **kwargs) -> Dict:
         """Create a basic video generation workflow."""
         workflow = {}

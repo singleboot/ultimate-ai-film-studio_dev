@@ -1457,7 +1457,32 @@ Format as numbered list.`
                 showError('Edit prompt is empty', 'Please describe what you want to change in the image');
                 return;
             }
-            showError('Image to Image requires ComfyUI', 'Make sure ComfyUI is running and connected in Settings');
+            
+            showGenerationStatus('Generating image from reference...');
+            
+            const formData = new FormData();
+            formData.append('image', refImage);
+            formData.append('prompt', editPrompt);
+            formData.append('type', 'character');
+            
+            fetch('/api/comfyui/image-to-image', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                hideGenerationStatus();
+                if (data.success) {
+                    showSuccess('Image generated successfully!');
+                    updateProjectFiles();
+                } else {
+                    showError('Image Generation Failed', data.message || 'Check ComfyUI connection and model support');
+                }
+            })
+            .catch(err => {
+                hideGenerationStatus();
+                showError('Connection Error', 'Could not connect to ComfyUI. Make sure it is running.');
+            });
         }
 
         function generateLocFromImage() {
@@ -1471,7 +1496,32 @@ Format as numbered list.`
                 showError('Edit prompt is empty', 'Please describe what you want to change in the image');
                 return;
             }
-            showError('Image to Image requires ComfyUI', 'Make sure ComfyUI is running and connected in Settings');
+            
+            showGenerationStatus('Generating location from reference...');
+            
+            const formData = new FormData();
+            formData.append('image', refImage);
+            formData.append('prompt', editPrompt);
+            formData.append('type', 'location');
+            
+            fetch('/api/comfyui/image-to-image', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                hideGenerationStatus();
+                if (data.success) {
+                    showSuccess('Image generated successfully!');
+                    updateProjectFiles();
+                } else {
+                    showError('Image Generation Failed', data.message || 'Check ComfyUI connection and model support');
+                }
+            })
+            .catch(err => {
+                hideGenerationStatus();
+                showError('Connection Error', 'Could not connect to ComfyUI. Make sure it is running.');
+            });
         }
 
         // Settings Functions

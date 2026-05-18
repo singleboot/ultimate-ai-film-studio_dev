@@ -36,7 +36,7 @@ approval_workflow = ApprovalWorkflow() if HAS_LLM else None
 
 # ComfyUI client - ALWAYS use placeholder to avoid auto-connect issues
 # User can manually connect ComfyUI when they want to use it
-from core.comfyui_client_placeholder import ComfyUIClient
+from core.comfyui_client import ComfyUIClient
 comfyui_client = ComfyUIClient()
 
 class GenerateRequest(BaseModel):
@@ -266,6 +266,46 @@ async def view_comfyui_image(filename: str):
         return Response(content=response.content, media_type="image/png")
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/api/comfyui/image-to-image")
+async def image_to_image(request: Request):
+    """Handle image-to-image generation via ComfyUI."""
+    try:
+        form = await request.form()
+        
+        image = form.get('image')
+        prompt = form.get('prompt', '')
+        img_type = form.get('type', 'character')
+        
+        if not image:
+            return {"success": False, "message": "No image provided"}
+        
+        import base64
+        from io import BytesIO
+        image_data = await image.read()
+        image_b64 = base64.b64encode(image_data).decode('utf-8')
+        
+        settings = load_settings()
+        image_settings = settings.get('image', {})
+        model = image_settings.get('model', 'juggernaut_xl.safetensors')
+        width = image_settings.get('width', 1024)
+        height = image_settings.get('height', 1024)
+        
+        result = comfyui_client.generate_image_ip2p(
+            prompt=prompt,
+            input_image=image_b64,
+            model=model,
+            width=width,
+            height=height
+        )
+        
+        if result.get('success'):
+            return {"success": True, "message": "Image generated", "output": result.get('output')}
+        else:
+            return {"success": False, "message": result.get('error', 'Generation failed')}
+            
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 @app.get("/api/comfyui/connect")
 async def test_comfyui_connect(url: str = "http://localhost:8188"):
