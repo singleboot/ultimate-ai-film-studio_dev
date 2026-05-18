@@ -456,7 +456,62 @@ async def save_settings_endpoint(data: dict):
     """Save settings."""
     save_settings(data)
     return {"success": True}
-    return {"success": True}
+
+# Workflow management
+WORKFLOWS_DIR = Path(__file__).parent / "workflows"
+
+@app.get("/api/workflows")
+async def list_workflows():
+    """List uploaded workflow files."""
+    Workflows_DIR = Path(__file__).parent / "workflows"
+    if not Workflows_DIR.exists():
+        return {"workflows": []}
+    files = []
+    for f in Workflows_DIR.iterdir():
+        if f.suffix == ".json":
+            files.append({"name": f.stem, "filename": f.name, "size": f.stat().st_size})
+    return {"workflows": files}
+
+@app.post("/api/workflows/upload")
+async def upload_workflow(request: Request):
+    """Upload a workflow JSON file."""
+    try:
+        form = await request.form()
+        file = form.get("file")
+        if not file:
+            return {"success": False, "error": "No file provided"}
+        Workflows_DIR = Path(__file__).parent / "workflows"
+        Workflows_DIR.mkdir(exist_ok=True)
+        content = await file.read()
+        # Validate JSON
+        import json
+        json.loads(content)
+        filename = file.filename.replace("..", "").replace("/", "").replace("\\", "")
+        dest = Workflows_DIR / filename
+        dest.write_bytes(content)
+        return {"success": True, "filename": filename}
+    except json.JSONDecodeError:
+        return {"success": False, "error": "Invalid JSON file"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.delete("/api/workflows/{name}")
+async def delete_workflow(name: str):
+    """Delete a workflow file."""
+    try:
+        Workflows_DIR = Path(__file__).parent / "workflows"
+        f = Workflows_DIR / f"{name}.json"
+        if f.exists():
+            f.unlink()
+            return {"success": True}
+        # Try with .json extension already
+        f2 = Workflows_DIR / name
+        if f2.exists():
+            f2.unlink()
+            return {"success": True}
+        return {"success": False, "error": "File not found"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def get_default_html() -> str:
