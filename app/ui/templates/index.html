@@ -378,6 +378,9 @@
                 <div class="nav-item" onclick="showPage('videos')" id="nav-videos">
                     🎥 Videos
                 </div>
+                <div class="nav-item" onclick="showPage('home')" id="nav-home" style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                    🏠 Home
+                </div>
             </div>
 
             <div class="sidebar-section">
@@ -387,18 +390,50 @@
                 </div>
             </div>
 
-            <div class="sidebar-section">
-                <div class="sidebar-title">New Project</div>
-                <div class="form-group">
-                    <input type="text" class="form-input" id="new-project-name" placeholder="Project Name">
-                </div>
-                <button class="btn btn-primary" style="width:100%" onclick="createProject()">Create Project</button>
-            </div>
+            <!-- Hide sidebar new project since we have home page -->
+            <!-- <div class="sidebar-section">... -->
         </aside>
 
         <main class="main-content">
-            <!-- PAGE 1: Topic Ideas Generator -->
-            <div class="page active" id="page-ideas">
+            <!-- PAGE 1: Home / Project Selection -->
+            <div class="page active" id="page-home">
+                <div style="max-width: 600px; margin: 50px auto; text-align: center;">
+                    <h1 class="page-header">🎬 Ultimate AI Film Studio</h1>
+                    <p style="color: var(--text-secondary); margin-bottom: 40px;">Create stunning short films with AI</p>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div class="form-group" style="background: var(--bg-secondary); padding: 30px; border-radius: 12px; cursor: pointer; transition: transform 0.2s;" onclick="showNewProjectForm()">
+                            <div style="font-size: 3rem; margin-bottom: 15px;">➕</div>
+                            <h3>New Project</h3>
+                            <p style="color: var(--text-secondary); font-size: 0.9rem;">Start a fresh short film</p>
+                        </div>
+                        
+                        <div class="form-group" style="background: var(--bg-secondary); padding: 30px; border-radius: 12px; cursor: pointer; transition: transform 0.2s;" onclick="showOpenProject()">
+                            <div style="font-size: 3rem; margin-bottom: 15px;">📂</div>
+                            <h3>Open Project</h3>
+                            <p style="color: var(--text-secondary); font-size: 0.9rem;">Continue existing project</p>
+                        </div>
+                    </div>
+                    
+                    <!-- New Project Form (hidden by default) -->
+                    <div id="new-project-form" style="display: none; margin-top: 30px; background: var(--bg-secondary); padding: 25px; border-radius: 12px;">
+                        <h3 style="margin-bottom: 15px;">Create New Project</h3>
+                        <div class="form-group">
+                            <input type="text" class="form-input" id="home-project-name" placeholder="Enter project name">
+                        </div>
+                        <button class="btn btn-primary" onclick="createProjectFromHome()">Create</button>
+                        <button class="btn btn-secondary" onclick="hideNewProjectForm()">Cancel</button>
+                    </div>
+                    
+                    <!-- Open Project List (hidden by default) -->
+                    <div id="open-project-list" style="display: none; margin-top: 30px; background: var(--bg-secondary); padding: 25px; border-radius: 12px;">
+                        <h3 style="margin-bottom: 15px;">Your Projects</h3>
+                        <div id="projects-list-container"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PAGE 2: Topic Ideas Generator -->
                 <h1 class="page-header">📝 Topic Ideas Generator</h1>
                 
                 <div class="tabs" style="margin-bottom: 20px;">
@@ -834,9 +869,47 @@
             document.getElementById('loc-' + tab).classList.add('active');
         }
 
-        // Project management
-        async function createProject() {
-            const name = document.getElementById('new-project-name').value;
+        // Project management - Home page functions
+        function showNewProjectForm() {
+            document.getElementById('new-project-form').style.display = 'block';
+            document.getElementById('open-project-list').style.display = 'none';
+            document.getElementById('home-project-name').focus();
+        }
+
+        function hideNewProjectForm() {
+            document.getElementById('new-project-form').style.display = 'none';
+            document.getElementById('home-project-name').value = '';
+        }
+
+        async function showOpenProject() {
+            document.getElementById('new-project-form').style.display = 'none';
+            document.getElementById('open-project-list').style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/projects');
+                const data = await response.json();
+                const container = document.getElementById('projects-list-container');
+                
+                if (data.projects && data.projects.length > 0) {
+                    container.innerHTML = data.projects.map(p => `
+                        <div style="padding: 15px; background: var(--bg-tertiary); border-radius: 8px; margin-bottom: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="openProject('${p.name}')">
+                            <div>
+                                <strong>${p.name}</strong>
+                                <div style="color: var(--text-secondary); font-size: 0.8rem;">${p.created || 'Recently opened'}</div>
+                            </div>
+                            <span style="font-size: 1.5rem;">➡️</span>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<p style="color: var(--text-secondary);">No projects found. Create a new one!</p>';
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        async function createProjectFromHome() {
+            const name = document.getElementById('home-project-name').value;
             if (!name) return alert('Please enter a project name');
             
             try {
@@ -849,7 +922,36 @@
                 if (data.success) {
                     currentProject = name;
                     document.getElementById('project-name').textContent = name;
-                    document.getElementById('new-project-name').value = '';
+                    hideNewProjectForm();
+                    showPage('ideas');
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        async function openProject(name) {
+            currentProject = name;
+            document.getElementById('project-name').textContent = name;
+            document.getElementById('open-project-list').style.display = 'none';
+            showPage('ideas');
+        }
+
+        // Legacy function for compatibility
+        async function createProject() {
+            const name = document.getElementById('new-project-name')?.value;
+            if (!name) return alert('Please enter a project name');
+            
+            try {
+                const response = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    currentProject = name;
+                    document.getElementById('project-name').textContent = name;
                     showPage('ideas');
                 }
             } catch(e) {
