@@ -130,9 +130,10 @@
         }
         .workflow-step {
             padding: 8px 16px; border-radius: 20px; background: var(--bg-tertiary);
-            font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;
+            font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; cursor: pointer; transition: all 0.2s;
         }
-        .workflow-step.active { background: var(--accent-primary); color: var(--bg-primary); }
+        .workflow-step:hover { opacity: 0.8; }
+        .workflow-step.active { background: var(--accent-primary); color: var(--bg-primary); cursor: default; }
         .workflow-step.done { background: var(--accent-success); color: white; }
 
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
@@ -223,15 +224,18 @@
     <div class="page" id="page-ideas">
         <div class="container">
             <div class="workflow-nav">
-                <span class="workflow-step active">📝 Ideas</span>
-                <span class="workflow-step">⚙️ Selection</span>
-                <span class="workflow-step">👤 Characters</span>
-                <span class="workflow-step">🏠 Locations</span>
-                <span class="workflow-step">🎬 Scenes</span>
-                <span class="workflow-step">🎥 Videos</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('selection')">⚙️ Selection</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
-            <h2 style="color:var(--accent-primary);margin-bottom:20px;">📝 Story Hunter</h2>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <button class="btn btn-secondary" onclick="goHome()" style="padding:6px 14px;font-size:0.8rem;">← Home</button>
+                <h2 style="color:var(--accent-primary);margin:0;">📝 Story Hunter</h2>
+            </div>
 
             <!-- Genre Selector Button -->
             <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
@@ -292,11 +296,14 @@
             <div id="ideas-progress" style="margin:20px 0;display:none;">
                 <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;border-left:4px solid var(--accent-primary);">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                        <div>
+                        <div style="flex:1;">
                             <div style="font-weight:600;" id="progress-title">Generating...</div>
                             <div style="font-size:0.85rem;color:var(--text-secondary);" id="progress-sub">Preparing sources</div>
                         </div>
-                        <button class="btn btn-secondary" onclick="cancelIdeas()" style="padding:6px 14px;font-size:0.8rem;">✕ Cancel</button>
+                        <div style="text-align:right;min-width:60px;">
+                            <div style="font-size:1.2rem;font-weight:700;color:var(--accent-primary);" id="progress-pct">0%</div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="cancelIdeas()" style="padding:6px 14px;font-size:0.8rem;margin-left:10px;">✕ Cancel</button>
                     </div>
                     <div style="width:100%;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;">
                         <div id="progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
@@ -331,15 +338,18 @@
     <div class="page" id="page-selection">
         <div class="container">
             <div class="workflow-nav">
-                <span class="workflow-step">📝 Ideas</span>
-                <span class="workflow-step active">⚙️ Selection</span>
-                <span class="workflow-step">👤 Characters</span>
-                <span class="workflow-step">🏠 Locations</span>
-                <span class="workflow-step">🎬 Scenes</span>
-                <span class="workflow-step">🎥 Videos</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('selection')">⚙️ Selection</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
-            <h2 style="color:var(--accent-primary);margin-bottom:20px;">⚙️ Visual & Story Settings</h2>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('ideas')" style="padding:6px 14px;font-size:0.8rem;">← Back</button>
+                <h2 style="color:var(--accent-primary);margin:0;">⚙️ Visual & Story Settings</h2>
+            </div>
 
             <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
                 <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🎨 Visual Style</h3>
@@ -620,6 +630,16 @@
             document.getElementById('page-' + page).classList.add('active');
             const header = document.getElementById('header-bar');
             header.style.display = page === 'home' ? 'none' : 'flex';
+        }
+
+        function navigateToWorkflow(step) {
+            // Steps that are built
+            const built = { ideas: 1, selection: 1 };
+            if (built[step]) {
+                showPage(step);
+            } else {
+                notify('Coming Soon', 'This module is not built yet', '🚧');
+            }
         }
 
         function goHome() {
@@ -1146,11 +1166,14 @@
             document.getElementById('progress-title').textContent = title;
             document.getElementById('progress-sub').textContent = sub || '';
             document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-pct').textContent = '0%';
             ideasCancel = false;
         }
 
         function setProgress(pct, title, sub) {
-            document.getElementById('progress-bar').style.width = pct + '%';
+            const clamped = Math.min(100, Math.max(0, pct));
+            document.getElementById('progress-bar').style.width = clamped + '%';
+            document.getElementById('progress-pct').textContent = clamped + '%';
             if (title) document.getElementById('progress-title').textContent = title;
             if (sub) document.getElementById('progress-sub').textContent = sub;
         }
