@@ -51,6 +51,8 @@ class GenerateRequest(BaseModel):
     provider: str
     model: str
     prompt: str
+    host: Optional[str] = None
+    system_prompt: Optional[str] = None
     template_name: Optional[str] = None
     stage_name: Optional[str] = None
     variables: Optional[Dict] = None
@@ -134,7 +136,8 @@ async def generate(request: GenerateRequest):
         provider_id=request.provider,
         model=request.model,
         prompt=prompt,
-        system_prompt=system_prompt
+        system_prompt=system_prompt,
+        host=request.host
     )
 
     return result

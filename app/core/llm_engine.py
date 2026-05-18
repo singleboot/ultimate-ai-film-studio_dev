@@ -134,11 +134,15 @@ class LLMEngine:
             return {"success": False, "error": str(e)}
         return {"success": False, "error": "Connection failed"}
 
-    def generate(self, provider_id: str, model: str, prompt: str, system_prompt: str = None, **kwargs) -> Dict:
+    def generate(self, provider_id: str, model: str, prompt: str, system_prompt: str = None, host: str = None, **kwargs) -> Dict:
         """Generate a response from the LLM."""
         provider = self.config.get("providers", {}).get(provider_id)
         if not provider:
             return {"success": False, "error": "Provider not found"}
+        # Allow runtime host override
+        if host:
+            provider = dict(provider)
+            provider["host"] = host
 
         if provider_id == "ollama":
             return self._generate_ollama(provider, model, prompt, system_prompt, **kwargs)

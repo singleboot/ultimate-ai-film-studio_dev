@@ -438,9 +438,9 @@
 
     <!-- Settings Modal -->
     <div class="modal-overlay" id="settings-modal">
-        <div class="modal">
+        <div class="modal" style="max-width:90vw;width:90vw;height:85vh;">
             <h2>⚙️ Settings</h2>
-            <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+            <div style="max-height:calc(85vh - 100px);overflow-y:auto;padding-right:5px;margin-bottom:10px;">
                 <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🧠 LLM</h3>
                 <div class="form-group">
                     <label class="form-label">Provider</label>
@@ -536,6 +536,7 @@
                 <div id="custom-genres-list">
                     <div style="font-size:0.8rem;color:var(--text-secondary);">Loading...</div>
                 </div>
+            </div>
             </div>
 
             <div class="modal-actions">
@@ -1145,13 +1146,12 @@
 
         async function generateFromLLM(prompt) {
             const cfg = getLLMConfig();
+            const host = document.getElementById('llm-host').value;
+            const body = { provider: cfg.provider, model: cfg.model, prompt: prompt };
+            if (host) body.host = host;
             const res = await fetch('/api/generate', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    provider: cfg.provider,
-                    model: cfg.model,
-                    prompt: prompt
-                })
+                body: JSON.stringify(body)
             });
             return await res.json();
         }
