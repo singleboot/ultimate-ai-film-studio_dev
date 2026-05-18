@@ -1667,10 +1667,6 @@
         let selectedFilmAesthetic = null;
 
         function proceedToCharacters() {
-            if (!selectedVisualStyle || !selectedFilmAesthetic) {
-                notify('Selection Required', 'Select both a Visual Style and a Film Aesthetic.', '⚠️');
-                return;
-            }
             const chars = parseInt(document.getElementById('sel-characters').value) || 3;
             const locs = parseInt(document.getElementById('sel-locations').value) || 3;
             const scenes = parseInt(document.getElementById('sel-scenes').value) || 5;
