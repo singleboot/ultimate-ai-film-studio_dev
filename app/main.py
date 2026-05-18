@@ -284,7 +284,7 @@ async def get_llm_models(provider: str):
     if provider == "ollama":
         try:
             import requests
-            resp = requests.get("http://localhost:11434/api/tags", timeout=5)
+            resp = requests.get("http://localhost:11434/api/tags", timeout=15)
             data = resp.json()
             models = [m["name"] for m in data.get("models", [])]
         except:
@@ -292,7 +292,7 @@ async def get_llm_models(provider: str):
     elif provider == "lm_studio":
         try:
             import requests
-            resp = requests.get("http://localhost:1234/v1/models", timeout=5)
+            resp = requests.get("http://localhost:1234/v1/models", timeout=15)
             data = resp.json()
             models = [m["id"] for m in data.get("data", [])]
         except:
@@ -310,12 +310,12 @@ async def test_llm_connection(data: dict):
         import requests
         if provider == "ollama":
             resp = requests.post(f"{host}/api/generate", 
-                json={"model": model, "prompt": "Hello", "stream": False}, timeout=10)
+                json={"model": model, "prompt": "Hello", "stream": False}, timeout=30)
             if resp.status_code == 200:
                 return {"success": True}
         elif provider == "lm_studio":
             resp = requests.post(f"{host}/v1/chat/completions",
-                json={"model": model, "messages": [{"role": "user", "content": "Hi"}]}, timeout=10)
+                json={"model": model, "messages": [{"role": "user", "content": "Hi"}]}, timeout=30)
             if resp.status_code == 200:
                 return {"success": True}
         return {"success": False, "message": "Connection failed"}
@@ -332,6 +332,33 @@ def load_settings() -> dict:
 
 def save_settings(settings: dict):
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2))
+
+@app.get("/api/websearch")
+async def web_search(q: str, num: int = 5):
+    """Web search using DuckDuckGo."""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        url = f"https://duckduckgo.com/html/?q={q}"
+        resp = requests.get(url, headers=headers, timeout=10)
+        
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        results = []
+        
+        for item in soup.select('.result')[:num]:
+            title = item.select_one('.result__title')
+            snippet = item.select_one('.result__snippet')
+            if title and snippet:
+                results.append({
+                    'title': title.get_text(strip=True),
+                    'snippet': snippet.get_text(strip=True)
+                })
+        
+        return {'results': results}
+    except Exception as e:
+        return {'results': [], 'error': str(e)}
 
 @app.get("/api/settings")
 async def get_settings():
