@@ -633,13 +633,30 @@
         }
 
         function navigateToWorkflow(step) {
-            // Steps that are built
             const built = { ideas: 1, selection: 1 };
             if (built[step]) {
                 showPage(step);
             } else {
                 notify('Coming Soon', 'This module is not built yet', '🚧');
             }
+        }
+
+        function showPage(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-' + page).classList.add('active');
+            const header = document.getElementById('header-bar');
+            header.style.display = page === 'home' ? 'none' : 'flex';
+            // Restore ideas on return
+            if (page === 'ideas') {
+                if (selectedIdea) {
+                    document.getElementById('ideas-container').innerHTML = '';
+                    document.getElementById('selected-idea-content').textContent = selectedIdea;
+                    document.getElementById('selected-idea-container').style.display = 'block';
+                } else if (topicIdeas.length) {
+                    renderIdeas();
+                }
+            }
+        }
         }
 
         function goHome() {
@@ -1007,6 +1024,7 @@
 
         // === TOPIC IDEAS ===
         let topicIdeas = [];
+        let selectedIdea = null;
 
         function getLLMConfig() {
             return {
@@ -1274,6 +1292,14 @@
             const context = contextParts.join('\n\n');
             setProgress(55, '🧠 Generating ideas with LLM...', 'Crafting story concepts');
 
+            // Animate progress from 55 to 95 while LLM runs
+            let animPct = 55;
+            const animInterval = setInterval(() => {
+                if (ideasCancel) { clearInterval(animInterval); return; }
+                animPct = Math.min(95, animPct + (95 - animPct) * 0.08);
+                setProgress(Math.round(animPct));
+            }, 300);
+
             try {
                 const data = await generateFromLLM(
                     `You are a professional film producer. Based on the following sources, create 5 compelling short film concepts.
@@ -1293,17 +1319,20 @@
     Separate each concept with "---".`
                 );
 
+                clearInterval(animInterval);
                 if (ideasCancel) return;
                 hideProgress();
 
                 if (data.success) {
                     topicIdeas = parseIdeas(data.response);
+                    selectedIdea = null;
                     renderIdeas();
                     notify('✅ Ideas Generated', `${topicIdeas.length} concepts ready`, '✅');
                 } else {
                     notify('Generation Failed', data.message || 'Check LLM connection in Settings');
                 }
             } catch(e) {
+                clearInterval(animInterval);
                 if (!ideasCancel) { hideProgress(); notify('Error', e.message); }
             }
         }
@@ -1322,16 +1351,14 @@
         }
 
         function selectIdea(index) {
-            const selected = topicIdeas[index];
-            document.getElementById('ideas-container').innerHTML = '';
-            document.getElementById('selected-idea-content').textContent = selected;
-            document.getElementById('selected-idea-container').style.display = 'block';
-            notify('✅ Idea Selected', 'Great pick! Continue to the Selection module.', '✅');
+            selectedIdea = topicIdeas[index];
+            goToSelection();
         }
 
         function clearSelection() {
+            selectedIdea = null;
             document.getElementById('selected-idea-container').style.display = 'none';
-            renderIdeas();
+            if (topicIdeas.length) renderIdeas();
         }
 
         // === GENRE MANAGER MODAL ===
