@@ -226,9 +226,10 @@
             <div class="workflow-nav">
                 <span class="workflow-step active" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('selection')">⚙️ Selection</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('image-prompts')">🖼️ Image Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
@@ -340,9 +341,10 @@
             <div class="workflow-nav">
                 <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
                 <span class="workflow-step active" onclick="navigateToWorkflow('selection')">⚙️ Selection</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('image-prompts')">🖼️ Image Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
@@ -367,22 +369,22 @@
                 <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">📊 Story Scale</h3>
                 <div class="input-row">
                     <div class="form-group" style="flex:1">
-                        <label class="form-label">Characters</label>
-                        <input type="number" class="form-input" id="sel-characters" value="3" min="1" max="20">
+                        <label class="form-label">Scenes</label>
+                        <input type="number" class="form-input" id="sel-scenes" value="10" min="1" max="500">
                     </div>
                     <div class="form-group" style="flex:1">
                         <label class="form-label">Locations</label>
                         <input type="number" class="form-input" id="sel-locations" value="3" min="1" max="20">
                     </div>
                     <div class="form-group" style="flex:1">
-                        <label class="form-label">Scenes</label>
-                        <input type="number" class="form-input" id="sel-scenes" value="5" min="1" max="50">
+                        <label class="form-label">Characters</label>
+                        <input type="number" class="form-input" id="sel-characters" value="3" min="1" max="20">
                     </div>
                 </div>
             </div>
 
             <div style="display:flex;gap:10px;margin-top:20px;">
-                <button class="btn btn-primary" onclick="proceedToCharacters()" style="flex:1">👤 Continue to Characters →</button>
+                <button class="btn btn-primary" onclick="proceedToScenes()" style="flex:1">🎬 Continue to Scenes →</button>
             </div>
         </div>
     </div>
@@ -393,14 +395,15 @@
             <div class="workflow-nav">
                 <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('selection')">⚙️ Selection</span>
-                <span class="workflow-step active" onclick="navigateToWorkflow('characters')">👤 Characters</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('image-prompts')">🖼️ Image Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-                <button class="btn btn-secondary" onclick="navigateToWorkflow('selection')" style="padding:6px 14px;font-size:0.8rem;">← Back to Selection</button>
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('locations')" style="padding:6px 14px;font-size:0.8rem;">← Back to Locations</button>
                 <h2 style="color:var(--accent-primary);margin:0;">👤 Characters</h2>
             </div>
 
@@ -424,8 +427,140 @@
             <div id="characters-container" style="display:flex;flex-direction:column;gap:15px;"></div>
 
             <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('locations')" style="padding:8px 20px;">← Back to Locations</button>
+                <button class="btn btn-primary" onclick="proceedToImagePrompts()" style="padding:8px 20px;">🖼️ Continue to Image Prompts →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAGE: Scenes -->
+    <div class="page" id="page-scenes">
+        <div class="container">
+            <div class="workflow-nav">
+                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('selection')">⚙️ Selection</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('image-prompts')">🖼️ Image Prompts</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('selection')" style="padding:6px 14px;font-size:0.8rem;">← Back to Selection</button>
+                <h2 style="color:var(--accent-primary);margin:0;">🎬 Scenes</h2>
+            </div>
+
+            <div id="scenes-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-weight:600;" id="scenes-progress-title">Generating scenes...</span>
+                    <span style="color:var(--accent-primary);font-weight:700;" id="scenes-progress-pct">0%</span>
+                </div>
+                <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
+                    <div id="scenes-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <div style="font-size:0.9rem;color:var(--text-secondary);">
+                    <span id="scenes-count-label">10 scenes</span> — generate scenes from your idea
+                </div>
+                <button class="btn btn-primary" onclick="generateScenes()" style="padding:8px 18px;">✨ Generate Scenes</button>
+            </div>
+
+            <div id="scenes-container" style="display:flex;flex-direction:column;gap:8px;margin-bottom:15px;"></div>
+
+            <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
                 <button class="btn btn-secondary" onclick="navigateToWorkflow('selection')" style="padding:8px 20px;">← Back to Selection</button>
                 <button class="btn btn-primary" onclick="proceedToLocations()" style="padding:8px 20px;">🏠 Continue to Locations →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAGE: Locations -->
+    <div class="page" id="page-locations">
+        <div class="container">
+            <div class="workflow-nav">
+                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('selection')">⚙️ Selection</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('image-prompts')">🖼️ Image Prompts</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('scenes')" style="padding:6px 14px;font-size:0.8rem;">← Back to Scenes</button>
+                <h2 style="color:var(--accent-primary);margin:0;">🏠 Locations</h2>
+            </div>
+
+            <div id="locations-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-weight:600;" id="locations-progress-title">Generating locations...</span>
+                    <span style="color:var(--accent-primary);font-weight:700;" id="locations-progress-pct">0%</span>
+                </div>
+                <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
+                    <div id="locations-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <div style="font-size:0.9rem;color:var(--text-secondary);">
+                    <span id="locations-count-label">3 locations</span> — generate locations for your story
+                </div>
+                <button class="btn btn-primary" onclick="generateLocations()" style="padding:8px 18px;">✨ Generate Locations</button>
+            </div>
+
+            <div id="locations-container" style="display:flex;flex-direction:column;gap:15px;"></div>
+
+            <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('scenes')" style="padding:8px 20px;">← Back to Scenes</button>
+                <button class="btn btn-primary" onclick="proceedToCharacters()" style="padding:8px 20px;">👤 Continue to Characters →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAGE: Image Prompts -->
+    <div class="page" id="page-image-prompts">
+        <div class="container">
+            <div class="workflow-nav">
+                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('selection')">⚙️ Selection</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('image-prompts')">🖼️ Image Prompts</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('characters')" style="padding:6px 14px;font-size:0.8rem;">← Back to Characters</button>
+                <h2 style="color:var(--accent-primary);margin:0;">🖼️ Image Prompts</h2>
+            </div>
+
+            <div id="imgprompts-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-weight:600;" id="imgprompts-progress-title">Generating image prompts...</span>
+                    <span style="color:var(--accent-primary);font-weight:700;" id="imgprompts-progress-pct">0%</span>
+                </div>
+                <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
+                    <div id="imgprompts-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <div style="font-size:0.9rem;color:var(--text-secondary);">
+                    <span id="imgprompts-count-label">image prompts from scenes</span> — generate T2I prompts for each scene
+                </div>
+                <button class="btn btn-primary" onclick="generateImagePrompts()" style="padding:8px 18px;">✨ Generate Image Prompts</button>
+            </div>
+
+            <div id="imgprompts-container" style="display:flex;flex-direction:column;gap:8px;"></div>
+
+            <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('characters')" style="padding:8px 20px;">← Back to Characters</button>
+                <button class="btn btn-primary" onclick="navigateToWorkflow('videos')" style="padding:8px 20px;">🎥 Continue to Videos →</button>
             </div>
         </div>
     </div>
@@ -770,9 +905,12 @@
 
         // === PAGE NAVIGATION ===
         function navigateToWorkflow(step) {
-            const built = { ideas: 1, selection: 1, characters: 1 };
+            const built = { ideas: 1, selection: 1, scenes: 1, locations: 1, characters: 1, 'image-prompts': 1 };
             if (built[step]) {
                 if (step === 'characters') renderCharacterCards();
+                if (step === 'scenes') renderScenes();
+                if (step === 'locations') renderLocations();
+                if (step === 'image-prompts') renderImagePrompts();
                 showPage(step);
             } else {
                 notify('Coming Soon', 'This module is not built yet', '🚧');
@@ -1710,13 +1848,17 @@
         let selectedVisualStyle = null;
         let selectedFilmAesthetic = null;
 
-        function proceedToCharacters() {
+        function proceedToScenes() {
             const chars = parseInt(document.getElementById('sel-characters').value) || 3;
             const locs = parseInt(document.getElementById('sel-locations').value) || 3;
-            const scenes = parseInt(document.getElementById('sel-scenes').value) || 5;
+            const scenes = parseInt(document.getElementById('sel-scenes').value) || 10;
             currentProject.settings = { style: selectedVisualStyle, aesthetic: selectedFilmAesthetic, characters: chars, locations: locs, scenes: scenes };
-            navigateToWorkflow('characters');
+            navigateToWorkflow('scenes');
         }
+
+        function proceedToLocations() { navigateToWorkflow('locations'); }
+        function proceedToCharacters() { navigateToWorkflow('characters'); }
+        function proceedToImagePrompts() { navigateToWorkflow('image-prompts'); }
 
         // === VISUAL STYLE MODAL ===
         async function loadVisualStyleGrid() {
@@ -2068,7 +2210,8 @@ Respond with raw JSON only, no markdown, no backticks.`;
             if (selectedVisualStyle) parts.push('Visual Style: ' + selectedVisualStyle);
             if (selectedFilmAesthetic) parts.push('Film Aesthetic: ' + selectedFilmAesthetic);
             if (selectedGenres.length) parts.push('Genres: ' + selectedGenres.join(', '));
-            return parts.join('\n') || 'General short film';
+            if (sceneData.length) parts.push('Scenes:\n' + sceneData.join('\n'));
+            return parts.join('\n\n') || 'General short film';
         }
 
         async function regenerateCharacter(index) {
@@ -2102,10 +2245,278 @@ Respond with raw JSON only, no markdown, no backticks.`;
             }
         }
 
-        function proceedToLocations() {
-            notify('Coming Soon', 'Locations module is not built yet', '🚧');
+        // === SCENES MODULE ===
+        let sceneData = [];
+
+        function renderScenes() {
+            const count = (currentProject?.settings?.scenes) || parseInt(document.getElementById('sel-scenes').value) || 10;
+            document.getElementById('scenes-count-label').textContent = count + ' scenes';
+            if (!sceneData.length) {
+                document.getElementById('scenes-container').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:20px;">Click "Generate Scenes" to create scenes from your selected idea.</div>';
+            } else {
+                document.getElementById('scenes-container').innerHTML = sceneData.map((s, i) =>
+                    `<div style="background:var(--bg-secondary);padding:12px;border-radius:8px;border-left:3px solid var(--accent-primary);font-size:0.9rem;">
+                        <strong style="color:var(--accent-primary);">#${i+1}</strong> ${s}
+                    </div>`
+                ).join('');
+            }
         }
-        document.querySelectorAll('.src-chk').forEach(cb => cb.addEventListener('change', updateIdeaInputs));
+
+        async function generateScenes() {
+            const count = (currentProject?.settings?.scenes) || parseInt(document.getElementById('sel-scenes').value) || 10;
+            const pb = document.getElementById('scenes-progress');
+            pb.style.display = 'block';
+
+            const context = buildModuleContext();
+
+            const prompt = `Generate exactly ${count} micro-scenes for a short film based on this concept:
+
+${context}
+
+Rules for each scene:
+- 1-2 lines max
+- Visual and specific
+- Include sensory detail (heat, dust, smell, sound)
+- Include micro-action (movement, opening, closing, adjusting)
+- Include emotional trigger (fear, excitement, bonding, tension)
+- Must be understandable WITHOUT dialogue
+
+Output ONLY the numbered scenes, one per line. No headings, no explanations.`;
+
+            try {
+                document.getElementById('scenes-progress-title').textContent = 'Generating scenes...';
+                document.getElementById('scenes-progress-bar').style.width = '30%';
+                document.getElementById('scenes-progress-pct').textContent = '30%';
+
+                const data = await generateFromLLM(prompt);
+
+                document.getElementById('scenes-progress-bar').style.width = '90%';
+                document.getElementById('scenes-progress-pct').textContent = '90%';
+
+                if (data.success) {
+                    sceneData = data.response.split('\n')
+                        .filter(l => l.trim() && /\d+[\.\)]/.test(l))
+                        .map(l => l.replace(/^\d+[\.\)]\s*/, '').trim())
+                        .slice(0, count);
+                    renderScenes();
+                }
+
+                document.getElementById('scenes-progress-bar').style.width = '100%';
+                document.getElementById('scenes-progress-pct').textContent = '100%';
+                document.getElementById('scenes-progress-title').textContent = '✅ Done!';
+                setTimeout(() => { pb.style.display = 'none'; }, 1000);
+            } catch(e) {
+                pb.style.display = 'none';
+                notify('Error', 'Failed to generate scenes');
+            }
+        }
+
+        // === LOCATIONS MODULE ===
+        let locationData = [];
+
+        function renderLocations() {
+            const count = (currentProject?.settings?.locations) || parseInt(document.getElementById('sel-locations').value) || 3;
+            document.getElementById('locations-count-label').textContent = count + ' locations';
+            const container = document.getElementById('locations-container');
+
+            while (locationData.length < count) {
+                locationData.push({ name: '', type: '', details: '', imagePrompt: '' });
+            }
+
+            container.innerHTML = Array.from({ length: count }, (_, i) => `
+                <div style="background:var(--bg-secondary);padding:16px;border-radius:10px;border-left:4px solid var(--accent-primary);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <h3 style="margin:0;font-size:1rem;color:var(--accent-primary);">Location ${i+1}</h3>
+                        <button class="btn btn-secondary" onclick="regenerateLocation(${i})" style="padding:4px 12px;font-size:0.75rem;">🔄 Regenerate</button>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div class="form-group">
+                            <label class="form-label">Name</label>
+                            <input type="text" class="form-input" id="loc-name-${i}" placeholder="e.g. The Bedroom" value="${locationData[i]?.name || ''}" oninput="locationData[${i}].name=this.value">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Type</label>
+                            <input type="text" class="form-input" id="loc-type-${i}" placeholder="e.g. bedroom, street, classroom" value="${locationData[i]?.type || ''}" oninput="locationData[${i}].type=this.value">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top:8px;">
+                        <label class="form-label">Details & Atmosphere</label>
+                        <textarea class="form-input" id="loc-details-${i}" rows="3" placeholder="Layout, objects, atmosphere, lighting..." style="resize:vertical;" oninput="locationData[${i}].details=this.value">${locationData[i]?.details || ''}</textarea>
+                    </div>
+                    <div class="form-group" style="margin-top:8px;">
+                        <label class="form-label">Image Prompt</label>
+                        <textarea class="form-input" id="loc-img-${i}" rows="2" placeholder="T2I prompt for this location" style="resize:vertical;" oninput="locationData[${i}].imagePrompt=this.value">${locationData[i]?.imagePrompt || ''}</textarea>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function generateLocations() {
+            const count = (currentProject?.settings?.locations) || parseInt(document.getElementById('sel-locations').value) || 3;
+            const pb = document.getElementById('locations-progress');
+            pb.style.display = 'block';
+
+            const context = buildModuleContext();
+
+            for (let i = 0; i < count; i++) {
+                const pct = Math.round(((i) / count) * 90);
+                document.getElementById('locations-progress-bar').style.width = pct + '%';
+                document.getElementById('locations-progress-pct').textContent = pct + '%';
+                document.getElementById('locations-progress-title').textContent = `Location ${i+1}/${count}...`;
+
+                const prompt = `Generate a location for a short film.
+
+Context: ${context}
+
+Location ${i+1} of ${count}:
+
+Return ONLY valid JSON with:
+- "name": short location name
+- "type": location type (bedroom, street, etc.)
+- "details": 2-3 sentence description of layout, objects, atmosphere, lighting
+- "imagePrompt": concise T2I prompt for this location
+
+Raw JSON only, no markdown.`;
+
+                try {
+                    const data = await generateFromLLM(prompt);
+                    if (data.success) {
+                        const text = data.response.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+                        const parsed = JSON.parse(text);
+                        locationData[i] = {
+                            name: parsed.name || '',
+                            type: parsed.type || '',
+                            details: parsed.details || '',
+                            imagePrompt: parsed.imagePrompt || ''
+                        };
+                    }
+                } catch(e) {}
+            }
+
+            document.getElementById('locations-progress-bar').style.width = '100%';
+            document.getElementById('locations-progress-pct').textContent = '100%';
+            document.getElementById('locations-progress-title').textContent = '✅ Done!';
+            setTimeout(() => { pb.style.display = 'none'; }, 1000);
+            renderLocations();
+        }
+
+        async function regenerateLocation(index) {
+            const context = buildModuleContext();
+            const prompt = `Generate a location for a short film.
+
+Context: ${context}
+
+Return ONLY valid JSON with:
+- "name": short location name
+- "type": location type
+- "details": 2-3 sentence description of layout, objects, atmosphere, lighting
+- "imagePrompt": concise T2I prompt
+
+Raw JSON only, no markdown.`;
+
+            try {
+                const data = await generateFromLLM(prompt);
+                if (data.success) {
+                    const text = data.response.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+                    const parsed = JSON.parse(text);
+                    locationData[index] = {
+                        name: parsed.name || locationData[index]?.name || '',
+                        type: parsed.type || locationData[index]?.type || '',
+                        details: parsed.details || locationData[index]?.details || '',
+                        imagePrompt: parsed.imagePrompt || locationData[index]?.imagePrompt || ''
+                    };
+                    renderLocations();
+                }
+            } catch(e) { notify('Error', 'Could not regenerate location'); }
+        }
+
+        // === IMAGE PROMPTS MODULE ===
+        let imagePromptData = [];
+
+        function renderImagePrompts() {
+            const container = document.getElementById('imgprompts-container');
+            if (!imagePromptData.length) {
+                container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:20px;">Click "Generate Image Prompts" to create T2I prompts for each scene.</div>';
+                return;
+            }
+            container.innerHTML = imagePromptData.map((ip, i) =>
+                `<div style="background:var(--bg-secondary);padding:12px;border-radius:8px;border-left:3px solid var(--accent-success);font-size:0.9rem;">
+                    <strong style="color:var(--accent-success);">Scene #${i+1}</strong>
+                    <div style="margin-top:6px;color:var(--text-secondary);font-size:0.85rem;white-space:pre-wrap;">${ip}</div>
+                </div>`
+            ).join('');
+        }
+
+        async function generateImagePrompts() {
+            if (!sceneData.length) {
+                notify('No Scenes', 'Generate scenes first in the Scenes module.');
+                return;
+            }
+            const pb = document.getElementById('imgprompts-progress');
+            pb.style.display = 'block';
+
+            const context = buildModuleContext();
+            const charsText = charData.filter(c => c.name).map(c => `${c.name}: ${c.description}`).join('\n');
+            const locsText = locationData.filter(l => l.name).map(l => `${l.name}: ${l.details}`).join('\n');
+
+            const totalBatches = Math.ceil(sceneData.length / 10);
+            imagePromptData = [];
+
+            for (let b = 0; b < totalBatches; b++) {
+                const batch = sceneData.slice(b * 10, (b + 1) * 10);
+                const pct = Math.round((b / totalBatches) * 90);
+                document.getElementById('imgprompts-progress-bar').style.width = pct + '%';
+                document.getElementById('imgprompts-progress-pct').textContent = pct + '%';
+                document.getElementById('imgprompts-progress-title').textContent = `Batch ${b+1}/${totalBatches}...`;
+
+                const scenesText = batch.map((s, i) => `Scene ${b*10 + i + 1}: ${s}`).join('\n');
+                const prompt = `Convert these scenes into detailed text-to-image prompts for a short film.
+
+Style Context: ${context}
+${charsText ? 'Characters:\n' + charsText : ''}
+${locsText ? 'Locations:\n' + locsText : ''}
+
+Scenes to convert:
+${scenesText}
+
+For each scene, output:
+Scene [number]:
+Characters Present:
+Image Prompt:
+
+The image prompt must include: exact location, time of day, character actions, objects, lighting, atmosphere, textures. ${selectedVisualStyle ? 'Style: ' + selectedVisualStyle : ''} ${selectedFilmAesthetic ? 'Aesthetic: ' + selectedFilmAesthetic : ''}
+
+Output all prompts in one block, separated by blank lines.`;
+
+                try {
+                    const data = await generateFromLLM(prompt);
+                    if (data.success) {
+                        const blocks = data.response.split(/(?=Scene \d+:)/);
+                        blocks.forEach(b => {
+                            const m = b.match(/Image Prompt:\s*([\s\S]+?)(?=Scene \d|$)/);
+                            if (m) imagePromptData.push(m[1].trim());
+                        });
+                    }
+                } catch(e) {}
+            }
+
+            document.getElementById('imgprompts-progress-bar').style.width = '100%';
+            document.getElementById('imgprompts-progress-pct').textContent = '100%';
+            document.getElementById('imgprompts-progress-title').textContent = '✅ Done!';
+            setTimeout(() => { pb.style.display = 'none'; }, 1000);
+            renderImagePrompts();
+        }
+
+        function buildModuleContext() {
+            const parts = [];
+            if (selectedIdea) parts.push('Concept: ' + selectedIdea);
+            if (selectedVisualStyle) parts.push('Visual Style: ' + selectedVisualStyle);
+            if (selectedFilmAesthetic) parts.push('Film Aesthetic: ' + selectedFilmAesthetic);
+            if (selectedGenres.length) parts.push('Genres: ' + selectedGenres.join(', '));
+            return parts.join('\n') || 'General short film';
+        }
+
+        // === INIT ===
         updateIdeaInputs();
         renderRecentProjects();
         loadGenreModalGrid();
