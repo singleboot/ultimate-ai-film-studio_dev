@@ -994,22 +994,15 @@
                 const res = await fetch('/api/genres');
                 const data = await res.json();
                 const genres = data.genres || [];
-                const defaultGenres = [
-                    {name:'Indian 90s Bollywood', color:'#e74c3c'}, {name:'Indian 80s Classic', color:'#e67e22'},
-                    {name:'Indian 2000s Modern', color:'#f1c40f'}, {name:'Indian Parallel Cinema', color:'#2ecc71'},
-                    {name:'Japanese 80s Anime', color:'#e91e63'}, {name:'Korean 2000s Drama', color:'#9b59b6'},
-                    {name:'Hong Kong Action', color:'#e74c3c'}, {name:'Chinese Period Epic', color:'#c0392b'},
-                    {name:'American 80s Nostalgia', color:'#3498db'}, {name:'American 90s Indie', color:'#1abc9c'},
-                    {name:'European Art House', color:'#9b59b6'}, {name:'British Period Drama', color:'#2c3e50'},
-                    {name:'Film Noir / Neo-Noir', color:'#34495e'}, {name:'Sci-Fi / Cyberpunk', color:'#00bcd4'},
-                    {name:'Horror / Thriller', color:'#e74c3c'}, {name:'Slice of Life', color:'#27ae60'}
-                ];
-                const allGenres = [...defaultGenres, ...genres];
-                grid.innerHTML = allGenres.map(g => {
+                if (genres.length === 0) {
+                    grid.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No genres yet. Add some in Settings → Genre Manager.</div>';
+                    return;
+                }
+                grid.innerHTML = genres.map(g => {
                     const isSelected = selectedGenres.includes(g.name);
                     const imgUrl = g.image ? '/api/genres/image/' + encodeURIComponent(g.image) : null;
                     return `<div class="genre-card${isSelected?' selected':''}" data-genre="${g.name}" onclick="selectGenreCard(this)">
-                        ${imgUrl ? `<img src="${imgUrl}" alt="${g.name}" onerror="this.style.display='none'">` : `<div style="height:90px;background:${g.color};display:flex;align-items:center;justify-content:center;font-size:1.5rem;">${g.name.charAt(0)}</div>`}
+                        ${imgUrl ? `<img src="${imgUrl}" alt="${g.name}" onerror="this.style.display='none'">` : `<div style="height:90px;background:#444;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">${g.name.charAt(0)}</div>`}
                         <div class="genre-label">${g.name}</div>
                     </div>`;
                 }).join('');
