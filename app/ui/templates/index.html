@@ -547,13 +547,17 @@
 
     <!-- Genre Selection Modal -->
     <div class="modal-overlay" id="genre-modal">
-        <div class="modal" style="max-width:650px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+        <div class="modal" style="max-width:90vw;width:90vw;height:85vh;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                 <h2 style="color:var(--accent-primary);margin:0;">🎭 Select Genres</h2>
                 <button class="btn btn-secondary" onclick="closeGenreModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
             </div>
-            <div id="genre-modal-grid" class="genre-sections" style="max-height:450px;overflow-y:auto;"></div>
-            <div class="modal-actions" style="margin-top:15px;">
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="text" class="form-input" id="genre-search-input" placeholder="Search genres..." oninput="filterGenreGrid()" style="flex:1;">
+                <button class="btn btn-secondary" onclick="clearGenreSelection()" style="padding:6px 14px;font-size:0.8rem;">Clear</button>
+            </div>
+            <div id="genre-modal-grid" class="genre-sections" style="max-height:calc(85vh - 140px);overflow-y:auto;"></div>
+            <div class="modal-actions" style="margin-top:10px;">
                 <button class="btn btn-primary" onclick="confirmGenreSelection()" style="flex:1">Done</button>
             </div>
         </div>
@@ -1064,6 +1068,27 @@
 
         function confirmGenreSelection() {
             closeGenreModal();
+        }
+
+        function clearGenreSelection() {
+            selectedGenres = [];
+            updateGenreLabel();
+            document.querySelectorAll('.genre-card.selected').forEach(c => c.classList.remove('selected'));
+        }
+
+        function filterGenreGrid() {
+            const q = document.getElementById('genre-search-input').value.toLowerCase().trim();
+            document.querySelectorAll('.genre-card').forEach(c => {
+                const name = c.dataset.genre.toLowerCase();
+                c.style.display = (!q || name.includes(q)) ? '' : 'none';
+            });
+            document.querySelectorAll('.genre-section-title').forEach(t => {
+                const grid = t.nextElementSibling;
+                if (grid && grid.classList.contains('genre-grid')) {
+                    const visible = [...grid.querySelectorAll('.genre-card')].some(c => c.style.display !== 'none');
+                    t.style.display = visible ? '' : 'none';
+                }
+            });
         }
 
         function selectGenreCard(el) {
