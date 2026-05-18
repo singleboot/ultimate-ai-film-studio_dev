@@ -195,11 +195,16 @@ async def check_project(path: str):
 @app.post("/api/projects")
 async def create_project(request: ProjectCreateRequest):
     """Create a new project."""
+    location = request.location
+    if location and location.strip():
+        location = location.strip()
+    else:
+        location = None
     result = project_manager.create_project(
         name=request.name,
         template_name=request.template_name,
         description=request.description,
-        location=request.location
+        location=location
     )
     return result
 

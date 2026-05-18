@@ -236,11 +236,8 @@
             </div>
             <div class="form-group">
                 <label class="form-label">Save Location</label>
-                <div class="input-row">
-                    <input type="text" class="form-input" id="project-path-input" placeholder="Select folder..." readonly>
-                    <button class="btn btn-secondary" onclick="browseFolder()">Browse</button>
-                </div>
-                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">All project files, prompts, and images will be saved here</div>
+                <input type="text" class="form-input" id="project-path-input" placeholder="D:\My Projects" value="">
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">Enter the folder path where project files will be saved. Leave empty to use app default.</div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-primary" onclick="createProject()" style="flex:1">Create Project</button>
@@ -254,11 +251,9 @@
         <div class="modal">
             <h2>📂 Open Project</h2>
             <div class="form-group">
-                <label class="form-label">Project Folder</label>
-                <div class="input-row">
-                    <input type="text" class="form-input" id="open-project-path" placeholder="Select project folder..." readonly>
-                    <button class="btn btn-secondary" onclick="browseProjectFolder()">Browse</button>
-                </div>
+                <label class="form-label">Project Path</label>
+                <input type="text" class="form-input" id="open-project-path" placeholder="D:\My Projects\MyFilm" oninput="checkProjectPath(this.value)">
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">Enter the full path to your project folder</div>
             </div>
             <div id="open-project-details" style="display:none;">
                 <div style="background: var(--bg-tertiary); padding: 15px; border-radius: 8px; margin: 10px 0;">
@@ -321,27 +316,13 @@
             document.getElementById('open-project-modal').classList.remove('active');
         }
 
-        function browseFolder() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.webkitdirectory = true;
-            input.onchange = (e) => {
-                if (e.target.files[0]) {
-                    const path = e.target.files[0].webkitRelativePath.split('/')[0];
-                    document.getElementById('project-path-input').value = path;
-                }
-            };
-            input.click();
-        }
-
-        function browseProjectFolder() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.webkitdirectory = true;
-            input.onchange = async (e) => {
-                if (!e.target.files[0]) return;
-                const path = e.target.files[0].webkitRelativePath.split('/')[0];
-                document.getElementById('open-project-path').value = path;
+        let checkTimeout;
+        function checkProjectPath(path) {
+            clearTimeout(checkTimeout);
+            document.getElementById('open-project-details').style.display = 'none';
+            document.getElementById('open-project-btn').style.display = 'none';
+            if (!path) return;
+            checkTimeout = setTimeout(async () => {
                 try {
                     const res = await fetch('/api/projects/check?path=' + encodeURIComponent(path));
                     const data = await res.json();
@@ -355,33 +336,32 @@
                         btn.dataset.path = path;
                     } else {
                         details.style.display = 'block';
-                        document.getElementById('open-project-name').textContent = 'Invalid project';
-                        document.getElementById('open-project-meta').textContent = 'No project.json found in this folder';
+                        document.getElementById('open-project-name').textContent = '❌ Not a valid project';
+                        document.getElementById('open-project-meta').textContent = 'No project.json found in this path';
                         btn.style.display = 'none';
                     }
                 } catch(e) {
-                    notify('Error', 'Could not read project details');
+                    console.log('Check error:', e);
                 }
-            };
-            input.click();
+            }, 500);
         }
 
         async function createProject() {
             const name = document.getElementById('project-name-input').value.trim();
             const path = document.getElementById('project-path-input').value.trim();
             if (!name) { notify('Project Name Required', 'Please enter a name for your project'); return; }
-            if (!path) { notify('Save Location Required', 'Please choose a folder to save your project'); return; }
             try {
                 const res = await fetch('/api/projects', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name, location: path})
+                    body: JSON.stringify({name, location: path || undefined})
                 });
                 const data = await res.json();
                 if (data.success) {
                     closeNewProject();
-                    addRecentProject(name, path);
-                    notify('🎉 Project Created', '"' + name + '" is ready. Continue to build your short film!', '✅');
+                    const savePath = data.project_path || path + '\\' + name;
+                    addRecentProject(name, savePath);
+                    notify('🎉 Project Created', '"' + name + '" is ready at ' + savePath, '✅');
                 } else {
                     notify('Failed to Create', data.error || data.message || 'Unknown error');
                 }
