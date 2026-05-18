@@ -1,8 +1,8 @@
 import os
 import json
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -407,6 +407,8 @@ async def test_llm_connection(data: dict):
 
 # Settings storage
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
+GENRES_DIR = Path(__file__).parent / "genres"
+GENRES_DIR.mkdir(exist_ok=True)
 
 def load_settings() -> dict:
     if SETTINGS_FILE.exists():
@@ -456,6 +458,68 @@ async def save_settings_endpoint(data: dict):
     """Save settings."""
     save_settings(data)
     return {"success": True}
+
+# Genre management
+@app.get("/api/genres")
+async def list_genres():
+    """List all custom genres."""
+    settings = load_settings()
+    genres = settings.get("genres", [])
+    for g in genres:
+        img_path = GENRES_DIR / g["image"]
+        g["has_image"] = img_path.exists()
+    return {"genres": genres}
+
+@app.post("/api/genres")
+async def add_genre(name: str = Form(...), file: UploadFile = File(None)):
+    """Add a custom genre with optional image."""
+    settings = load_settings()
+    genres = settings.get("genres", [])
+    
+    # Check for duplicate
+    for g in genres:
+        if g["name"].lower() == name.lower():
+            return {"success": False, "error": "Genre already exists"}
+    
+    image_filename = None
+    if file and file.filename:
+        ext = Path(file.filename).suffix or ".png"
+        safe_name = name.lower().replace(" ", "_").replace("/", "_")
+        image_filename = f"{safe_name}{ext}"
+        dest = GENRES_DIR / image_filename
+        content = await file.read()
+        dest.write_bytes(content)
+    
+    genre_entry = {"name": name, "image": image_filename} if image_filename else {"name": name, "image": None}
+    genres.append(genre_entry)
+    settings["genres"] = genres
+    save_settings(settings)
+    return {"success": True, "genre": genre_entry}
+
+@app.delete("/api/genres/{name}")
+async def delete_genre(name: str):
+    """Delete a custom genre."""
+    settings = load_settings()
+    genres = settings.get("genres", [])
+    for i, g in enumerate(genres):
+        if g["name"].lower() == name.lower():
+            if g.get("image"):
+                img_path = GENRES_DIR / g["image"]
+                if img_path.exists():
+                    img_path.unlink()
+            genres.pop(i)
+            settings["genres"] = genres
+            save_settings(settings)
+            return {"success": True}
+    return {"success": False, "error": "Genre not found"}
+
+@app.get("/api/genres/image/{filename}")
+async def get_genre_image(filename: str):
+    """Serve a genre image."""
+    img_path = GENRES_DIR / filename
+    if img_path.exists():
+        return FileResponse(str(img_path))
+    return JSONResponse(status_code=404, content={"error": "Image not found"})
 
 # Workflow management
 WORKFLOWS_DIR = Path(__file__).parent / "workflows"

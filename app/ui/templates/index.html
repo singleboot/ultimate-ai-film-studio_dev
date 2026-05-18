@@ -151,9 +151,18 @@
         .chk-label { display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 12px;background:var(--bg-tertiary);border-radius:6px;border:1px solid var(--border-color);font-size:0.9rem;transition:all 0.2s; }
         .chk-label:has(input:checked) { border-color:var(--accent-primary);background:rgba(99,102,241,0.1);color:var(--accent-primary); }
         .chk-label input { accent-color:var(--accent-primary); }
-        .input-section { display:none; background:var(--bg-secondary); padding:15px; border-radius:8px; margin-bottom:10px; }
-        .input-section.visible { display:block; }
-        .section-title-sm { font-size:0.9rem;font-weight:600;color:var(--text-primary);margin-bottom:8px; }
+        .input-section { display:none; }
+        .input-section.visible { display:block; margin-top:10px; }
+
+        .genre-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px; }
+        .genre-card {
+            background:var(--bg-tertiary);border:2px solid var(--border-color);border-radius:10px;
+            overflow:hidden;cursor:pointer;transition:all 0.2s;text-align:center;
+        }
+        .genre-card:hover { border-color:var(--accent-primary);transform:translateY(-2px); }
+        .genre-card.selected { border-color:var(--accent-primary);background:rgba(99,102,241,0.15); }
+        .genre-card img { width:100%;height:90px;object-fit:cover;display:block;background:var(--bg-secondary); }
+        .genre-card .genre-label { padding:8px 6px;font-size:0.8rem;color:var(--text-primary);font-weight:500; }
 
         .style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
         .style-card {
@@ -223,98 +232,55 @@
 
             <h2 style="color:var(--accent-primary);margin-bottom:20px;">📝 Story Hunter</h2>
 
-            <!-- Source Checkboxes -->
+            <!-- Genre Image Grid -->
             <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
-                <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);margin-bottom:10px;">🎯 Idea Sources</div>
-                <div style="display:flex;flex-wrap:wrap;gap:15px;">
-                    <label class="chk-label">
-                        <input type="checkbox" class="src-chk" value="genre" checked>
-                        <span>🎭 By Genre</span>
-                    </label>
-                    <label class="chk-label">
-                        <input type="checkbox" class="src-chk" value="era">
-                        <span>📅 By Era</span>
-                    </label>
-                    <label class="chk-label">
-                        <input type="checkbox" class="src-chk" value="custom">
-                        <span>✏️ Custom Prompt</span>
-                    </label>
-                    <label class="chk-label">
-                        <input type="checkbox" class="src-chk" value="web">
-                        <span>🌐 Story Hunter (Web)</span>
-                    </label>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);">🎭 Choose a Genre</div>
+                    <span id="genre-selected-label" style="font-size:0.85rem;color:var(--text-secondary);">None selected</span>
                 </div>
-            </div>
-
-            <!-- Genre Section -->
-            <div id="input-genre" class="input-section">
-                <div class="section-title-sm">🎭 Genre</div>
-                <select class="form-select" id="genre-select">
-                    <option value="">-- Select Genre --</option>
-                    <optgroup label="Indian Cinema">
-                        <option>Indian 90s Bollywood</option>
-                        <option>Indian 80s Classic</option>
-                        <option>Indian 2000s Modern</option>
-                        <option>Indian Parallel Cinema</option>
-                    </optgroup>
-                    <optgroup label="Asian Cinema">
-                        <option>Japanese 80s Anime</option>
-                        <option>Korean 2000s Drama</option>
-                        <option>Hong Kong Action</option>
-                        <option>Chinese Period Epic</option>
-                    </optgroup>
-                    <optgroup label="Western">
-                        <option>American 80s Nostalgia</option>
-                        <option>American 90s Indie</option>
-                        <option>European Art House</option>
-                        <option>British Period Drama</option>
-                    </optgroup>
-                    <optgroup label="Styles & Themes">
-                        <option>Film Noir / Neo-Noir</option>
-                        <option>Sci-Fi / Cyberpunk</option>
-                        <option>Horror / Thriller</option>
-                        <option>Slice of Life</option>
-                    </optgroup>
-                </select>
+                <div id="genre-grid" class="genre-grid"></div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;" id="genre-chips"></div>
             </div>
 
             <!-- Era Section -->
-            <div id="input-era" class="input-section">
-                <div class="section-title-sm">📅 Era</div>
-                <select class="form-select" id="era-select">
-                    <option value="">-- Select Decade --</option>
-                    <option>1950s - Post War</option>
-                    <option>1960s - Swinging Sixties</option>
-                    <option>1970s - Disco & Rebellion</option>
-                    <option>1980s - Neon & MTV</option>
-                    <option>1990s - Digital Dawn</option>
-                    <option>2000s - New Millennium</option>
-                    <option>2010s - Social Media Age</option>
-                    <option>2020s - AI & Beyond</option>
-                </select>
-                <input type="text" class="form-input" id="era-vibe" placeholder="Extra vibe (e.g., dark, nostalgic, action)" style="margin-top:8px;">
-            </div>
-
-            <!-- Custom Section -->
-            <div id="input-custom" class="input-section">
-                <div class="section-title-sm">✏️ Custom Prompt</div>
-                <textarea class="form-textarea" id="custom-prompt" rows="3" placeholder="e.g., A time-traveling chef from 1990s Mumbai opens a restaurant in Tokyo..."></textarea>
-                <select class="form-select" id="custom-length" style="margin-top:8px;">
-                    <option value="short">Short Film (2-5 min)</option>
-                    <option value="medium">Medium (5-10 min)</option>
-                    <option value="long">Long (10-20 min)</option>
-                </select>
-            </div>
-
-            <!-- Story Hunter (Web) Section -->
-            <div id="input-web" class="input-section">
-                <div class="section-title-sm">🌐 Story Hunter (Web Search)</div>
-                <div style="display:flex;gap:8px;">
-                    <input type="text" class="form-input" id="web-query" placeholder="e.g., trending short film themes 2025" style="flex:1">
+            <div style="background:var(--bg-secondary);padding:15px;border-radius:8px;margin-bottom:10px;">
+                <label class="chk-label" style="margin-bottom:8px;">
+                    <input type="checkbox" class="src-chk" value="era">
+                    <span>📅 Set in a Specific Era</span>
+                </label>
+                <div id="input-era" class="input-section">
+                    <input type="text" class="form-input" id="era-year" placeholder="e.g., 1990s, 1980s, Ancient Rome, Future 2100">
                 </div>
-                <div id="web-sources" style="margin-top:12px;display:none;">
-                    <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;">
-                        <div id="web-results" style="font-size:0.85rem;"></div>
+            </div>
+
+            <!-- Custom Prompt Section -->
+            <div style="background:var(--bg-secondary);padding:15px;border-radius:8px;margin-bottom:10px;">
+                <label class="chk-label" style="margin-bottom:8px;">
+                    <input type="checkbox" class="src-chk" value="custom">
+                    <span>✏️ Custom Prompt</span>
+                </label>
+                <div id="input-custom" class="input-section">
+                    <textarea class="form-textarea" id="custom-prompt" rows="3" placeholder="e.g., A time-traveling chef from 1990s Mumbai opens a restaurant in Tokyo..."></textarea>
+                    <select class="form-select" id="custom-length" style="margin-top:8px;">
+                        <option value="short">Short Film (2-5 min)</option>
+                        <option value="medium">Medium (5-10 min)</option>
+                        <option value="long">Long (10-20 min)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Story Hunter (Web) -->
+            <div style="background:var(--bg-secondary);padding:15px;border-radius:8px;margin-bottom:10px;">
+                <label class="chk-label" style="margin-bottom:8px;">
+                    <input type="checkbox" class="src-chk" value="web">
+                    <span>🌐 Story Hunter (Web Search)</span>
+                </label>
+                <div id="input-web" class="input-section">
+                    <input type="text" class="form-input" id="web-query" placeholder="e.g., trending short film themes 2025">
+                    <div id="web-sources" style="margin-top:12px;display:none;">
+                        <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;">
+                            <div id="web-results" style="font-size:0.85rem;"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -548,6 +514,24 @@
                         <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:6px;">Uploaded:</div>
                         <div id="workflow-list"></div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Genre Manager -->
+            <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🎭 Genre Manager</h3>
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <input type="text" class="form-input" id="genre-name-input" placeholder="Genre name" style="flex:1;">
+                    <button class="btn btn-secondary" onclick="document.getElementById('genre-image-upload').click()" style="padding:6px 12px;font-size:0.8rem;">📷 Choose Image</button>
+                    <button class="btn btn-primary" onclick="addCustomGenre()" style="padding:6px 12px;font-size:0.8rem;">+ Add</button>
+                </div>
+                <input type="file" id="genre-image-upload" accept="image/*" style="display:none">
+                <div id="genre-image-preview" style="display:none;margin-bottom:8px;">
+                    <img id="genre-preview-img" style="width:60px;height:60px;object-fit:cover;border-radius:6px;">
+                    <span id="genre-preview-name" style="font-size:0.8rem;color:var(--text-secondary);margin-left:8px;"></span>
+                </div>
+                <div id="custom-genres-list">
+                    <div style="font-size:0.8rem;color:var(--text-secondary);">Loading...</div>
                 </div>
             </div>
 
@@ -815,6 +799,8 @@
                         if (el && s.workflows[k]) el.value = s.workflows[k];
                     });
                 }
+                // Load custom genres
+                await loadCustomGenres();
             } catch(e) {}
         }
 
@@ -975,6 +961,7 @@
 
         // === IDEAS (Story Hunter) ===
         let ideasCancel = false;
+        let selectedGenres = [];
 
         function updateIdeaInputs() {
             document.querySelectorAll('.src-chk').forEach(cb => {
@@ -983,6 +970,64 @@
                     section.classList.toggle('visible', cb.checked);
                 }
             });
+        }
+
+        async function loadGenreGrid() {
+            const grid = document.getElementById('genre-grid');
+            try {
+                const res = await fetch('/api/genres');
+                const data = await res.json();
+                const genres = data.genres || [];
+                const defaultGenres = [
+                    {name:'Indian 90s Bollywood', color:'#e74c3c'}, {name:'Indian 80s Classic', color:'#e67e22'},
+                    {name:'Indian 2000s Modern', color:'#f1c40f'}, {name:'Indian Parallel Cinema', color:'#2ecc71'},
+                    {name:'Japanese 80s Anime', color:'#e91e63'}, {name:'Korean 2000s Drama', color:'#9b59b6'},
+                    {name:'Hong Kong Action', color:'#e74c3c'}, {name:'Chinese Period Epic', color:'#c0392b'},
+                    {name:'American 80s Nostalgia', color:'#3498db'}, {name:'American 90s Indie', color:'#1abc9c'},
+                    {name:'European Art House', color:'#9b59b6'}, {name:'British Period Drama', color:'#2c3e50'},
+                    {name:'Film Noir / Neo-Noir', color:'#34495e'}, {name:'Sci-Fi / Cyberpunk', color:'#00bcd4'},
+                    {name:'Horror / Thriller', color:'#e74c3c'}, {name:'Slice of Life', color:'#27ae60'}
+                ];
+                const allGenres = [...defaultGenres, ...genres];
+                grid.innerHTML = allGenres.map(g => {
+                    const isSelected = selectedGenres.includes(g.name);
+                    const imgUrl = g.image ? '/api/genres/image/' + encodeURIComponent(g.image) : null;
+                    return `<div class="genre-card${isSelected?' selected':''}" data-genre="${g.name}" onclick="selectGenreCard(this)">
+                        ${imgUrl ? `<img src="${imgUrl}" alt="${g.name}" onerror="this.style.display='none'">` : `<div style="height:90px;background:${g.color};display:flex;align-items:center;justify-content:center;font-size:1.5rem;">${g.name.charAt(0)}</div>`}
+                        <div class="genre-label">${g.name}</div>
+                    </div>`;
+                }).join('');
+            } catch(e) {
+                grid.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">Could not load genres</div>';
+            }
+        }
+
+        function selectGenreCard(el) {
+            const genre = el.dataset.genre;
+            const idx = selectedGenres.indexOf(genre);
+            if (idx >= 0) {
+                selectedGenres.splice(idx, 1);
+                el.classList.remove('selected');
+            } else {
+                selectedGenres.push(genre);
+                el.classList.add('selected');
+            }
+            updateGenreLabel();
+        }
+
+        function updateGenreLabel() {
+            const label = document.getElementById('genre-selected-label');
+            const chips = document.getElementById('genre-chips');
+            label.textContent = selectedGenres.length ? selectedGenres.join(', ') : 'None selected';
+            chips.innerHTML = selectedGenres.map(g => `<span style="background:var(--accent-primary);color:#fff;padding:4px 10px;border-radius:12px;font-size:0.8rem;">${g} <span onclick="removeGenreChip('${g}')" style="cursor:pointer;margin-left:4px;">✕</span></span>`).join('');
+        }
+
+        function removeGenreChip(genre) {
+            selectedGenres = selectedGenres.filter(g => g !== genre);
+            document.querySelectorAll('.genre-card').forEach(c => {
+                if (c.dataset.genre === genre) c.classList.remove('selected');
+            });
+            updateGenreLabel();
         }
 
         function cancelIdeas() {
@@ -1028,47 +1073,43 @@
 
         async function generateIdeas() {
             const checkedSources = Array.from(document.querySelectorAll('.src-chk:checked')).map(cb => cb.value);
-            if (checkedSources.length === 0) {
-                notify('No Sources', 'Select at least one idea source'); return;
+            if (checkedSources.length === 0 && selectedGenres.length === 0) {
+                notify('No Sources', 'Select a genre or check a source'); return;
             }
 
-            // Validate each selected source
-            let webResults = null;
-            for (const src of checkedSources) {
-                if (src === 'genre' && !document.getElementById('genre-select').value) {
-                    notify('Select a Genre', 'Please choose a genre'); return;
-                }
-                if (src === 'era' && !document.getElementById('era-select').value) {
-                    notify('Select a Decade', 'Please choose a decade'); return;
-                }
-                if (src === 'custom' && !document.getElementById('custom-prompt').value.trim()) {
-                    notify('Enter a Prompt', 'Please describe your concept'); return;
-                }
-                if (src === 'web') {
-                    const q = document.getElementById('web-query').value.trim();
-                    if (!q) { notify('Enter Search Term', 'Type what to search for'); return; }
-                }
+            // Validate
+            if (checkedSources.includes('custom') && !document.getElementById('custom-prompt').value.trim()) {
+                notify('Enter a Prompt', 'Please describe your concept'); return;
+            }
+            if (checkedSources.includes('web')) {
+                const q = document.getElementById('web-query').value.trim();
+                if (!q) { notify('Enter Search Term', 'Type what to search for'); return; }
             }
 
             showProgress('🔍 Gathering sources...', 'Preparing inputs');
 
-            // Build the context from all sources
+            // Build context
             let contextParts = [];
             let step = 0;
-            const totalSteps = checkedSources.includes('web') ? checkedSources.length + 1 : checkedSources.length;
+            const steps = [];
 
-            for (const src of checkedSources) {
+            if (selectedGenres.length) steps.push('genre');
+            if (checkedSources.includes('era')) steps.push('era');
+            if (checkedSources.includes('custom')) steps.push('custom');
+            if (checkedSources.includes('web')) steps.push('web');
+
+            const totalSteps = steps.includes('web') ? steps.length + 1 : steps.length;
+
+            for (const src of steps) {
                 if (ideasCancel) return;
                 step++;
                 setProgress((step / totalSteps) * 50, 'Processing ' + src + '...');
 
                 if (src === 'genre') {
-                    const g = document.getElementById('genre-select').value;
-                    contextParts.push(`**Genre:** ${g}`);
+                    contextParts.push(`**Genres:** ${selectedGenres.join(', ')}`);
                 } else if (src === 'era') {
-                    const e = document.getElementById('era-select').value;
-                    const v = document.getElementById('era-vibe').value.trim();
-                    contextParts.push(`**Era:** ${e}${v ? ' (Vibe: ' + v + ')' : ''}`);
+                    const year = document.getElementById('era-year').value.trim() || 'unspecified era';
+                    contextParts.push(`**Set in:** ${year}`);
                 } else if (src === 'custom') {
                     const p = document.getElementById('custom-prompt').value.trim();
                     const l = document.getElementById('custom-length').value;
@@ -1093,7 +1134,6 @@
 
                         const summary = results.map(r => r.title + ': ' + r.snippet).join('\n\n');
                         if (summary.trim()) {
-                            webResults = summary;
                             contextParts.push(`**Web Trends:**\n${summary}`);
                         }
                     } catch(e) {
@@ -1105,7 +1145,6 @@
             if (ideasCancel) return;
 
             const context = contextParts.join('\n\n');
-
             setProgress(55, '🧠 Generating ideas with LLM...', 'Crafting story concepts');
 
             try {
@@ -1168,6 +1207,88 @@
             renderIdeas();
         }
 
+        // === GENRE MANAGER (Settings) ===
+        let genreUploadFile = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('genre-image-upload').addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    genreUploadFile = file;
+                    const reader = new FileReader();
+                    reader.onload = function(ev) {
+                        document.getElementById('genre-preview-img').src = ev.target.result;
+                        document.getElementById('genre-image-preview').style.display = 'block';
+                        document.getElementById('genre-preview-name').textContent = file.name;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        });
+
+        async function loadCustomGenres() {
+            const list = document.getElementById('custom-genres-list');
+            try {
+                const res = await fetch('/api/genres');
+                const data = await res.json();
+                const genres = data.genres || [];
+                if (genres.length === 0) {
+                    list.innerHTML = '<div style="font-size:0.85rem;color:var(--text-secondary);">No custom genres yet</div>';
+                    return;
+                }
+                list.innerHTML = genres.map(g => `
+                    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-color);font-size:0.85rem;">
+                        ${g.image ? `<img src="/api/genres/image/${g.image}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;">` : '<div style="width:36px;height:36px;background:var(--bg-secondary);border-radius:4px;display:flex;align-items:center;justify-content:center;">🎭</div>'}
+                        <span style="flex:1;color:var(--text-primary);">${g.name}</span>
+                        <button class="btn btn-secondary" onclick="deleteCustomGenre('${g.name}')" style="padding:4px 8px;font-size:0.75rem;">✕</button>
+                    </div>
+                `).join('');
+            } catch(e) {
+                list.innerHTML = '<div style="font-size:0.85rem;color:var(--text-secondary);">Failed to load</div>';
+            }
+        }
+
+        async function addCustomGenre() {
+            const name = document.getElementById('genre-name-input').value.trim();
+            if (!name) { notify('Enter Name', 'Please enter a genre name'); return; }
+
+            const formData = new FormData();
+            formData.append('name', name);
+            if (genreUploadFile) {
+                formData.append('file', genreUploadFile);
+            }
+
+            try {
+                const res = await fetch('/api/genres', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('genre-name-input').value = '';
+                    document.getElementById('genre-image-upload').value = '';
+                    genreUploadFile = null;
+                    document.getElementById('genre-image-preview').style.display = 'none';
+                    await loadCustomGenres();
+                    await loadGenreGrid();
+                    notify('✅ Genre Added', name + ' added to your genres');
+                } else {
+                    notify('Error', data.error || 'Failed to add genre');
+                }
+            } catch(e) {
+                notify('Error', 'Could not add genre');
+            }
+        }
+
+        async function deleteCustomGenre(name) {
+            try {
+                const res = await fetch('/api/genres/' + encodeURIComponent(name), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    await loadCustomGenres();
+                    await loadGenreGrid();
+                    notify('Deleted', name + ' removed');
+                }
+            } catch(e) {}
+        }
+
         function goToSelection() {
             showPage('selection');
             resetSelectionStyles();
@@ -1202,6 +1323,7 @@
         document.querySelectorAll('.src-chk').forEach(cb => cb.addEventListener('change', updateIdeaInputs));
         updateIdeaInputs();
         renderRecentProjects();
+        loadGenreGrid();
         // Auto-connect LLM on start
         fetch('/api/settings').then(r => r.json()).then(s => {
             if (s.llm && s.llm.host && s.llm.model) {
