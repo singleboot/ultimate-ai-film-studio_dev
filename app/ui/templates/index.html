@@ -148,6 +148,13 @@
         .idea-title { font-size: 1.1rem; font-weight: 600; color: var(--accent-primary); margin-bottom: 8px; }
         .idea-text { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 10px; white-space: pre-wrap; }
 
+        .chk-label { display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 12px;background:var(--bg-tertiary);border-radius:6px;border:1px solid var(--border-color);font-size:0.9rem;transition:all 0.2s; }
+        .chk-label:has(input:checked) { border-color:var(--accent-primary);background:rgba(99,102,241,0.1);color:var(--accent-primary); }
+        .chk-label input { accent-color:var(--accent-primary); }
+        .input-section { display:none; background:var(--bg-secondary); padding:15px; border-radius:8px; margin-bottom:10px; }
+        .input-section.visible { display:block; }
+        .section-title-sm { font-size:0.9rem;font-weight:600;color:var(--text-primary);margin-bottom:8px; }
+
         .style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
         .style-card {
             background: var(--bg-tertiary); border: 2px solid var(--border-color); border-radius: 8px;
@@ -214,113 +221,121 @@
                 <span class="workflow-step">🎥 Videos</span>
             </div>
 
-            <h2 style="color:var(--accent-primary);margin-bottom:20px;">📝 Topic Ideas Generator</h2>
+            <h2 style="color:var(--accent-primary);margin-bottom:20px;">📝 Story Hunter</h2>
 
-            <div class="tabs">
-                <button class="tab active" onclick="switchIdeaTab('genre')">🎭 By Genre</button>
-                <button class="tab" onclick="switchIdeaTab('era')">📅 By Era</button>
-                <button class="tab" onclick="switchIdeaTab('custom')">✏️ Custom Prompt</button>
-                <button class="tab" onclick="switchIdeaTab('web')">🌐 Web Trends</button>
+            <!-- Source Checkboxes -->
+            <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
+                <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);margin-bottom:10px;">🎯 Idea Sources</div>
+                <div style="display:flex;flex-wrap:wrap;gap:15px;">
+                    <label class="chk-label">
+                        <input type="checkbox" class="src-chk" value="genre" checked>
+                        <span>🎭 By Genre</span>
+                    </label>
+                    <label class="chk-label">
+                        <input type="checkbox" class="src-chk" value="era">
+                        <span>📅 By Era</span>
+                    </label>
+                    <label class="chk-label">
+                        <input type="checkbox" class="src-chk" value="custom">
+                        <span>✏️ Custom Prompt</span>
+                    </label>
+                    <label class="chk-label">
+                        <input type="checkbox" class="src-chk" value="web">
+                        <span>🌐 Story Hunter (Web)</span>
+                    </label>
+                </div>
             </div>
 
-            <div id="tab-genre" class="tab-content active">
-                <div class="form-group">
-                    <label class="form-label">Choose a Genre</label>
-                    <select class="form-select" id="genre-select">
-                        <option value="">-- Select Genre --</option>
-                        <optgroup label="Indian Cinema">
-                            <option>Indian 90s Bollywood</option>
-                            <option>Indian 80s Classic</option>
-                            <option>Indian 2000s Modern</option>
-                            <option>Indian Parallel Cinema</option>
-                        </optgroup>
-                        <optgroup label="Asian Cinema">
-                            <option>Japanese 80s Anime</option>
-                            <option>Korean 2000s Drama</option>
-                            <option>Hong Kong Action</option>
-                            <option>Chinese Period Epic</option>
-                        </optgroup>
-                        <optgroup label="Western">
-                            <option>American 80s Nostalgia</option>
-                            <option>American 90s Indie</option>
-                            <option>European Art House</option>
-                            <option>British Period Drama</option>
-                        </optgroup>
-                        <optgroup label="Styles & Themes">
-                            <option>Film Noir / Neo-Noir</option>
-                            <option>Sci-Fi / Cyberpunk</option>
-                            <option>Horror / Thriller</option>
-                            <option>Slice of Life</option>
-                        </optgroup>
-                    </select>
-                </div>
-                <button class="btn btn-primary" onclick="generateFromGenre()">🚀 Generate 5 Ideas</button>
+            <!-- Genre Section -->
+            <div id="input-genre" class="input-section">
+                <div class="section-title-sm">🎭 Genre</div>
+                <select class="form-select" id="genre-select">
+                    <option value="">-- Select Genre --</option>
+                    <optgroup label="Indian Cinema">
+                        <option>Indian 90s Bollywood</option>
+                        <option>Indian 80s Classic</option>
+                        <option>Indian 2000s Modern</option>
+                        <option>Indian Parallel Cinema</option>
+                    </optgroup>
+                    <optgroup label="Asian Cinema">
+                        <option>Japanese 80s Anime</option>
+                        <option>Korean 2000s Drama</option>
+                        <option>Hong Kong Action</option>
+                        <option>Chinese Period Epic</option>
+                    </optgroup>
+                    <optgroup label="Western">
+                        <option>American 80s Nostalgia</option>
+                        <option>American 90s Indie</option>
+                        <option>European Art House</option>
+                        <option>British Period Drama</option>
+                    </optgroup>
+                    <optgroup label="Styles & Themes">
+                        <option>Film Noir / Neo-Noir</option>
+                        <option>Sci-Fi / Cyberpunk</option>
+                        <option>Horror / Thriller</option>
+                        <option>Slice of Life</option>
+                    </optgroup>
+                </select>
             </div>
 
-            <div id="tab-era" class="tab-content">
-                <div class="form-group">
-                    <label class="form-label">Select a Decade</label>
-                    <select class="form-select" id="era-select">
-                        <option value="">-- Select Decade --</option>
-                        <option>1950s - Post War</option>
-                        <option>1960s - Swinging Sixties</option>
-                        <option>1970s - Disco & Rebellion</option>
-                        <option>1980s - Neon & MTV</option>
-                        <option>1990s - Digital Dawn</option>
-                        <option>2000s - New Millennium</option>
-                        <option>2010s - Social Media Age</option>
-                        <option>2020s - AI & Beyond</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Extra Vibe (optional)</label>
-                    <input type="text" class="form-input" id="era-vibe" placeholder="e.g., dark, nostalgic, action, romance">
-                </div>
-                <button class="btn btn-primary" onclick="generateFromEra()">🚀 Generate 5 Ideas</button>
+            <!-- Era Section -->
+            <div id="input-era" class="input-section">
+                <div class="section-title-sm">📅 Era</div>
+                <select class="form-select" id="era-select">
+                    <option value="">-- Select Decade --</option>
+                    <option>1950s - Post War</option>
+                    <option>1960s - Swinging Sixties</option>
+                    <option>1970s - Disco & Rebellion</option>
+                    <option>1980s - Neon & MTV</option>
+                    <option>1990s - Digital Dawn</option>
+                    <option>2000s - New Millennium</option>
+                    <option>2010s - Social Media Age</option>
+                    <option>2020s - AI & Beyond</option>
+                </select>
+                <input type="text" class="form-input" id="era-vibe" placeholder="Extra vibe (e.g., dark, nostalgic, action)" style="margin-top:8px;">
             </div>
 
-            <div id="tab-custom" class="tab-content">
-                <div class="form-group">
-                    <label class="form-label">Describe Your Concept</label>
-                    <textarea class="form-textarea" id="custom-prompt" rows="4" placeholder="e.g., A time-traveling chef from 1990s Mumbai opens a restaurant in Tokyo..."></textarea>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Target Length</label>
-                    <select class="form-select" id="custom-length">
-                        <option value="short">Short Film (2-5 min)</option>
-                        <option value="medium">Medium (5-10 min)</option>
-                        <option value="long">Long (10-20 min)</option>
-                    </select>
-                </div>
-                <button class="btn btn-primary" onclick="generateFromCustom()">🚀 Generate Variations</button>
+            <!-- Custom Section -->
+            <div id="input-custom" class="input-section">
+                <div class="section-title-sm">✏️ Custom Prompt</div>
+                <textarea class="form-textarea" id="custom-prompt" rows="3" placeholder="e.g., A time-traveling chef from 1990s Mumbai opens a restaurant in Tokyo..."></textarea>
+                <select class="form-select" id="custom-length" style="margin-top:8px;">
+                    <option value="short">Short Film (2-5 min)</option>
+                    <option value="medium">Medium (5-10 min)</option>
+                    <option value="long">Long (10-20 min)</option>
+                </select>
             </div>
 
-            <div id="tab-web" class="tab-content">
-                <div class="form-group">
-                    <label class="form-label">Search Trending Topics</label>
-                    <div class="input-row">
-                        <input type="text" class="form-input" id="web-query" placeholder="e.g., trending short film themes 2025" style="flex:1">
-                        <button class="btn btn-primary" onclick="generateFromWeb()">🔍 Search</button>
-                    </div>
+            <!-- Story Hunter (Web) Section -->
+            <div id="input-web" class="input-section">
+                <div class="section-title-sm">🌐 Story Hunter (Web Search)</div>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" class="form-input" id="web-query" placeholder="e.g., trending short film themes 2025" style="flex:1">
                 </div>
-                <div id="web-sources" style="margin-top:15px;display:none;">
-                    <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;">
-                        <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:10px;">📰 Found these trends — generating ideas...</div>
+                <div id="web-sources" style="margin-top:12px;display:none;">
+                    <div style="background:var(--bg-tertiary);padding:12px;border-radius:6px;">
                         <div id="web-results" style="font-size:0.85rem;"></div>
                     </div>
                 </div>
             </div>
 
-            <!-- Status / Progress -->
-            <div id="ideas-status" style="margin:20px 0;display:none;">
-                <div style="display:flex;align-items:center;gap:12px;background:var(--bg-tertiary);padding:15px;border-radius:8px;border-left:4px solid var(--accent-primary);">
-                    <div class="spinner"></div>
-                    <div>
-                        <div style="font-weight:600;" id="ideas-status-title">Generating...</div>
-                        <div style="font-size:0.85rem;color:var(--text-secondary);" id="ideas-status-sub">This may take 30-60 seconds</div>
+            <!-- Progress Bar -->
+            <div id="ideas-progress" style="margin:20px 0;display:none;">
+                <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;border-left:4px solid var(--accent-primary);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <div>
+                            <div style="font-weight:600;" id="progress-title">Generating...</div>
+                            <div style="font-size:0.85rem;color:var(--text-secondary);" id="progress-sub">Preparing sources</div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="cancelIdeas()" style="padding:6px 14px;font-size:0.8rem;">✕ Cancel</button>
+                    </div>
+                    <div style="width:100%;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;">
+                        <div id="progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
                     </div>
                 </div>
             </div>
+
+            <button class="btn btn-primary" onclick="generateIdeas()" style="margin-top:10px;width:100%;">🚀 Generate Ideas</button>
 
             <!-- Generated Ideas -->
             <div id="ideas-container" style="margin-top:20px;"></div>
@@ -958,20 +973,40 @@
             };
         }
 
-        function switchIdeaTab(tab) {
-            document.querySelectorAll('#page-ideas .tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('#page-ideas .tab-content').forEach(c => c.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById('tab-' + tab).classList.add('active');
+        // === IDEAS (Story Hunter) ===
+        let ideasCancel = false;
+
+        function updateIdeaInputs() {
+            document.querySelectorAll('.src-chk').forEach(cb => {
+                const section = document.getElementById('input-' + cb.value);
+                if (section) {
+                    section.classList.toggle('visible', cb.checked);
+                }
+            });
         }
 
-        function showIdeasStatus(title, sub) {
-            document.getElementById('ideas-status').style.display = 'block';
-            document.getElementById('ideas-status-title').textContent = title;
-            document.getElementById('ideas-status-sub').textContent = sub || 'This may take 30-60 seconds';
+        function cancelIdeas() {
+            ideasCancel = true;
+            hideProgress();
+            notify('Cancelled', 'Idea generation cancelled', '⚠️');
         }
-        function hideIdeasStatus() {
-            document.getElementById('ideas-status').style.display = 'none';
+
+        function showProgress(title, sub) {
+            document.getElementById('ideas-progress').style.display = 'block';
+            document.getElementById('progress-title').textContent = title;
+            document.getElementById('progress-sub').textContent = sub || '';
+            document.getElementById('progress-bar').style.width = '0%';
+            ideasCancel = false;
+        }
+
+        function setProgress(pct, title, sub) {
+            document.getElementById('progress-bar').style.width = pct + '%';
+            if (title) document.getElementById('progress-title').textContent = title;
+            if (sub) document.getElementById('progress-sub').textContent = sub;
+        }
+
+        function hideProgress() {
+            document.getElementById('ideas-progress').style.display = 'none';
         }
 
         async function generateFromLLM(prompt) {
@@ -991,135 +1026,120 @@
             return text.split('---').filter(s => s.trim()).slice(0, 5);
         }
 
-        async function generateFromGenre() {
-            const genre = document.getElementById('genre-select').value;
-            if (!genre) { notify('Select a Genre', 'Please choose a genre first'); return; }
-            showIdeasStatus('🎭 Generating ideas in ' + genre + '...', 'Crafting 5 unique story concepts');
+        async function generateIdeas() {
+            const checkedSources = Array.from(document.querySelectorAll('.src-chk:checked')).map(cb => cb.value);
+            if (checkedSources.length === 0) {
+                notify('No Sources', 'Select at least one idea source'); return;
+            }
+
+            // Validate each selected source
+            let webResults = null;
+            for (const src of checkedSources) {
+                if (src === 'genre' && !document.getElementById('genre-select').value) {
+                    notify('Select a Genre', 'Please choose a genre'); return;
+                }
+                if (src === 'era' && !document.getElementById('era-select').value) {
+                    notify('Select a Decade', 'Please choose a decade'); return;
+                }
+                if (src === 'custom' && !document.getElementById('custom-prompt').value.trim()) {
+                    notify('Enter a Prompt', 'Please describe your concept'); return;
+                }
+                if (src === 'web') {
+                    const q = document.getElementById('web-query').value.trim();
+                    if (!q) { notify('Enter Search Term', 'Type what to search for'); return; }
+                }
+            }
+
+            showProgress('🔍 Gathering sources...', 'Preparing inputs');
+
+            // Build the context from all sources
+            let contextParts = [];
+            let step = 0;
+            const totalSteps = checkedSources.includes('web') ? checkedSources.length + 1 : checkedSources.length;
+
+            for (const src of checkedSources) {
+                if (ideasCancel) return;
+                step++;
+                setProgress((step / totalSteps) * 50, 'Processing ' + src + '...');
+
+                if (src === 'genre') {
+                    const g = document.getElementById('genre-select').value;
+                    contextParts.push(`**Genre:** ${g}`);
+                } else if (src === 'era') {
+                    const e = document.getElementById('era-select').value;
+                    const v = document.getElementById('era-vibe').value.trim();
+                    contextParts.push(`**Era:** ${e}${v ? ' (Vibe: ' + v + ')' : ''}`);
+                } else if (src === 'custom') {
+                    const p = document.getElementById('custom-prompt').value.trim();
+                    const l = document.getElementById('custom-length').value;
+                    contextParts.push(`**Custom Concept:** ${p} (Target: ${l} runtime)`);
+                } else if (src === 'web') {
+                    setProgress((step / totalSteps) * 50, '🌐 Searching the web...');
+                    try {
+                        const q = document.getElementById('web-query').value.trim();
+                        const searchRes = await fetch('/api/websearch?q=' + encodeURIComponent(q));
+                        const searchData = await searchRes.json();
+                        const results = searchData.results || [];
+
+                        const resultsDiv = document.getElementById('web-results');
+                        const sourcesDiv = document.getElementById('web-sources');
+                        sourcesDiv.style.display = 'block';
+                        resultsDiv.innerHTML = results.map(r =>
+                            `<div style="margin-bottom:6px;padding:6px;background:var(--bg-secondary);border-radius:4px;">
+                                <strong>${r.title}</strong><br>
+                                <span style="color:var(--text-secondary);font-size:0.8rem;">${r.snippet}</span>
+                            </div>`
+                        ).join('') || '<div style="color:var(--text-secondary);">No results found</div>';
+
+                        const summary = results.map(r => r.title + ': ' + r.snippet).join('\n\n');
+                        if (summary.trim()) {
+                            webResults = summary;
+                            contextParts.push(`**Web Trends:**\n${summary}`);
+                        }
+                    } catch(e) {
+                        contextParts.push('**Web Trends:** (search failed)');
+                    }
+                }
+            }
+
+            if (ideasCancel) return;
+
+            const context = contextParts.join('\n\n');
+
+            setProgress(55, '🧠 Generating ideas with LLM...', 'Crafting story concepts');
+
             try {
                 const data = await generateFromLLM(
-                    `You are a professional film producer. Create 5 compelling short film concepts in the genre "${genre}".
+                    `You are a professional film producer. Based on the following sources, create 5 compelling short film concepts.
 
-Each concept must include:
-- **Title:** (memorable, emotional)
-- **Logline:** (one sentence hook)
-- **Setting:** (specific time and place)
-- **Main Character:** (brief description)
-- **Conflict:** (the central tension)
-- **Visual Hook:** (one striking image from this film)
+    Sources:
+    ${context}
 
-Make each concept feel authentic to the genre's style and era.
+    For each concept include:
+    - **Title:** (memorable, emotional)
+    - **Logline:** (one sentence hook)
+    - **Setting:** (specific time and place)
+    - **Main Character:** (brief description)
+    - **Conflict:** (the central tension)
+    - **Visual Hook:** (one striking image from this film)
 
-Separate each concept with "---".`
+    Make each concept feel cohesive and well-rounded.
+    Separate each concept with "---".`
                 );
-                hideIdeasStatus();
+
+                if (ideasCancel) return;
+                hideProgress();
+
                 if (data.success) {
                     topicIdeas = parseIdeas(data.response);
                     renderIdeas();
+                    notify('✅ Ideas Generated', `${topicIdeas.length} concepts ready`, '✅');
                 } else {
                     notify('Generation Failed', data.message || 'Check LLM connection in Settings');
                 }
-            } catch(e) { hideIdeasStatus(); notify('Error', e.message); }
-        }
-
-        async function generateFromEra() {
-            const era = document.getElementById('era-select').value;
-            if (!era) { notify('Select a Decade', 'Please choose a decade first'); return; }
-            const vibe = document.getElementById('era-vibe').value.trim();
-            showIdeasStatus('📅 Generating ideas for the ' + era + '...', 'Researching era-specific themes and culture');
-            try {
-                const data = await generateFromLLM(
-                    `You are a time-traveling filmmaker. Create 5 short film concepts set in the "${era}"${vibe ? ' with a ' + vibe + ' vibe' : ''}.
-
-Each concept must include:
-- **Title:** (era-appropriate)
-- **Logline:** (one sentence)
-- **Setting:** (specific location, year)
-- **Characters:** (who they are)
-- **Authentic Detail:** (one era-specific element like music, fashion, technology)
-- **Conflict:**
-
-Make every detail feel authentic to the time period.
-
-Separate each concept with "---".`
-                );
-                hideIdeasStatus();
-                if (data.success) {
-                    topicIdeas = parseIdeas(data.response);
-                    renderIdeas();
-                } else { notify('Failed', data.message); }
-            } catch(e) { hideIdeasStatus(); notify('Error', e.message); }
-        }
-
-        async function generateFromCustom() {
-            const prompt = document.getElementById('custom-prompt').value.trim();
-            if (!prompt) { notify('Describe Your Idea', 'Enter a concept or theme to work from'); return; }
-            const length = document.getElementById('custom-length').value;
-            showIdeasStatus('✏️ Creating variations on your idea...', 'Exploring different angles and approaches');
-            try {
-                const data = await generateFromLLM(
-                    `You are a creative writing partner. Based on this concept: "${prompt}"
-
-Create 5 different short film variations suitable for a ${length} runtime.
-
-For each variation:
-- **Title:** (unique angle)
-- **Logline:** 
-- **Differentiator:** (what makes this version unique)
-- **Tone:** (dark, comedic, dramatic, etc.)
-- **Key Scene:** (one powerful moment)
-
-Each variation should feel distinct from the others.
-
-Separate each variation with "---".`
-                );
-                hideIdeasStatus();
-                if (data.success) {
-                    topicIdeas = parseIdeas(data.response);
-                    renderIdeas();
-                } else { notify('Failed', data.message); }
-            } catch(e) { hideIdeasStatus(); notify('Error', e.message); }
-        }
-
-        async function generateFromWeb() {
-            const q = document.getElementById('web-query').value.trim();
-            if (!q) { notify('Enter a Search Term', 'Type what you want to search for'); return; }
-            showIdeasStatus('🌐 Searching the web for trends...', 'Fetching latest topics and news');
-            try {
-                const searchRes = await fetch('/api/websearch?q=' + encodeURIComponent(q));
-                const searchData = await searchRes.json();
-                const results = searchData.results || [];
-                
-                const sourcesDiv = document.getElementById('web-sources');
-                const resultsDiv = document.getElementById('web-results');
-                sourcesDiv.style.display = 'block';
-                resultsDiv.innerHTML = results.map(r => 
-                    `<div style="margin-bottom:6px;padding:6px;background:var(--bg-secondary);border-radius:4px;">
-                        <strong>${r.title}</strong><br>
-                        <span style="color:var(--text-secondary);font-size:0.8rem;">${r.snippet}</span>
-                    </div>`
-                ).join('') || '<div style="color:var(--text-secondary);">No results found</div>';
-                
-                const summary = results.map(r => r.title + ': ' + r.snippet).join('\n\n');
-                showIdeasStatus('💡 Generating ideas from web trends...', 'LLM is processing search results');
-                
-                const data = await generateFromLLM(
-                    `You are a trend analyst and filmmaker. Based on these current trends and topics:\n\n${summary}\n\nCreate 5 short film concepts that capitalize on these trends.
-
-For each:
-- **Title:** (trend-aware)
-- **Why Now:** (why this topic is relevant)
-- **Logline:**
-- **Target Audience:** (who will connect with this)
-- **Viral Hook:** (what makes it shareable)
-
-Separate each concept with "---".`
-                );
-                hideIdeasStatus();
-                if (data.success) {
-                    topicIdeas = parseIdeas(data.response);
-                    renderIdeas();
-                } else { notify('Failed', data.message); }
-            } catch(e) { hideIdeasStatus(); notify('Error', e.message); }
+            } catch(e) {
+                if (!ideasCancel) { hideProgress(); notify('Error', e.message); }
+            }
         }
 
         function renderIdeas() {
@@ -1179,7 +1199,21 @@ Separate each concept with "---".`
         }
 
         // === INIT ===
+        document.querySelectorAll('.src-chk').forEach(cb => cb.addEventListener('change', updateIdeaInputs));
+        updateIdeaInputs();
         renderRecentProjects();
+        // Auto-connect LLM on start
+        fetch('/api/settings').then(r => r.json()).then(s => {
+            if (s.llm && s.llm.host && s.llm.model) {
+                document.getElementById('llm-provider').value = s.llm.provider || 'ollama';
+                document.getElementById('llm-host').value = s.llm.host;
+                document.getElementById('llm-apikey').value = s.llm.apiKey || '';
+                loadLLMModels().then(() => {
+                    document.getElementById('llm-model').value = s.llm.model;
+                    onLLMProviderChange();
+                });
+            }
+        }).catch(() => {});
     </script>
 </body>
 </html>
