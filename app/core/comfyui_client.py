@@ -138,6 +138,16 @@ class ComfyUIClient:
             history = self.get_history(prompt_id)
             if history and prompt_id in history:
                 prompt_data = history[prompt_id]
+                if "outputs" in prompt_data and prompt_data["outputs"]:
+                    return prompt_data["outputs"]
+                # Check for error messages in status
+                if "status" in prompt_data:
+                    status = prompt_data["status"]
+                    if "messages" in status:
+                        for msg_type, msg_data in status["messages"]:
+                            if msg_type == "execution_error" or msg_type == "error":
+                                return {"_error": str(msg_data)}
+                # No outputs and no pending - might be done with error
                 if "outputs" in prompt_data:
                     return prompt_data["outputs"]
             time.sleep(2)
@@ -383,7 +393,7 @@ class ComfyUIClient:
             img_data = base64.b64decode(input_image)
             upload_url = f"{self.host}/upload/image"
             files = {'image': ('input_image.png', img_data, 'image/png')}
-            requests.post(upload_url, files=files, timeout=30)
+            resp = requests.post(upload_url, files=files, timeout=30)
         except Exception as e:
             return {"success": False, "error": f"Failed to upload image: {str(e)}"}
         
@@ -393,7 +403,14 @@ class ComfyUIClient:
         
         output = self.get_output(prompt_id, timeout=300)
         if not output:
-            return {"success": False, "error": "Generation timeout - this model may not support image-to-image"}
+            return {"success": False, "error": "Generation timeout - this model may not support image input. Use Text-to-Image instead."}
+        
+        # Check for ComfyUI error in output
+        if "_error" in output:
+            error_detail = str(output["_error"])
+            if "does not support image" in error_detail.lower():
+                return {"success": False, "error": "Cannot read reference image - this model does not support image input. Please use Text-to-Image or switch to an image-capable model."}
+            return {"success": False, "error": f"ComfyUI error: {error_detail}"}
         
         for node_id, node_output in output.items():
             if "images" in node_output:
@@ -401,7 +418,7 @@ class ComfyUIClient:
                 if images:
                     return {"success": True, "filename": images[0].get("filename")}
         
-        return {"success": False, "error": "No output - this model does not support image input. Use Text-to-Image instead."}
+        return {"success": False, "error": "No output generated - this model does not support image input. Use Text-to-Image instead."}
 
     def _create_video_workflow(self, prompt: str, model: str, input_image: str = None, width: int = 1280, height: int = 720, frames: int = 81, fps: int = 24, **kwargs) -> Dict:
         """Create a basic video generation workflow."""
