@@ -19,6 +19,14 @@ except ImportError:
 
 app = FastAPI(title="Ultimate AI Film Studio")
 
+# Global exception handler - always return JSON
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "message": str(exc) if str(exc) else "Internal server error"}
+    )
+
 base_dir = Path(__file__).parent
 static_dir = base_dir / "ui" / "static"
 templates_dir = base_dir / "ui" / "templates"
@@ -176,20 +184,25 @@ async def get_projects():
 @app.get("/api/projects/check")
 async def check_project(path: str):
     """Check if a path contains a valid project."""
-    project_path = Path(path)
-    project_file = project_path / "project.json"
-    if project_file.exists():
-        with open(project_file, 'r') as f:
-            data = json.load(f)
-        return {"exists": True, "name": data.get("name", "Unknown"), "info": f"Created: {data.get('created_at', 'Unknown')}"}
-    # Also check if path contains name/project.json
-    for sub in project_path.iterdir():
-        if sub.is_dir():
-            pf = sub / "project.json"
-            if pf.exists():
-                with open(pf, 'r') as f:
-                    data = json.load(f)
-                return {"exists": True, "name": data.get("name", sub.name), "info": f"Path: {sub}"}
+    try:
+        project_path = Path(path)
+        if not project_path.exists():
+            return {"exists": False}
+        project_file = project_path / "project.json"
+        if project_file.exists():
+            with open(project_file, 'r') as f:
+                data = json.load(f)
+            return {"exists": True, "name": data.get("name", "Unknown"), "info": f"Created: {data.get('created_at', 'Unknown')}"}
+        # Also check if path contains name/project.json
+        for sub in project_path.iterdir():
+            if sub.is_dir():
+                pf = sub / "project.json"
+                if pf.exists():
+                    with open(pf, 'r') as f:
+                        data = json.load(f)
+                    return {"exists": True, "name": data.get("name", sub.name), "info": f"Path: {sub}"}
+    except Exception:
+        pass
     return {"exists": False}
 
 @app.post("/api/projects")
@@ -409,6 +422,7 @@ async def web_search(q: str, num: int = 5):
         headers = {'User-Agent': 'Mozilla/5.0'}
         url = f"https://duckduckgo.com/html/?q={q}"
         resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
         
         soup = BeautifulSoup(resp.text, 'html.parser')
         results = []
@@ -423,6 +437,8 @@ async def web_search(q: str, num: int = 5):
                 })
         
         return {'results': results}
+    except ImportError:
+        return {'results': [], 'error': 'BeautifulSoup4 not installed. Run: pip install beautifulsoup4'}
     except Exception as e:
         return {'results': [], 'error': str(e)}
 
