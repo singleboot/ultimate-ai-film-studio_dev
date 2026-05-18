@@ -13,5 +13,442 @@
     "i2i": "",
     "t2v": "",
     "i2v": ""
-  }
+  },
+  "genres": [
+    {
+      "name": "Action",
+      "image": "action.jpg",
+      "category": "Action"
+    },
+    {
+      "name": "Adventure",
+      "image": "adventure.jpg",
+      "category": "Adventure"
+    },
+    {
+      "name": "Animation",
+      "image": "animation.jpg",
+      "category": "Animation"
+    },
+    {
+      "name": "Biographical",
+      "image": "biographical.jpg",
+      "category": "Biopic/Drama"
+    },
+    {
+      "name": "Comedy",
+      "image": "comedy.jpg",
+      "category": "Comedy"
+    },
+    {
+      "name": "Crime",
+      "image": "crime.jpg",
+      "category": "Crime/Mystery"
+    },
+    {
+      "name": "Documentary",
+      "image": "documentary.jpg",
+      "category": "Documentary"
+    },
+    {
+      "name": "Drama",
+      "image": "drama.jpg",
+      "category": "Drama"
+    },
+    {
+      "name": "Family",
+      "image": "family.jpg",
+      "category": "Drama"
+    },
+    {
+      "name": "Fantasy",
+      "image": "fantasy.jpg",
+      "category": "Fantasy"
+    },
+    {
+      "name": "Film Noir",
+      "image": "film_noir.jpg",
+      "category": "Noir"
+    },
+    {
+      "name": "History",
+      "image": "history.jpg",
+      "category": "Historical"
+    },
+    {
+      "name": "Horror",
+      "image": "horror.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Musical",
+      "image": "musical.jpg",
+      "category": "Musical"
+    },
+    {
+      "name": "Mystery",
+      "image": "mystery.jpg",
+      "category": "Crime/Mystery"
+    },
+    {
+      "name": "Sci Fi",
+      "image": "sci_fi.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Thriller",
+      "image": "thriller.jpg",
+      "category": "Thriller"
+    },
+    {
+      "name": "War",
+      "image": "war.jpg",
+      "category": "War"
+    },
+    {
+      "name": "Western",
+      "image": "western.jpg",
+      "category": "Western"
+    },
+    {
+      "name": "Cyberpunk",
+      "image": "cyberpunk.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Steampunk",
+      "image": "steampunk.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Post Apocalyptic",
+      "image": "post_apocalyptic.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Space Opera",
+      "image": "space_opera.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Zombie",
+      "image": "zombie.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Slasher",
+      "image": "slasher.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Psychological Horror",
+      "image": "psychological_horror.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Body Horror",
+      "image": "body_horror.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Found Footage",
+      "image": "found_footage.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Giallo",
+      "image": "giallo.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Dark Comedy",
+      "image": "dark_comedy.jpg",
+      "category": "Comedy"
+    },
+    {
+      "name": "Slapstick",
+      "image": "slapstick.jpg",
+      "category": "Comedy"
+    },
+    {
+      "name": "Mockumentary",
+      "image": "mockumentary.jpg",
+      "category": "Comedy"
+    },
+    {
+      "name": "Melodrama",
+      "image": "melodrama.jpg",
+      "category": "Drama"
+    },
+    {
+      "name": "Period Piece",
+      "image": "period_piece.jpg",
+      "category": "Historical"
+    },
+    {
+      "name": "Legal Drama",
+      "image": "legal_drama.jpg",
+      "category": "Drama"
+    },
+    {
+      "name": "Medical Drama",
+      "image": "medical_drama.jpg",
+      "category": "Drama"
+    },
+    {
+      "name": "Political Thriller",
+      "image": "political_thriller.jpg",
+      "category": "Thriller"
+    },
+    {
+      "name": "Psychological Thriller",
+      "image": "psychological_thriller.jpg",
+      "category": "Thriller"
+    },
+    {
+      "name": "Techno Thriller",
+      "image": "techno_thriller.jpg",
+      "category": "Thriller"
+    },
+    {
+      "name": "Heist",
+      "image": "heist.jpg",
+      "category": "Crime/Mystery"
+    },
+    {
+      "name": "Martial Arts",
+      "image": "martial_arts.jpg",
+      "category": "Action"
+    },
+    {
+      "name": "Superhero",
+      "image": "superhero.jpg",
+      "category": "Action"
+    },
+    {
+      "name": "Epic",
+      "image": "epic.jpg",
+      "category": "Action"
+    },
+    {
+      "name": "Experimental",
+      "image": "experimental.jpg",
+      "category": "Experimental"
+    },
+    {
+      "name": "Surrealist",
+      "image": "surrealist.jpg",
+      "category": "Experimental"
+    },
+    {
+      "name": "Sci Fi Horror",
+      "image": "sci_fi_horror.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Comedy Horror",
+      "image": "comedy_horror.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Action Comedy",
+      "image": "action_comedy.jpg",
+      "category": "Comedy"
+    },
+    {
+      "name": "Sci Fi Western",
+      "image": "sci_fi_western.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Cyberpunk Noir",
+      "image": "cyberpunk_noir.jpg",
+      "category": "Noir"
+    },
+    {
+      "name": "Historical Fantasy",
+      "image": "historical_fantasy.jpg",
+      "category": "Fantasy"
+    },
+    {
+      "name": "Space Western",
+      "image": "space_western.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Comic Fantasy",
+      "image": "comic_fantasy.jpg",
+      "category": "Fantasy"
+    },
+    {
+      "name": "Steampunk Fantasy",
+      "image": "steampunk_fantasy.jpg",
+      "category": "Fantasy"
+    },
+    {
+      "name": "Biographical Drama",
+      "image": "biographical_drama.jpg",
+      "category": "Biopic/Drama"
+    },
+    {
+      "name": "Tech Noir",
+      "image": "tech_noir.jpg",
+      "category": "Noir"
+    },
+    {
+      "name": "Nordic Noir",
+      "image": "nordic_noir.jpg",
+      "category": "Noir"
+    },
+    {
+      "name": "Neo Noir",
+      "image": "neo_noir.jpg",
+      "category": "Noir"
+    },
+    {
+      "name": "Splatstick",
+      "image": "splatstick.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Solarpunk",
+      "image": "solarpunk.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Biopunk",
+      "image": "biopunk.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Cli Fi",
+      "image": "cli_fi.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Weird West",
+      "image": "weird_west.jpg",
+      "category": "Western"
+    },
+    {
+      "name": "Afrofuturism",
+      "image": "afrofuturism.jpg",
+      "category": "Sci-Fi"
+    },
+    {
+      "name": "Chop Socky",
+      "image": "chop_socky.jpg",
+      "category": "Action"
+    },
+    {
+      "name": "Wuxia",
+      "image": "wuxia.jpg",
+      "category": "Action"
+    },
+    {
+      "name": "Ozploitation",
+      "image": "ozploitation.jpg",
+      "category": "Western"
+    },
+    {
+      "name": "Spaghetti Western",
+      "image": "spaghetti_western.jpg",
+      "category": "Western"
+    },
+    {
+      "name": "J Horror",
+      "image": "j_horror.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "K Horror",
+      "image": "k_horror.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Mumblegore",
+      "image": "mumblegore.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Extreme Cinema",
+      "image": "extreme_cinema.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Acid Western",
+      "image": "acid_western.jpg",
+      "category": "Western"
+    },
+    {
+      "name": "Surrealist Comedy",
+      "image": "surrealist_comedy.jpg",
+      "category": "Comedy"
+    },
+    {
+      "name": "Grimdark",
+      "image": "grimdark.jpg",
+      "category": "Fantasy"
+    },
+    {
+      "name": "Heroic Bloodshed",
+      "image": "heroic_bloodshed.jpg",
+      "category": "Action"
+    },
+    {
+      "name": "Submarine Thriller",
+      "image": "submarine_thriller.jpg",
+      "category": "Thriller"
+    },
+    {
+      "name": "Locked Room Mystery",
+      "image": "locked_room_mystery.jpg",
+      "category": "Crime/Mystery"
+    },
+    {
+      "name": "Whodunnit",
+      "image": "whodunnit.jpg",
+      "category": "Crime/Mystery"
+    },
+    {
+      "name": "Cosmic Horror",
+      "image": "cosmic_horror.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Folk Horror",
+      "image": "folk_horror.jpg",
+      "category": "Horror"
+    },
+    {
+      "name": "Arthouse Action",
+      "image": "arthouse_action.jpg",
+      "category": "Action"
+    },
+    {
+      "name": "Chamber Drama",
+      "image": "chamber_drama.jpg",
+      "category": "Drama"
+    },
+    {
+      "name": "Campus Novel Film",
+      "image": "campus_novel_film.jpg",
+      "category": "Drama"
+    },
+    {
+      "name": "Sword And Sorcery",
+      "image": "sword_and_sorcery.jpg",
+      "category": "Fantasy"
+    },
+    {
+      "name": "Gaslamp Fantasy",
+      "image": "gaslamp_fantasy.jpg",
+      "category": "Fantasy"
+    },
+    {
+      "name": "Paranoid Thriller",
+      "image": "paranoid_thriller.jpg",
+      "category": "Thriller"
+    }
+  ]
 }

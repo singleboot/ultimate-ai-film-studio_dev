@@ -155,14 +155,15 @@
         .input-section.visible { display:block; margin-top:10px; }
 
         .genre-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px; }
-        .genre-card {
-            background:var(--bg-tertiary);border:2px solid var(--border-color);border-radius:10px;
-            overflow:hidden;cursor:pointer;transition:all 0.2s;text-align:center;
-        }
+        .genre-card { background:var(--bg-tertiary);border:2px solid var(--border-color);border-radius:10px;overflow:hidden;cursor:pointer;transition:all 0.2s;text-align:center;position:relative; }
         .genre-card:hover { border-color:var(--accent-primary);transform:translateY(-2px); }
         .genre-card.selected { border-color:var(--accent-primary);background:rgba(99,102,241,0.15); }
         .genre-card img { width:100%;height:90px;object-fit:cover;display:block;background:var(--bg-secondary); }
         .genre-card .genre-label { padding:8px 6px;font-size:0.8rem;color:var(--text-primary);font-weight:500; }
+        .genre-card .star-btn { position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.5);border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.75rem;z-index:2;transition:all 0.2s;line-height:1;color:#fff; }
+        .genre-card .star-btn:hover { transform:scale(1.2); }
+        .genre-section-title { font-size:0.85rem;font-weight:600;color:var(--accent-primary);margin:12px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border-color); }
+        .genre-sections { padding:0 4px; }
 
         .style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
         .style-card {
@@ -546,12 +547,12 @@
 
     <!-- Genre Selection Modal -->
     <div class="modal-overlay" id="genre-modal">
-        <div class="modal" style="max-width:600px;">
+        <div class="modal" style="max-width:650px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
                 <h2 style="color:var(--accent-primary);margin:0;">🎭 Select Genres</h2>
                 <button class="btn btn-secondary" onclick="closeGenreModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
             </div>
-            <div id="genre-modal-grid" class="genre-grid" style="max-height:400px;overflow-y:auto;"></div>
+            <div id="genre-modal-grid" class="genre-sections" style="max-height:450px;overflow-y:auto;"></div>
             <div class="modal-actions" style="margin-top:15px;">
                 <button class="btn btn-primary" onclick="confirmGenreSelection()" style="flex:1">Done</button>
             </div>
@@ -987,27 +988,69 @@
             });
         }
 
+        let favoriteGenres = JSON.parse(localStorage.getItem('favoriteGenres') || '[]');
+
+        function toggleFavorite(name, event) {
+            event.stopPropagation();
+            const idx = favoriteGenres.indexOf(name);
+            if (idx >= 0) favoriteGenres.splice(idx, 1);
+            else favoriteGenres.push(name);
+            localStorage.setItem('favoriteGenres', JSON.stringify(favoriteGenres));
+            loadGenreModalGrid(); // re-render to move sections
+        }
+
         async function loadGenreModalGrid() {
-            const grid = document.getElementById('genre-modal-grid');
+            const container = document.getElementById('genre-modal-grid');
             try {
                 const res = await fetch('/api/genres');
                 const data = await res.json();
                 const genres = data.genres || [];
+
                 if (genres.length === 0) {
-                    grid.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No genres yet. Add some in Settings → Genre Manager.</div>';
+                    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No genres yet. Add some in Settings.</div>';
                     return;
                 }
-                grid.innerHTML = genres.map(g => {
-                    const isSelected = selectedGenres.includes(g.name);
-                    const imgUrl = g.image ? '/api/genres/image/' + encodeURIComponent(g.image) : null;
-                    return `<div class="genre-card${isSelected?' selected':''}" data-genre="${g.name}" onclick="selectGenreCard(this)">
-                        ${imgUrl ? `<img src="${imgUrl}" alt="${g.name}" onerror="this.style.display='none'">` : `<div style="height:90px;background:#444;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">${g.name.charAt(0)}</div>`}
-                        <div class="genre-label">${g.name}</div>
-                    </div>`;
-                }).join('');
+
+                // Separate favorites and group rest by category
+                const favGenres = genres.filter(g => favoriteGenres.includes(g.name));
+                const otherGenres = genres.filter(g => !favoriteGenres.includes(g.name));
+                const categories = [...new Set(otherGenres.map(g => g.category))].sort();
+
+                let html = '';
+
+                // Favorites section
+                if (favGenres.length) {
+                    html += '<div class="genre-section-title">⭐ Favorites</div>';
+                    html += '<div class="genre-grid">';
+                    html += favGenres.map(g => renderGenreCard(g, true)).join('');
+                    html += '</div>';
+                }
+
+                // Other categories
+                for (const cat of categories) {
+                    const catGenres = otherGenres.filter(g => g.category === cat);
+                    if (!catGenres.length) continue;
+                    html += `<div class="genre-section-title">${cat}</div>`;
+                    html += '<div class="genre-grid">';
+                    html += catGenres.map(g => renderGenreCard(g, false)).join('');
+                    html += '</div>';
+                }
+
+                container.innerHTML = html;
             } catch(e) {
-                grid.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">Could not load genres</div>';
+                container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">Could not load genres</div>';
             }
+        }
+
+        function renderGenreCard(g, isFav) {
+            const isSelected = selectedGenres.includes(g.name);
+            const imgUrl = g.image ? '/api/genres/image/' + encodeURIComponent(g.image) : null;
+            const starIcon = isFav ? '⭐' : '☆';
+            return `<div class="genre-card${isSelected?' selected':''}" data-genre="${g.name}" onclick="selectGenreCard(this)">
+                <button class="star-btn" onclick="toggleFavorite('${g.name.replace(/'/g, "\\'")}', event)">${starIcon}</button>
+                ${imgUrl ? `<img src="${imgUrl}" alt="${g.name}" onerror="this.style.display='none'">` : `<div style="height:90px;background:#444;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">${g.name.charAt(0)}</div>`}
+                <div class="genre-label">${g.name}</div>
+            </div>`;
         }
 
         function openGenreModal() {
