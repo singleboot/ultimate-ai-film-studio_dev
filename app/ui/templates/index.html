@@ -494,6 +494,7 @@
         function goHome() {
             currentProject = null;
             document.getElementById('project-label').textContent = 'No project';
+            renderRecentProjects();
             showPage('home');
         }
 
@@ -599,12 +600,14 @@
                 container.innerHTML = '<div class="empty-state">No recent projects</div>';
                 return;
             }
-            container.innerHTML = recentProjects.map(p => `
-                <div class="recent-item" onclick="quickOpen('${p.path}')">
+            container.innerHTML = recentProjects.map(p => {
+                const safePath = p.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return `
+                <div class="recent-item" onclick="quickOpen('${safePath}')">
                     <div><div class="name">${p.name}</div><div class="meta">${p.path}</div></div>
                     <div class="arrow">➡️</div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         async function quickOpen(path) {

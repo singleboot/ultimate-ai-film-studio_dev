@@ -1,0 +1,16 @@
+{
+  "llm": {
+    "provider": "ollama",
+    "model": "",
+    "host": "http://localhost:11434",
+    "apiKey": ""
+  },
+  "comfyui": {
+    "url": "http://localhost:8188"
+  },
+  "image": {
+    "model": "juggernaut_xl.safetensors",
+    "width": 1024,
+    "height": 1024
+  }
+}
