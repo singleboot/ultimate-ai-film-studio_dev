@@ -351,7 +351,7 @@
             <span class="project-name" id="project-name">No Project</span>
         </header>
 
-        <aside class="sidebar">
+        <aside class="sidebar" id="main-sidebar" style="display: none;">
             <div class="sidebar-section">
                 <div class="nav-item" onclick="showPage('settings')" id="nav-settings" style="margin-bottom:15px; border:1px solid var(--accent-secondary);">
                     ⚙️ Settings
@@ -401,6 +401,16 @@
                     <h1 class="page-header">🎬 Ultimate AI Film Studio</h1>
                     <p style="color: var(--text-secondary); margin-bottom: 40px;">Create stunning short films with AI</p>
                     
+                    <!-- Storage Location -->
+                    <div class="form-group" style="margin-bottom: 30px;">
+                        <label class="form-label">📁 Projects Folder (Database Location)</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" class="form-input" id="projects-folder" value="projects" style="flex: 1;">
+                            <button class="btn btn-secondary" onclick="browseFolder()">Browse</button>
+                        </div>
+                        <small style="color: var(--text-secondary);">All project files, prompts, and images will be saved here</small>
+                    </div>
+
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                         <div class="form-group" style="background: var(--bg-secondary); padding: 30px; border-radius: 12px; cursor: pointer; transition: transform 0.2s;" onclick="showNewProjectForm()">
                             <div style="font-size: 3rem; margin-bottom: 15px;">➕</div>
@@ -433,7 +443,8 @@
                 </div>
             </div>
 
-            <!-- PAGE 2: Topic Ideas Generator -->
+            <!-- All other pages - hidden until project loaded -->
+            <div id="workflow-pages" style="display: none;">
                 <h1 class="page-header">📝 Topic Ideas Generator</h1>
                 
                 <div class="tabs" style="margin-bottom: 20px;">
@@ -547,6 +558,8 @@
                 <div id="ideas-container" style="margin-top: 20px;"></div>
             </div>
 
+            <!-- Workflow Pages - Only visible after project loaded -->
+            <div id="workflow-container" style="display: none;">
             <!-- PAGE 2: Selection Module -->
             <div class="page" id="page-selection">
                 <h1 class="page-header">⚙️ Selection Module</h1>
@@ -825,6 +838,7 @@
                 <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
                 <button class="btn btn-secondary" onclick="resetSettings()" style="margin-left: 10px;">Reset to Default</button>
             </div>
+            </div> <!-- End workflow container -->
         </main>
 
         <footer class="status-bar">
@@ -912,18 +926,20 @@
             const name = document.getElementById('home-project-name').value;
             if (!name) return alert('Please enter a project name');
             
+            const projectsFolder = document.getElementById('projects-folder').value || 'projects';
+            
             try {
                 const response = await fetch('/api/projects', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name})
+                    body: JSON.stringify({name, folder: projectsFolder})
                 });
                 const data = await response.json();
                 if (data.success) {
                     currentProject = name;
                     document.getElementById('project-name').textContent = name;
                     hideNewProjectForm();
-                    showPage('ideas');
+                    loadWorkflow();
                 }
             } catch(e) {
                 console.error(e);
@@ -934,6 +950,12 @@
             currentProject = name;
             document.getElementById('project-name').textContent = name;
             document.getElementById('open-project-list').style.display = 'none';
+            loadWorkflow();
+        }
+
+        function loadWorkflow() {
+            document.getElementById('main-sidebar').style.display = 'block';
+            document.getElementById('workflow-container').style.display = 'block';
             showPage('ideas');
         }
 
@@ -1533,11 +1555,25 @@ Format as numbered list.`
             document.getElementById('auto-save-prompts').checked = true;
         }
 
+        function browseFolder() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.webkitdirectory = true;
+            input.onchange = (e) => {
+                const folder = e.target.files[0]?.webkitRelativePath?.split('/')[0] || 'projects';
+                document.getElementById('projects-folder').value = folder;
+            };
+            input.click();
+        }
+
         // Load settings on page load
         window.onload = async function() {
             try {
                 const response = await fetch('/api/settings');
                 const settings = await response.json();
+                if (settings.project && settings.project.folder) {
+                    document.getElementById('projects-folder').value = settings.project.folder;
+                }
                 if (settings.llm) {
                     document.getElementById('llm-provider').value = settings.llm.provider || '';
                     document.getElementById('llm-model').value = settings.llm.model || '';
