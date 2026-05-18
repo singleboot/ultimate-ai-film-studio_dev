@@ -15,9 +15,13 @@ class ProjectManager:
         self.projects_dir.mkdir(exist_ok=True)
         self.current_project = None
 
-    def create_project(self, name: str, template_name: str = None, description: str = "") -> Dict:
+    def create_project(self, name: str, template_name: str = None, description: str = "", location: str = None) -> Dict:
         """Create a new project."""
-        project_path = self.projects_dir / name
+        if location:
+            project_path = Path(location) / name
+        else:
+            project_path = self.projects_dir / name
+        
         if project_path.exists():
             return {"success": False, "error": "Project already exists"}
 

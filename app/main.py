@@ -51,6 +51,7 @@ class ProjectCreateRequest(BaseModel):
     name: str
     template_name: Optional[str] = None
     description: Optional[str] = ""
+    location: Optional[str] = None
 
 class ApprovalAction(BaseModel):
     action: str
@@ -178,7 +179,8 @@ async def create_project(request: ProjectCreateRequest):
     result = project_manager.create_project(
         name=request.name,
         template_name=request.template_name,
-        description=request.description
+        description=request.description,
+        location=request.location
     )
     return result
 

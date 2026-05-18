@@ -401,16 +401,6 @@
                     <h1 class="page-header">🎬 Ultimate AI Film Studio</h1>
                     <p style="color: var(--text-secondary); margin-bottom: 40px;">Create stunning short films with AI</p>
                     
-                    <!-- Storage Location -->
-                    <div class="form-group" style="margin-bottom: 30px;">
-                        <label class="form-label">📁 Projects Folder (Database Location)</label>
-                        <div style="display: flex; gap: 10px;">
-                            <input type="text" class="form-input" id="projects-folder" value="projects" style="flex: 1;">
-                            <button class="btn btn-secondary" onclick="browseFolder()">Browse</button>
-                        </div>
-                        <small style="color: var(--text-secondary);">All project files, prompts, and images will be saved here</small>
-                    </div>
-
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                         <div class="form-group" style="background: var(--bg-secondary); padding: 30px; border-radius: 12px; cursor: pointer; transition: transform 0.2s;" onclick="showNewProjectForm()">
                             <div style="font-size: 3rem; margin-bottom: 15px;">➕</div>
@@ -429,10 +419,18 @@
                     <div id="new-project-form" style="display: none; margin-top: 30px; background: var(--bg-secondary); padding: 25px; border-radius: 12px;">
                         <h3 style="margin-bottom: 15px;">Create New Project</h3>
                         <div class="form-group">
+                            <label class="form-label">Project Name</label>
                             <input type="text" class="form-input" id="home-project-name" placeholder="Enter project name">
                         </div>
-                        <button class="btn btn-primary" onclick="createProjectFromHome()">Create</button>
-                        <button class="btn btn-secondary" onclick="hideNewProjectForm()">Cancel</button>
+                        <div class="form-group">
+                            <label class="form-label">📁 Save Location</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" class="form-input" id="project-location" placeholder="Select folder..." style="flex: 1;" readonly>
+                                <button class="btn btn-secondary" onclick="browseProjectLocation()">Choose Folder</button>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="createProjectFromHome()">Create Project</button>
+                        <button class="btn btn-secondary" onclick="hideNewProjectForm()" style="margin-left: 10px;">Cancel</button>
                     </div>
                     
                     <!-- Open Project List (hidden by default) -->
@@ -924,15 +922,22 @@
 
         async function createProjectFromHome() {
             const name = document.getElementById('home-project-name').value;
-            if (!name) return alert('Please enter a project name');
+            if (!name) {
+                showError('Project Name Required', 'Please enter a name for your project');
+                return;
+            }
             
-            const projectsFolder = document.getElementById('projects-folder').value || 'projects';
+            const location = document.getElementById('project-location').value;
+            if (!location) {
+                showError('Location Required', 'Please choose a folder to save your project');
+                return;
+            }
             
             try {
                 const response = await fetch('/api/projects', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name, folder: projectsFolder})
+                    body: JSON.stringify({name, location})
                 });
                 const data = await response.json();
                 if (data.success) {
@@ -940,9 +945,13 @@
                     document.getElementById('project-name').textContent = name;
                     hideNewProjectForm();
                     loadWorkflow();
+                    showSuccess('Project created successfully!');
+                } else {
+                    showError('Failed to create project', data.message || 'Unknown error');
                 }
             } catch(e) {
                 console.error(e);
+                showError('Error creating project', e.message);
             }
         }
 
@@ -1414,12 +1423,12 @@ Format as numbered list.`
         // Image to Image
         function showError(message, details = '') {
             const errorDiv = document.createElement('div');
-            errorDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #dc2626; color: white; padding: 15px 20px; border-radius: 8px; z-index: 9999; max-width: 400px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+            errorDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #dc2626; color: white; padding: 20px 30px; border-radius: 12px; z-index: 9999; max-width: 450px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.4); text-align: center;';
             errorDiv.innerHTML = `
-                <div style="font-weight: bold; margin-bottom: 5px;">⚠️ Error</div>
-                <div>${message}</div>
-                ${details ? `<div style="font-size: 0.85rem; opacity: 0.8; margin-top: 8px;">${details}</div>` : ''}
-                <button onclick="this.parentElement.remove()" style="margin-top: 10px; padding: 5px 10px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; cursor: pointer;">Dismiss</button>
+                <div style="font-size: 2rem; margin-bottom: 10px;">⚠️</div>
+                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 8px;">${message}</div>
+                ${details ? `<div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 15px;">${details}</div>` : ''}
+                <button onclick="this.parentElement.remove()" style="padding: 8px 20px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">OK</button>
             `;
             document.body.appendChild(errorDiv);
             setTimeout(() => errorDiv.remove(), 10000);
@@ -1427,10 +1436,11 @@ Format as numbered list.`
 
         function showSuccess(message) {
             const successDiv = document.createElement('div');
-            successDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #16a34a; color: white; padding: 15px 20px; border-radius: 8px; z-index: 9999; max-width: 400px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+            successDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #16a34a; color: white; padding: 20px 30px; border-radius: 12px; z-index: 9999; max-width: 400px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.4); text-align: center;';
             successDiv.innerHTML = `
-                <div style="font-weight: bold;">✓ ${message}</div>
-                <button onclick="this.parentElement.remove()" style="margin-top: 10px; padding: 5px 10px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; cursor: pointer;">Dismiss</button>
+                <div style="font-size: 2rem; margin-bottom: 10px;">✓</div>
+                <div style="font-weight: bold; font-size: 1.1rem;">${message}</div>
+                <button onclick="this.parentElement.remove()" style="margin-top: 15px; padding: 8px 20px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 6px; cursor: pointer;">OK</button>
             `;
             document.body.appendChild(successDiv);
             setTimeout(() => successDiv.remove(), 5000);
@@ -1618,6 +1628,19 @@ Format as numbered list.`
             input.onchange = (e) => {
                 const folder = e.target.files[0]?.webkitRelativePath?.split('/')[0] || 'projects';
                 document.getElementById('projects-folder').value = folder;
+            };
+            input.click();
+        }
+
+        function browseProjectLocation() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.webkitdirectory = true;
+            input.onchange = (e) => {
+                if (e.target.files[0]) {
+                    const folderPath = e.target.files[0].webkitRelativePath.split('/')[0];
+                    document.getElementById('project-location').value = folderPath;
+                }
             };
             input.click();
         }
