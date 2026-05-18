@@ -441,102 +441,93 @@
         <div class="modal" style="max-width:90vw;width:90vw;height:85vh;">
             <h2>⚙️ Settings</h2>
             <div style="max-height:calc(85vh - 100px);overflow-y:auto;padding-right:5px;margin-bottom:10px;">
-                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🧠 LLM</h3>
-                <div class="form-group">
-                    <label class="form-label">Provider</label>
-                    <select class="form-select" id="llm-provider" onchange="onLLMProviderChange()">
-                        <option value="ollama">Ollama (Local)</option>
-                        <option value="lm_studio">LM Studio</option>
-                        <option value="openrouter">OpenRouter</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Host</label>
-                    <input type="text" class="form-input" id="llm-host" value="http://localhost:11434" onchange="loadLLMModels()">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Model</label>
-                    <div style="display:flex;gap:8px;">
-                        <select class="form-select" id="llm-model" style="flex:1;">
-                            <option value="">-- Select or type model --</option>
+                <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+                    <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🧠 LLM</h3>
+                    <div class="form-group">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" id="llm-provider" onchange="onLLMProviderChange()">
+                            <option value="ollama">Ollama (Local)</option>
+                            <option value="lm_studio">LM Studio</option>
+                            <option value="openrouter">OpenRouter</option>
                         </select>
-                        <button class="btn btn-secondary" onclick="loadLLMModels()" title="Refresh models">🔄</button>
                     </div>
-                    <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;">
-                        <span id="llm-model-count"></span>
+                    <div class="form-group">
+                        <label class="form-label">Host</label>
+                        <input type="text" class="form-input" id="llm-host" value="http://localhost:11434" onchange="loadLLMModels()">
                     </div>
-                </div>
-                <div class="form-group" id="llm-apikey-group" style="display:none;">
-                    <label class="form-label">API Key</label>
-                    <input type="password" class="form-input" id="llm-apikey" placeholder="For cloud providers">
-                </div>
-                <div style="display:flex;gap:10px;align-items:center;">
-                    <button class="btn btn-secondary" onclick="testLLM()">Test Connection</button>
-                    <span id="llm-test-result" style="font-size:0.85rem;"></span>
-                </div>
-            </div>
-
-            <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
-                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🎨 ComfyUI</h3>
-                <div class="form-group">
-                    <label class="form-label">Server URL</label>
-                    <div style="display:flex;gap:8px;">
-                        <input type="text" class="form-input" id="comfyui-url" value="http://localhost:8188" style="flex:1">
-                        <button class="btn btn-secondary" onclick="testComfyUI()">Test</button>
-                    </div>
-                    <span id="comfyui-test-result" style="font-size:0.85rem;"></span>
-                </div>
-
-                <div style="border-top:1px solid var(--border-color);padding-top:15px;margin-top:10px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                        <label class="form-label" style="margin:0;">📂 Saved Workflows</label>
-                        <button class="btn btn-secondary" onclick="uploadWorkflow()" style="padding:6px 12px;font-size:0.8rem;">+ Upload JSON</button>
-                    </div>
-                    <input type="file" id="workflow-upload-input" accept=".json" style="display:none" onchange="handleWorkflowUpload(event)">
-
-                    <div id="workflow-assignments">
-                        <div class="form-group">
-                            <label class="form-label" style="font-size:0.8rem;">Text-to-Image Workflow</label>
-                            <select class="form-select" id="wf-t2i"><option value="">-- Select --</option></select>
+                    <div class="form-group">
+                        <label class="form-label">Model</label>
+                        <div style="display:flex;gap:8px;">
+                            <select class="form-select" id="llm-model" style="flex:1;">
+                                <option value="">-- Select or type model --</option>
+                            </select>
+                            <button class="btn btn-secondary" onclick="loadLLMModels()" title="Refresh models">🔄</button>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label" style="font-size:0.8rem;">Image-to-Image Workflow</label>
-                            <select class="form-select" id="wf-i2i"><option value="">-- Select --</option></select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" style="font-size:0.8rem;">Text-to-Video Workflow</label>
-                            <select class="form-select" id="wf-t2v"><option value="">-- Select --</option></select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label" style="font-size:0.8rem;">Image-to-Video Workflow</label>
-                            <select class="form-select" id="wf-i2v"><option value="">-- Select --</option></select>
+                        <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;">
+                            <span id="llm-model-count"></span>
                         </div>
                     </div>
-
-                    <div id="uploaded-workflows" style="margin-top:10px;">
-                        <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:6px;">Uploaded:</div>
-                        <div id="workflow-list"></div>
+                    <div class="form-group" id="llm-apikey-group" style="display:none;">
+                        <label class="form-label">API Key</label>
+                        <input type="password" class="form-input" id="llm-apikey" placeholder="For cloud providers">
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <button class="btn btn-secondary" onclick="testLLM()">Test Connection</button>
+                        <span id="llm-test-result" style="font-size:0.85rem;"></span>
                     </div>
                 </div>
-            </div>
 
-            <!-- Genre Manager -->
-            <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
-                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🎭 Genre Manager</h3>
-                <div style="display:flex;gap:8px;margin-bottom:10px;">
-                    <input type="text" class="form-input" id="genre-name-input" placeholder="Genre name" style="flex:1;">
-                    <button class="btn btn-secondary" onclick="document.getElementById('genre-image-upload').click()" style="padding:6px 12px;font-size:0.8rem;">📷 Choose Image</button>
-                    <button class="btn btn-primary" onclick="addCustomGenre()" style="padding:6px 12px;font-size:0.8rem;">+ Add</button>
+                <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+                    <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🎨 ComfyUI</h3>
+                    <div class="form-group">
+                        <label class="form-label">Server URL</label>
+                        <div style="display:flex;gap:8px;">
+                            <input type="text" class="form-input" id="comfyui-url" value="http://localhost:8188" style="flex:1">
+                            <button class="btn btn-secondary" onclick="testComfyUI()">Test</button>
+                        </div>
+                        <span id="comfyui-test-result" style="font-size:0.85rem;"></span>
+                    </div>
+
+                    <div style="border-top:1px solid var(--border-color);padding-top:15px;margin-top:10px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                            <label class="form-label" style="margin:0;">📂 Saved Workflows</label>
+                            <button class="btn btn-secondary" onclick="uploadWorkflow()" style="padding:6px 12px;font-size:0.8rem;">+ Upload JSON</button>
+                        </div>
+                        <input type="file" id="workflow-upload-input" accept=".json" style="display:none" onchange="handleWorkflowUpload(event)">
+
+                        <div id="workflow-assignments">
+                            <div class="form-group">
+                                <label class="form-label" style="font-size:0.8rem;">Text-to-Image Workflow</label>
+                                <select class="form-select" id="wf-t2i"><option value="">-- Select --</option></select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" style="font-size:0.8rem;">Image-to-Image Workflow</label>
+                                <select class="form-select" id="wf-i2i"><option value="">-- Select --</option></select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" style="font-size:0.8rem;">Text-to-Video Workflow</label>
+                                <select class="form-select" id="wf-t2v"><option value="">-- Select --</option></select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" style="font-size:0.8rem;">Image-to-Video Workflow</label>
+                                <select class="form-select" id="wf-i2v"><option value="">-- Select --</option></select>
+                            </div>
+                        </div>
+
+                        <div id="uploaded-workflows" style="margin-top:10px;">
+                            <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:6px;">Uploaded:</div>
+                            <div id="workflow-list"></div>
+                        </div>
+                    </div>
                 </div>
-                <input type="file" id="genre-image-upload" accept="image/*" style="display:none">
-                <div id="genre-image-preview" style="display:none;margin-bottom:8px;">
-                    <img id="genre-preview-img" style="width:60px;height:60px;object-fit:cover;border-radius:6px;">
-                    <span id="genre-preview-name" style="font-size:0.8rem;color:var(--text-secondary);margin-left:8px;"></span>
+
+                <!-- Genre Manager -->
+                <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <h3 style="color:var(--accent-primary);font-size:0.95rem;margin:0;">🎭 Genre Manager</h3>
+                        <button class="btn btn-primary" onclick="openGenreManagerModal()" style="padding:6px 14px;font-size:0.8rem;">Manage Genres</button>
+                    </div>
                 </div>
-                <div id="custom-genres-list">
-                    <div style="font-size:0.8rem;color:var(--text-secondary);">Loading...</div>
-                </div>
-            </div>
             </div>
 
             <div class="modal-actions">
@@ -560,6 +551,32 @@
             <div id="genre-modal-grid" class="genre-sections" style="max-height:calc(85vh - 140px);overflow-y:auto;"></div>
             <div class="modal-actions" style="margin-top:10px;">
                 <button class="btn btn-primary" onclick="confirmGenreSelection()" style="flex:1">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Genre Manager Modal -->
+    <div class="modal-overlay" id="genre-manager-modal">
+        <div class="modal" style="max-width:600px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                <h2 style="color:var(--accent-primary);margin:0;">🎭 Manage Genres</h2>
+                <button class="btn btn-secondary" onclick="closeGenreManagerModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="text" class="form-input" id="gm-name" placeholder="Genre name" style="flex:1;">
+                <button class="btn btn-secondary" onclick="document.getElementById('gm-image').click()" style="padding:6px 12px;font-size:0.8rem;">📷 Image</button>
+                <button class="btn btn-primary" onclick="addGenreFromManager()" style="padding:6px 14px;font-size:0.8rem;">+ Add</button>
+            </div>
+            <input type="file" id="gm-image" accept="image/*" style="display:none">
+            <div id="gm-preview" style="display:none;margin-bottom:8px;padding:8px;background:var(--bg-tertiary);border-radius:6px;">
+                <img id="gm-preview-img" style="width:50px;height:50px;object-fit:cover;border-radius:4px;vertical-align:middle;">
+                <span id="gm-preview-name" style="font-size:0.8rem;color:var(--text-secondary);margin-left:8px;"></span>
+            </div>
+            <div id="gm-list" style="max-height:300px;overflow-y:auto;">
+                <div style="font-size:0.85rem;color:var(--text-secondary);text-align:center;padding:20px;">Loading...</div>
+            </div>
+            <div class="modal-actions" style="margin-top:10px;">
+                <button class="btn btn-primary" onclick="closeGenreManagerModal()" style="flex:1">Done</button>
             </div>
         </div>
     </div>
@@ -820,8 +837,6 @@
                         if (el && s.workflows[k]) el.value = s.workflows[k];
                     });
                 }
-                // Load custom genres
-                await loadCustomGenres();
             } catch(e) {}
         }
 
@@ -1296,82 +1311,92 @@
             renderIdeas();
         }
 
-        // === GENRE MANAGER (Settings) ===
-        let genreUploadFile = null;
+        // === GENRE MANAGER MODAL ===
+        let gmFile = null;
 
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('genre-image-upload').addEventListener('change', function(e) {
+            document.getElementById('gm-image').addEventListener('change', function(e) {
                 const file = e.target.files[0];
                 if (file) {
-                    genreUploadFile = file;
+                    gmFile = file;
                     const reader = new FileReader();
                     reader.onload = function(ev) {
-                        document.getElementById('genre-preview-img').src = ev.target.result;
-                        document.getElementById('genre-image-preview').style.display = 'block';
-                        document.getElementById('genre-preview-name').textContent = file.name;
+                        document.getElementById('gm-preview-img').src = ev.target.result;
+                        document.getElementById('gm-preview').style.display = 'block';
+                        document.getElementById('gm-preview-name').textContent = file.name;
                     };
                     reader.readAsDataURL(file);
                 }
             });
         });
 
-        async function loadCustomGenres() {
-            const list = document.getElementById('custom-genres-list');
+        function openGenreManagerModal() {
+            document.getElementById('genre-manager-modal').style.display = 'flex';
+            loadGenreManagerList();
+        }
+
+        function closeGenreManagerModal() {
+            document.getElementById('genre-manager-modal').style.display = 'none';
+        }
+
+        async function loadGenreManagerList() {
+            const list = document.getElementById('gm-list');
             try {
                 const res = await fetch('/api/genres');
                 const data = await res.json();
                 const genres = data.genres || [];
                 if (genres.length === 0) {
-                    list.innerHTML = '<div style="font-size:0.85rem;color:var(--text-secondary);">No custom genres yet</div>';
+                    list.innerHTML = '<div style="font-size:0.85rem;color:var(--text-secondary);text-align:center;padding:20px;">No genres yet. Add one above.</div>';
                     return;
                 }
                 list.innerHTML = genres.map(g => `
-                    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-color);font-size:0.85rem;">
-                        ${g.image ? `<img src="/api/genres/image/${g.image}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;">` : '<div style="width:36px;height:36px;background:var(--bg-secondary);border-radius:4px;display:flex;align-items:center;justify-content:center;">🎭</div>'}
-                        <span style="flex:1;color:var(--text-primary);">${g.name}</span>
-                        <button class="btn btn-secondary" onclick="deleteCustomGenre('${g.name}')" style="padding:4px 8px;font-size:0.75rem;">✕</button>
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-color);font-size:0.85rem;">
+                        ${g.image ? `<img src="/api/genres/image/${g.image}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : '<div style="width:44px;height:44px;background:var(--bg-secondary);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;">🎭</div>'}
+                        <div style="flex:1;">
+                            <div style="color:var(--text-primary);font-weight:500;">${g.name}</div>
+                            <div style="color:var(--text-secondary);font-size:0.75rem;">${g.category || 'Other'}</div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="deleteGenreFromManager('${g.name.replace(/'/g, "\\'")}')" style="padding:4px 10px;font-size:0.75rem;">✕</button>
                     </div>
                 `).join('');
             } catch(e) {
-                list.innerHTML = '<div style="font-size:0.85rem;color:var(--text-secondary);">Failed to load</div>';
+                list.innerHTML = '<div style="font-size:0.85rem;color:var(--text-secondary);text-align:center;padding:20px;">Failed to load</div>';
             }
         }
 
-        async function addCustomGenre() {
-            const name = document.getElementById('genre-name-input').value.trim();
+        async function addGenreFromManager() {
+            const name = document.getElementById('gm-name').value.trim();
             if (!name) { notify('Enter Name', 'Please enter a genre name'); return; }
 
             const formData = new FormData();
             formData.append('name', name);
-            if (genreUploadFile) {
-                formData.append('file', genreUploadFile);
-            }
+            if (gmFile) formData.append('file', gmFile);
 
             try {
                 const res = await fetch('/api/genres', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (data.success) {
-                    document.getElementById('genre-name-input').value = '';
-                    document.getElementById('genre-image-upload').value = '';
-                    genreUploadFile = null;
-                    document.getElementById('genre-image-preview').style.display = 'none';
-                    await loadCustomGenres();
+                    document.getElementById('gm-name').value = '';
+                    document.getElementById('gm-image').value = '';
+                    gmFile = null;
+                    document.getElementById('gm-preview').style.display = 'none';
+                    await loadGenreManagerList();
                     await loadGenreModalGrid();
-                    notify('✅ Genre Added', name + ' added to your genres');
+                    notify('✅ Genre Added', name + ' added');
                 } else {
-                    notify('Error', data.error || 'Failed to add genre');
+                    notify('Error', data.error || 'Failed to add');
                 }
             } catch(e) {
                 notify('Error', 'Could not add genre');
             }
         }
 
-        async function deleteCustomGenre(name) {
+        async function deleteGenreFromManager(name) {
             try {
                 const res = await fetch('/api/genres/' + encodeURIComponent(name), { method: 'DELETE' });
                 const data = await res.json();
                 if (data.success) {
-                    await loadCustomGenres();
+                    await loadGenreManagerList();
                     await loadGenreModalGrid();
                     notify('Deleted', name + ' removed');
                 }
