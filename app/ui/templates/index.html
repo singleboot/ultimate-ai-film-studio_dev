@@ -23,105 +23,58 @@
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
         }
-        .container {
-            max-width: 650px;
-            width: 100%;
-            margin: 80px 20px 40px;
-        }
-        .logo {
-            text-align: center;
-            margin-bottom: 50px;
-        }
-        .logo h1 {
-            font-size: 1.8rem;
-            color: var(--accent-primary);
-            margin-bottom: 8px;
-        }
-        .logo p {
-            color: var(--text-secondary);
-            font-size: 0.95rem;
-        }
-        .main-buttons {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 40px;
-        }
+        .page { display: none; }
+        .page.active { display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; }
+        .container { max-width: 650px; width: 100%; margin: 80px 20px 60px; }
+
+        .logo { text-align: center; margin-bottom: 50px; }
+        .logo h1 { font-size: 1.8rem; color: var(--accent-primary); margin-bottom: 8px; }
+        .logo p { color: var(--text-secondary); font-size: 0.95rem; }
+
+        .main-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 40px; }
         .main-btn {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 35px 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
+            background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px;
+            padding: 35px 20px; text-align: center; cursor: pointer; transition: all 0.2s;
         }
-        .main-btn:hover {
-            border-color: var(--accent-primary);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 20px rgba(0,212,255,0.1);
-        }
+        .main-btn:hover { border-color: var(--accent-primary); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,212,255,0.1); }
         .main-btn .icon { font-size: 2.5rem; margin-bottom: 12px; }
         .main-btn h3 { font-size: 1.1rem; margin-bottom: 6px; }
         .main-btn p { font-size: 0.85rem; color: var(--text-secondary); }
 
+        .header-bar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 500;
+            background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
+            padding: 12px 20px; display: flex; align-items: center; justify-content: space-between;
+        }
+        .header-bar .title { font-size: 1rem; font-weight: 600; color: var(--accent-primary); }
+        .header-bar .sub { font-size: 0.85rem; color: var(--text-secondary); }
+        .header-bar .nav-btn { padding: 6px 14px; border-radius: 6px; background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer; font-size: 0.85rem; border: 1px solid var(--border-color); }
+        .header-bar .nav-btn:hover { border-color: var(--accent-primary); }
+
         .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;
         }
         .modal-overlay.active { display: flex; }
         .modal {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 14px;
-            padding: 30px;
-            width: 90%;
-            max-width: 480px;
+            background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 14px;
+            padding: 30px; width: 90%; max-width: 480px; max-height: 85vh; overflow-y: auto;
         }
-        .modal h2 {
-            font-size: 1.3rem;
-            color: var(--accent-primary);
-            margin-bottom: 20px;
-        }
+        .modal h2 { font-size: 1.3rem; color: var(--accent-primary); margin-bottom: 20px; }
         .form-group { margin-bottom: 18px; }
-        .form-label {
-            display: block;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            margin-bottom: 6px;
+        .form-label { display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px; }
+        .form-input, .form-select, .form-textarea {
+            width: 100%; padding: 10px 14px; background: var(--bg-tertiary);
+            border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); font-size: 0.95rem;
         }
-        .form-input, .form-select {
-            width: 100%;
-            padding: 10px 14px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            color: var(--text-primary);
-            font-size: 0.95rem;
-        }
-        .form-input:focus { outline: none; border-color: var(--accent-primary); }
-        .input-row {
-            display: flex;
-            gap: 10px;
-        }
+        .form-input:focus, .form-select:focus { outline: none; border-color: var(--accent-primary); }
+        .form-textarea { min-height: 80px; resize: vertical; }
+        .input-row { display: flex; gap: 10px; }
         .input-row .form-input { flex: 1; }
         .btn {
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            border: none;
-            font-size: 0.9rem;
-            transition: all 0.2s;
+            padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer;
+            border: none; font-size: 0.9rem; transition: all 0.2s;
         }
         .btn-primary { background: var(--accent-primary); color: var(--bg-primary); }
         .btn-primary:hover { background: #00b8e0; }
@@ -131,98 +84,194 @@
         .btn-danger { background: var(--accent-danger); color: white; }
         .modal-actions { display: flex; gap: 10px; margin-top: 10px; }
 
-        .section-title {
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--text-secondary);
-            margin-bottom: 15px;
-        }
+        .section-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 15px; }
         .recent-list { margin-top: 10px; }
         .recent-item {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 16px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.2s;
+            background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px;
+            padding: 16px; margin-bottom: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s;
         }
         .recent-item:hover { border-color: var(--accent-primary); }
         .recent-item .name { font-weight: 600; margin-bottom: 4px; }
         .recent-item .meta { font-size: 0.8rem; color: var(--text-secondary); }
         .recent-item .arrow { font-size: 1.2rem; color: var(--text-secondary); }
-        .recent-item:hover .arrow { color: var(--accent-primary); }
 
         .notification-overlay {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.6);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6); z-index: 2000; align-items: center; justify-content: center;
         }
         .notification-overlay.active { display: flex; }
         .notification {
-            background: var(--bg-secondary);
-            border-radius: 14px;
-            padding: 30px 40px;
-            width: 90%;
-            max-width: 420px;
-            text-align: center;
+            background: var(--bg-secondary); border-radius: 14px; padding: 30px 40px;
+            width: 90%; max-width: 420px; text-align: center;
         }
         .notification .icon { font-size: 2.5rem; margin-bottom: 12px; }
         .notification .msg { font-size: 1.05rem; margin-bottom: 8px; }
         .notification .detail { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 18px; }
 
         .status-bar {
-            position: fixed;
-            bottom: 0; left: 0; right: 0;
-            background: var(--bg-secondary);
-            border-top: 1px solid var(--border-color);
-            padding: 8px 20px;
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.8rem;
-            color: var(--text-secondary);
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: var(--bg-secondary); border-top: 1px solid var(--border-color);
+            padding: 8px 20px; display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-secondary); z-index: 500;
         }
-        .empty-state {
-            text-align: center;
-            padding: 30px;
-            color: var(--text-secondary);
-            font-size: 0.9rem;
+        .empty-state { text-align: center; padding: 30px; color: var(--text-secondary); font-size: 0.9rem; }
+
+        .settings-btn {
+            position: fixed; bottom: 50px; right: 20px; z-index: 900;
+            width: 44px; height: 44px; border-radius: 50%;
+            background: var(--bg-tertiary); border: 1px solid var(--border-color);
+            color: var(--text-secondary); font-size: 1.3rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
         }
+        .settings-btn:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
+
+        .workflow-nav {
+            display: flex; gap: 8px; margin-bottom: 25px; flex-wrap: wrap;
+        }
+        .workflow-step {
+            padding: 8px 16px; border-radius: 20px; background: var(--bg-tertiary);
+            font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap;
+        }
+        .workflow-step.active { background: var(--accent-primary); color: var(--bg-primary); }
+        .workflow-step.done { background: var(--accent-success); color: white; }
+
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        .tab { padding: 8px 16px; cursor: pointer; border-radius: 6px; color: var(--text-secondary); }
+        .tab.active { background: var(--accent-primary); color: var(--bg-primary); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .idea-card {
+            background: var(--bg-secondary); border: 1px solid var(--border-color);
+            border-radius: 8px; padding: 15px; margin-bottom: 15px;
+        }
+        .idea-title { font-size: 1.1rem; font-weight: 600; color: var(--accent-primary); margin-bottom: 8px; }
+        .idea-text { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 10px; white-space: pre-wrap; }
+        .idea-actions { margin-top: 12px; display: flex; gap: 10px; }
+
+        .spinner {
+            width: 20px; height: 20px; border: 3px solid var(--bg-tertiary);
+            border-top-color: var(--accent-primary); border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="logo">
-            <h1>🎬 Ultimate AI Film Studio</h1>
-            <p>Create stunning short films with AI</p>
+    <!-- Header -->
+    <div class="header-bar" id="header-bar" style="display:none;">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <div class="title">🎬 Ultimate AI Film Studio</div>
+            <div class="sub" id="project-label">No project</div>
         </div>
+        <button class="nav-btn" onclick="goHome()">🏠 Home</button>
+    </div>
 
-        <!-- Main Buttons -->
-        <div class="main-buttons">
-            <div class="main-btn" onclick="openNewProject()">
-                <div class="icon">➕</div>
-                <h3>New Project</h3>
-                <p>Start a fresh short film</p>
+    <!-- PAGE: Home -->
+    <div class="page active" id="page-home">
+        <div class="container">
+            <div class="logo">
+                <h1>🎬 Ultimate AI Film Studio</h1>
+                <p>Create stunning short films with AI</p>
             </div>
-            <div class="main-btn" onclick="openExistingProject()">
-                <div class="icon">📂</div>
-                <h3>Open Project</h3>
-                <p>Continue existing project</p>
+            <div class="main-buttons">
+                <div class="main-btn" onclick="openNewProject()">
+                    <div class="icon">➕</div>
+                    <h3>New Project</h3>
+                    <p>Start a fresh short film</p>
+                </div>
+                <div class="main-btn" onclick="openExistingProject()">
+                    <div class="icon">📂</div>
+                    <h3>Open Project</h3>
+                    <p>Continue existing project</p>
+                </div>
+            </div>
+            <div class="section-title">Recent Projects</div>
+            <div id="recent-list" class="recent-list">
+                <div class="empty-state">No recent projects</div>
             </div>
         </div>
+    </div>
 
-        <!-- Recent Projects -->
-        <div class="section-title">Recent Projects</div>
-        <div id="recent-list" class="recent-list">
-            <div class="empty-state">No recent projects</div>
+    <!-- PAGE: Topic Ideas -->
+    <div class="page" id="page-ideas">
+        <div class="container">
+            <div class="workflow-nav">
+                <span class="workflow-step active">📝 Ideas</span>
+                <span class="workflow-step">⚙️ Selection</span>
+                <span class="workflow-step">👤 Characters</span>
+                <span class="workflow-step">🏠 Locations</span>
+                <span class="workflow-step">🎬 Scenes</span>
+                <span class="workflow-step">🎥 Videos</span>
+            </div>
+
+            <h2 style="color:var(--accent-primary);margin-bottom:20px;">📝 Topic Ideas Generator</h2>
+
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('genre')">🎭 Genre</button>
+                <button class="tab" onclick="switchTab('era')">📅 Era</button>
+                <button class="tab" onclick="switchTab('custom')">✏️ Custom</button>
+                <button class="tab" onclick="switchTab('web')">🌐 Web</button>
+            </div>
+
+            <div id="tab-genre" class="tab-content active">
+                <div class="form-group">
+                    <label class="form-label">Select Genre</label>
+                    <select class="form-select" id="genre-select">
+                        <option value="">-- Select --</option>
+                        <optgroup label="Indian Cinema">
+                            <option>Indian 90s Bollywood</option><option>Indian 80s</option><option>Indian 2000s</option>
+                        </optgroup>
+                        <optgroup label="Asian Cinema">
+                            <option>Japanese 80s</option><option>Korean 2000s</option><option>Hong Kong Action</option>
+                        </optgroup>
+                        <optgroup label="Western">
+                            <option>American 80s</option><option>American 90s</option><option>European 90s</option>
+                        </optgroup>
+                        <optgroup label="Styles">
+                            <option>Film Noir</option><option>Sci-Fi Classic</option><option>Anime</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="generateIdeas()">Generate 5 Ideas</button>
+            </div>
+
+            <div id="tab-era" class="tab-content">
+                <div class="form-group">
+                    <label class="form-label">Era / Time Period</label>
+                    <select class="form-select" id="era-select">
+                        <option value="">-- Select --</option>
+                        <option>1950s</option><option>1960s</option><option>1970s</option>
+                        <option>1980s</option><option>1990s</option><option>2000s</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="generateIdeasFromEra()">Generate 5 Ideas</button>
+            </div>
+
+            <div id="tab-custom" class="tab-content">
+                <div class="form-group">
+                    <label class="form-label">Your Topic / Concept</label>
+                    <textarea class="form-textarea" id="custom-topic" rows="3" placeholder="Describe your story idea..."></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="generateCustomIdeas()">Generate Variations</button>
+            </div>
+
+            <div id="tab-web" class="tab-content">
+                <div class="form-group">
+                    <label class="form-label">Search the Web</label>
+                    <input type="text" class="form-input" id="web-query" placeholder="e.g. trending short film themes">
+                </div>
+                <button class="btn btn-primary" onclick="webSearchIdeas()">🔍 Search & Generate</button>
+            </div>
+
+            <div id="ideas-status" style="margin:20px 0;display:none;">
+                <div style="display:flex;align-items:center;gap:12px;background:var(--bg-tertiary);padding:15px;border-radius:8px;">
+                    <div class="spinner"></div>
+                    <span id="ideas-status-text">Generating ideas...</span>
+                </div>
+            </div>
+
+            <div id="ideas-container" style="margin-top:20px;"></div>
         </div>
     </div>
 
@@ -237,7 +286,7 @@
             <div class="form-group">
                 <label class="form-label">Save Location</label>
                 <input type="text" class="form-input" id="project-path-input" placeholder="D:\My Projects" value="">
-                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">Enter the folder path where project files will be saved. Leave empty to use app default.</div>
+                <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:6px;">Leave empty to use app default</div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-primary" onclick="createProject()" style="flex:1">Create Project</button>
@@ -253,10 +302,9 @@
             <div class="form-group">
                 <label class="form-label">Project Path</label>
                 <input type="text" class="form-input" id="open-project-path" placeholder="D:\My Projects\MyFilm" oninput="checkProjectPath(this.value)">
-                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">Enter the full path to your project folder</div>
             </div>
             <div id="open-project-details" style="display:none;">
-                <div style="background: var(--bg-tertiary); padding: 15px; border-radius: 8px; margin: 10px 0;">
+                <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin:10px 0;">
                     <div id="open-project-name" style="font-weight:600;margin-bottom:4px;"></div>
                     <div id="open-project-meta" style="font-size:0.85rem;color:var(--text-secondary);"></div>
                 </div>
@@ -268,24 +316,94 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal">
+            <h2>⚙️ Settings</h2>
+            <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🧠 LLM</h3>
+                <div class="form-group">
+                    <label class="form-label">Provider</label>
+                    <select class="form-select" id="llm-provider">
+                        <option value="ollama">Ollama (Local)</option>
+                        <option value="lm_studio">LM Studio</option>
+                        <option value="openrouter">OpenRouter</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Model</label>
+                    <input type="text" class="form-input" id="llm-model" placeholder="gemma4:e4b">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Host</label>
+                    <input type="text" class="form-input" id="llm-host" value="http://localhost:11434">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <input type="password" class="form-input" id="llm-apikey" placeholder="For cloud providers">
+                </div>
+                <button class="btn btn-secondary" onclick="testLLM()">Test Connection</button>
+                <span id="llm-test-result" style="margin-left:10px;font-size:0.85rem;"></span>
+            </div>
+
+            <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🎨 ComfyUI</h3>
+                <div class="form-group">
+                    <label class="form-label">URL</label>
+                    <input type="text" class="form-input" id="comfyui-url" value="http://localhost:8188">
+                </div>
+                <button class="btn btn-secondary" onclick="testComfyUI()">Test Connection</button>
+                <span id="comfyui-test-result" style="margin-left:10px;font-size:0.85rem;"></span>
+            </div>
+
+            <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🖼️ Image</h3>
+                <div class="form-group">
+                    <label class="form-label">Checkpoint Model</label>
+                    <input type="text" class="form-input" id="image-model" value="juggernaut_xl.safetensors">
+                </div>
+                <div class="input-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Width</label>
+                        <input type="number" class="form-input" id="image-width" value="1024">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Height</label>
+                        <input type="number" class="form-input" id="image-height" value="1024">
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>
+                <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Notification -->
     <div class="notification-overlay" id="notification">
         <div class="notification">
             <div class="icon" id="notif-icon">⚠️</div>
             <div class="msg" id="notif-msg">Error</div>
-            <div class="detail" id="notif-detail">Details here</div>
+            <div class="detail" id="notif-detail"></div>
             <button class="btn btn-primary" onclick="closeNotification()">OK</button>
         </div>
     </div>
 
+    <!-- Settings Button -->
+    <button class="settings-btn" onclick="openSettings()" title="Settings">⚙️</button>
+
     <footer class="status-bar">
-        <span>Ready</span>
+        <span id="status-text">Ready</span>
         <span id="status-llm">LLM: Not connected</span>
     </footer>
 
     <script>
         let recentProjects = JSON.parse(localStorage.getItem('recentProjects') || '[]');
+        let currentProject = null;
 
+        // === NOTIFICATION ===
         function notify(msg, detail, icon) {
             document.getElementById('notif-icon').textContent = icon || '⚠️';
             document.getElementById('notif-msg').textContent = msg;
@@ -296,6 +414,28 @@
             document.getElementById('notification').classList.remove('active');
         }
 
+        // === PAGE NAVIGATION ===
+        function showPage(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('page-' + page).classList.add('active');
+            const header = document.getElementById('header-bar');
+            header.style.display = page === 'home' ? 'none' : 'flex';
+        }
+
+        function goHome() {
+            currentProject = null;
+            document.getElementById('project-label').textContent = 'No project';
+            showPage('home');
+        }
+
+        function openProjectWorkspace(name, path) {
+            currentProject = { name, path };
+            document.getElementById('project-label').textContent = name;
+            document.getElementById('status-text').textContent = 'Project: ' + name;
+            showPage('ideas');
+        }
+
+        // === HOME - NEW/OPEN PROJECT ===
         function openNewProject() {
             document.getElementById('project-name-input').value = '';
             document.getElementById('project-path-input').value = '';
@@ -326,30 +466,26 @@
                 try {
                     const res = await fetch('/api/projects/check?path=' + encodeURIComponent(path));
                     const data = await res.json();
-                    const details = document.getElementById('open-project-details');
-                    const btn = document.getElementById('open-project-btn');
                     if (data.exists) {
-                        details.style.display = 'block';
+                        document.getElementById('open-project-details').style.display = 'block';
                         document.getElementById('open-project-name').textContent = data.name;
                         document.getElementById('open-project-meta').textContent = data.info || 'Valid project';
-                        btn.style.display = 'block';
-                        btn.dataset.path = path;
+                        document.getElementById('open-project-btn').style.display = 'block';
+                        document.getElementById('open-project-btn').dataset.path = path;
                     } else {
-                        details.style.display = 'block';
+                        document.getElementById('open-project-details').style.display = 'block';
                         document.getElementById('open-project-name').textContent = '❌ Not a valid project';
-                        document.getElementById('open-project-meta').textContent = 'No project.json found in this path';
-                        btn.style.display = 'none';
+                        document.getElementById('open-project-meta').textContent = 'No project.json found';
+                        document.getElementById('open-project-btn').style.display = 'none';
                     }
-                } catch(e) {
-                    console.log('Check error:', e);
-                }
+                } catch(e) { console.log(e); }
             }, 500);
         }
 
         async function createProject() {
             const name = document.getElementById('project-name-input').value.trim();
             const path = document.getElementById('project-path-input').value.trim();
-            if (!name) { notify('Project Name Required', 'Please enter a name for your project'); return; }
+            if (!name) { notify('Project Name Required', 'Please enter a name'); return; }
             try {
                 const res = await fetch('/api/projects', {
                     method: 'POST',
@@ -361,12 +497,13 @@
                     closeNewProject();
                     const savePath = data.project_path || path + '\\' + name;
                     addRecentProject(name, savePath);
-                    notify('🎉 Project Created', '"' + name + '" is ready at ' + savePath, '✅');
+                    notify('🎉 Project Created', '"' + name + '" is ready!', '✅');
+                    setTimeout(() => openProjectWorkspace(name, savePath), 500);
                 } else {
-                    notify('Failed to Create', data.error || data.message || 'Unknown error');
+                    notify('Failed', data.error || data.message);
                 }
             } catch(e) {
-                notify('Error', e.message || 'Could not create project');
+                notify('Error', e.message);
             }
         }
 
@@ -375,7 +512,8 @@
             const name = document.getElementById('open-project-name').textContent;
             addRecentProject(name, path);
             closeOpenProject();
-            notify('📂 Project Opened', '"' + name + '" loaded successfully', '✅');
+            notify('📂 Opened', '"' + name + '" loaded', '✅');
+            setTimeout(() => openProjectWorkspace(name, path), 500);
         }
 
         function addRecentProject(name, path) {
@@ -388,16 +526,13 @@
 
         function renderRecentProjects() {
             const container = document.getElementById('recent-list');
-            if (recentProjects.length === 0) {
+            if (!recentProjects.length) {
                 container.innerHTML = '<div class="empty-state">No recent projects</div>';
                 return;
             }
             container.innerHTML = recentProjects.map(p => `
                 <div class="recent-item" onclick="quickOpen('${p.path}')">
-                    <div>
-                        <div class="name">${p.name}</div>
-                        <div class="meta">${p.path} · ${p.opened}</div>
-                    </div>
+                    <div><div class="name">${p.name}</div><div class="meta">${p.path}</div></div>
                     <div class="arrow">➡️</div>
                 </div>
             `).join('');
@@ -409,18 +544,249 @@
                 const data = await res.json();
                 if (data.exists) {
                     addRecentProject(data.name, path);
-                    notify('📂 Project Opened', '"' + data.name + '" loaded successfully', '✅');
+                    notify('📂 Opened', '"' + data.name + '" loaded', '✅');
+                    setTimeout(() => openProjectWorkspace(data.name, path), 500);
                 } else {
-                    notify('Project Not Found', 'The project at ' + path + ' no longer exists');
+                    notify('Not Found', 'Project no longer exists');
                     recentProjects = recentProjects.filter(p => p.path !== path);
                     localStorage.setItem('recentProjects', JSON.stringify(recentProjects));
                     renderRecentProjects();
                 }
+            } catch(e) { notify('Error', e.message); }
+        }
+
+        // === SETTINGS ===
+        function openSettings() {
+            loadSettingsUI();
+            document.getElementById('settings-modal').classList.add('active');
+        }
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.remove('active');
+        }
+
+        async function loadSettingsUI() {
+            try {
+                const res = await fetch('/api/settings');
+                const s = await res.json();
+                if (s.llm) {
+                    document.getElementById('llm-provider').value = s.llm.provider || 'ollama';
+                    document.getElementById('llm-model').value = s.llm.model || '';
+                    document.getElementById('llm-host').value = s.llm.host || 'http://localhost:11434';
+                    document.getElementById('llm-apikey').value = s.llm.apiKey || '';
+                }
+                if (s.comfyui) {
+                    document.getElementById('comfyui-url').value = s.comfyui.url || 'http://localhost:8188';
+                }
+                if (s.image) {
+                    document.getElementById('image-model').value = s.image.model || 'juggernaut_xl.safetensors';
+                    document.getElementById('image-width').value = s.image.width || 1024;
+                    document.getElementById('image-height').value = s.image.height || 1024;
+                }
+            } catch(e) {}
+        }
+
+        async function saveSettings() {
+            const settings = {
+                llm: {
+                    provider: document.getElementById('llm-provider').value,
+                    model: document.getElementById('llm-model').value,
+                    host: document.getElementById('llm-host').value,
+                    apiKey: document.getElementById('llm-apikey').value
+                },
+                comfyui: {
+                    url: document.getElementById('comfyui-url').value
+                },
+                image: {
+                    model: document.getElementById('image-model').value,
+                    width: parseInt(document.getElementById('image-width').value),
+                    height: parseInt(document.getElementById('image-height').value)
+                }
+            };
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeSettings();
+                    notify('✅ Settings Saved', 'Configuration updated', '✅');
+                }
             } catch(e) {
-                notify('Error', 'Could not open project');
+                notify('Error', 'Could not save settings');
             }
         }
 
+        async function testLLM() {
+            const host = document.getElementById('llm-host').value;
+            const model = document.getElementById('llm-model').value;
+            const el = document.getElementById('llm-test-result');
+            el.textContent = 'Testing...';
+            try {
+                const res = await fetch('/api/llm/test', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({provider: document.getElementById('llm-provider').value, host, model})
+                });
+                const data = await res.json();
+                el.textContent = data.success ? '✓ Connected' : '✗ ' + (data.message || 'Failed');
+                el.style.color = data.success ? '#4ade80' : '#f87171';
+                if (data.success) document.getElementById('status-llm').textContent = 'LLM: Connected - ' + model;
+            } catch(e) {
+                el.textContent = '✗ Connection failed';
+                el.style.color = '#f87171';
+            }
+        }
+
+        async function testComfyUI() {
+            const url = document.getElementById('comfyui-url').value;
+            const el = document.getElementById('comfyui-test-result');
+            el.textContent = 'Testing...';
+            try {
+                const res = await fetch('/api/comfyui/connect?url=' + encodeURIComponent(url));
+                const data = await res.json();
+                el.textContent = data.success ? '✓ Connected' : '✗ ' + (data.message || 'Failed');
+                el.style.color = data.success ? '#4ade80' : '#f87171';
+            } catch(e) {
+                el.textContent = '✗ Connection failed';
+                el.style.color = '#f87171';
+            }
+        }
+
+        // === TOPIC IDEAS ===
+        let topicIdeas = [];
+        let currentIdeaTab = 'genre';
+
+        function switchTab(tab) {
+            currentIdeaTab = tab;
+            document.querySelectorAll('#page-ideas .tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('#page-ideas .tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tab-' + tab).classList.add('active');
+        }
+
+        function showIdeasStatus(msg) {
+            document.getElementById('ideas-status').style.display = 'block';
+            document.getElementById('ideas-status-text').textContent = msg;
+        }
+        function hideIdeasStatus() {
+            document.getElementById('ideas-status').style.display = 'none';
+        }
+
+        async function generateIdeas() {
+            const genre = document.getElementById('genre-select').value;
+            if (!genre) { notify('Select Genre', 'Please choose a genre first'); return; }
+            showIdeasStatus('Generating ideas for ' + genre + '...');
+            try {
+                const res = await fetch('/api/generate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: 'ollama', model: 'gemma4:e4b',
+                        prompt: `Generate 5 creative short film ideas in the genre: "${genre}". For each: **Title:**, **Logline:**, **Setting:**, **Conflict:**. Separate with "---".`
+                    })
+                });
+                const data = await res.json();
+                hideIdeasStatus();
+                if (data.success) {
+                    topicIdeas = data.response.split('---').filter(s => s.trim()).slice(0, 5);
+                    renderIdeas();
+                } else {
+                    notify('Failed', data.message || 'Generation failed');
+                }
+            } catch(e) { hideIdeasStatus(); notify('Error', e.message); }
+        }
+
+        async function generateIdeasFromEra() {
+            const era = document.getElementById('era-select').value;
+            if (!era) { notify('Select Era', 'Please choose an era'); return; }
+            showIdeasStatus('Generating ideas for ' + era + '...');
+            try {
+                const res = await fetch('/api/generate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: 'ollama', model: 'gemma4:e4b',
+                        prompt: `Generate 5 short film ideas set in the ${era}. For each: **Title:**, **Logline:**, **Setting:**, **Conflict:**. Separate with "---".`
+                    })
+                });
+                const data = await res.json();
+                hideIdeasStatus();
+                if (data.success) {
+                    topicIdeas = data.response.split('---').filter(s => s.trim()).slice(0, 5);
+                    renderIdeas();
+                } else { notify('Failed', data.message); }
+            } catch(e) { hideIdeasStatus(); notify('Error', e.message); }
+        }
+
+        async function generateCustomIdeas() {
+            const topic = document.getElementById('custom-topic').value.trim();
+            if (!topic) { notify('Enter Topic', 'Please describe your concept'); return; }
+            showIdeasStatus('Generating variations...');
+            try {
+                const res = await fetch('/api/generate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: 'ollama', model: 'gemma4:e4b',
+                        prompt: `Based on: "${topic}", create 5 short film variations. For each: **Title:**, **Angle:**, **Logline:**, **Key Scene:**. Separate with "---".`
+                    })
+                });
+                const data = await res.json();
+                hideIdeasStatus();
+                if (data.success) {
+                    topicIdeas = data.response.split('---').filter(s => s.trim()).slice(0, 5);
+                    renderIdeas();
+                } else { notify('Failed', data.message); }
+            } catch(e) { hideIdeasStatus(); notify('Error', e.message); }
+        }
+
+        async function webSearchIdeas() {
+            const q = document.getElementById('web-query').value.trim();
+            if (!q) { notify('Enter Search', 'Please enter a search term'); return; }
+            showIdeasStatus('Searching web...');
+            try {
+                const searchRes = await fetch('/api/websearch?q=' + encodeURIComponent(q));
+                const searchData = await searchRes.json();
+                const summary = (searchData.results || []).map(r => r.title + ': ' + r.snippet).join('\n\n');
+                showIdeasStatus('Generating ideas from web results...');
+                const res = await fetch('/api/generate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider: 'ollama', model: 'gemma4:e4b',
+                        prompt: `Based on these trends:\n${summary}\n\nGenerate 5 short film ideas. For each: **Title:**, **Why It Works:**, **Logline:**, **Viral Potential:**. Separate with "---".`
+                    })
+                });
+                const data = await res.json();
+                hideIdeasStatus();
+                if (data.success) {
+                    topicIdeas = data.response.split('---').filter(s => s.trim()).slice(0, 5);
+                    renderIdeas();
+                } else { notify('Failed', data.message); }
+            } catch(e) { hideIdeasStatus(); notify('Error', e.message); }
+        }
+
+        function renderIdeas() {
+            const container = document.getElementById('ideas-container');
+            container.innerHTML = topicIdeas.map((idea, i) => `
+                <div class="idea-card">
+                    <div class="idea-title">💡 Idea ${i+1}</div>
+                    <div class="idea-text">${idea}</div>
+                    <div class="idea-actions">
+                        <button class="btn btn-success" onclick="selectIdea(${i})">Select</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectIdea(index) {
+            topicIdeas = [topicIdeas[index]];
+            notify('✅ Idea Selected', 'Great choice! Move to the Selection module next.', '✅');
+            document.getElementById('ideas-container').innerHTML = `
+                <div style="background:var(--bg-tertiary);padding:20px;border-radius:10px;border-left:4px solid var(--accent-success);">
+                    <h3 style="color:var(--accent-success);margin-bottom:10px;">✅ Selected Idea</h3>
+                    <div style="white-space:pre-wrap;">${topicIdeas[0]}</div>
+                </div>
+            `;
+        }
+
+        // === INIT ===
         renderRecentProjects();
     </script>
 </body>

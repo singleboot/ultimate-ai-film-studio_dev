@@ -436,6 +436,7 @@ async def save_settings_endpoint(data: dict):
     """Save settings."""
     save_settings(data)
     return {"success": True}
+    return {"success": True}
 
 
 def get_default_html() -> str:
