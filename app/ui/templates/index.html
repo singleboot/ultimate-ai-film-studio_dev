@@ -387,6 +387,49 @@
         </div>
     </div>
 
+    <!-- PAGE: Characters -->
+    <div class="page" id="page-characters">
+        <div class="container">
+            <div class="workflow-nav">
+                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('selection')">⚙️ Selection</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('selection')" style="padding:6px 14px;font-size:0.8rem;">← Back to Selection</button>
+                <h2 style="color:var(--accent-primary);margin:0;">👤 Characters</h2>
+            </div>
+
+            <div id="characters-progress" class="progress-bar" style="display:none;margin-bottom:15px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-weight:600;" id="char-progress-title">Generating characters...</span>
+                    <span style="color:var(--accent-primary);font-weight:700;" id="char-progress-pct">0%</span>
+                </div>
+                <div style="width:100%;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;">
+                    <div id="char-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <div style="font-size:0.9rem;color:var(--text-secondary);">
+                    <span id="char-count-label">3 characters</span> — fill in details or auto-generate
+                </div>
+                <button class="btn btn-primary" onclick="generateAllCharacters()" style="padding:8px 18px;">✨ Generate All</button>
+            </div>
+
+            <div id="characters-container" style="display:flex;flex-direction:column;gap:15px;"></div>
+
+            <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('selection')" style="padding:8px 20px;">← Back to Selection</button>
+                <button class="btn btn-primary" onclick="proceedToLocations()" style="padding:8px 20px;">🏠 Continue to Locations →</button>
+            </div>
+        </div>
+    </div>
+
     <!-- New Project Modal -->
     <div class="modal-overlay" id="new-project-modal">
         <div class="modal">
@@ -727,8 +770,9 @@
 
         // === PAGE NAVIGATION ===
         function navigateToWorkflow(step) {
-            const built = { ideas: 1, selection: 1 };
+            const built = { ideas: 1, selection: 1, characters: 1 };
             if (built[step]) {
+                if (step === 'characters') renderCharacterCards();
                 showPage(step);
             } else {
                 notify('Coming Soon', 'This module is not built yet', '🚧');
@@ -1671,7 +1715,7 @@
             const locs = parseInt(document.getElementById('sel-locations').value) || 3;
             const scenes = parseInt(document.getElementById('sel-scenes').value) || 5;
             currentProject.settings = { style: selectedVisualStyle, aesthetic: selectedFilmAesthetic, characters: chars, locations: locs, scenes: scenes };
-            notify('✅ Selections Saved', `${chars} characters, ${locs} locations, ${scenes} scenes`, '✅');
+            navigateToWorkflow('characters');
         }
 
         // === VISUAL STYLE MODAL ===
@@ -1930,7 +1974,137 @@
         function openFilmAestheticManagerModal() { loadFilmAestheticManagerList(); document.getElementById('film-aesthetic-manager-modal').style.display = 'flex'; }
         function closeFilmAestheticManagerModal() { document.getElementById('film-aesthetic-manager-modal').style.display = 'none'; }
 
-        // === INIT ===
+        // === CHARACTERS MODULE ===
+        let charData = [];
+
+        function renderCharacterCards() {
+            const count = (currentProject?.settings?.characters) || parseInt(document.getElementById('sel-characters').value) || 3;
+            document.getElementById('char-count-label').textContent = count + ' characters';
+            const container = document.getElementById('characters-container');
+
+            // Ensure charData has entries for all slots
+            while (charData.length < count) {
+                charData.push({ name: '', description: '', imagePrompt: '' });
+            }
+
+            container.innerHTML = Array.from({ length: count }, (_, i) => `
+                <div style="background:var(--bg-secondary);padding:16px;border-radius:10px;border-left:4px solid var(--accent-primary);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <h3 style="margin:0;font-size:1rem;color:var(--accent-primary);">Character ${i+1}</h3>
+                        <button class="btn btn-secondary" onclick="regenerateCharacter(${i})" style="padding:4px 12px;font-size:0.75rem;">🔄 Regenerate</button>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div class="form-group">
+                            <label class="form-label">Name</label>
+                            <input type="text" class="form-input" id="char-name-${i}" placeholder="e.g. John Carter" value="${charData[i]?.name || ''}" oninput="charData[${i}].name=this.value">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Image Prompt</label>
+                            <input type="text" class="form-input" id="char-img-${i}" placeholder="e.g. rugged man, beard, brown coat" value="${charData[i]?.imagePrompt || ''}" oninput="charData[${i}].imagePrompt=this.value">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top:8px;">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-input" id="char-desc-${i}" rows="3" placeholder="Describe the character's personality, backstory, role..." style="resize:vertical;" oninput="charData[${i}].description=this.value">${charData[i]?.description || ''}</textarea>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function generateAllCharacters() {
+            const count = currentProject?.settings?.characters || 3;
+            const pb = document.getElementById('characters-progress');
+            pb.style.display = 'block';
+            document.getElementById('char-progress-title').textContent = 'Generating characters...';
+
+            const context = buildCharacterContext();
+
+            for (let i = 0; i < count; i++) {
+                const pct = Math.round(((i) / count) * 90);
+                document.getElementById('char-progress-bar').style.width = pct + '%';
+                document.getElementById('char-progress-pct').textContent = pct + '%';
+                document.getElementById('char-progress-title').textContent = `Character ${i+1}/${count}...`;
+
+                const prompt = `Generate a compelling character for a short film.
+
+Context:
+${context}
+
+Character ${i+1} of ${count}:
+
+Return ONLY valid JSON with these fields:
+- "name": a memorable character name
+- "description": 2-3 sentence description of personality, backstory, and role
+- "imagePrompt": a concise text-to-image prompt for this character's appearance
+
+Respond with raw JSON only, no markdown, no backticks.`;
+
+                try {
+                    const data = await generateFromLLM(prompt);
+                    if (data.success) {
+                        const text = data.response.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+                        const parsed = JSON.parse(text);
+                        charData[i] = {
+                            name: parsed.name || '',
+                            description: parsed.description || '',
+                            imagePrompt: parsed.imagePrompt || ''
+                        };
+                    }
+                } catch(e) {
+                    // continue to next character
+                }
+            }
+
+            document.getElementById('char-progress-bar').style.width = '100%';
+            document.getElementById('char-progress-pct').textContent = '100%';
+            document.getElementById('char-progress-title').textContent = '✅ Done!';
+            setTimeout(() => { pb.style.display = 'none'; }, 1000);
+            renderCharacterCards();
+        }
+
+        function buildCharacterContext() {
+            const parts = [];
+            if (selectedIdea) parts.push('Selected Concept: ' + selectedIdea);
+            if (selectedVisualStyle) parts.push('Visual Style: ' + selectedVisualStyle);
+            if (selectedFilmAesthetic) parts.push('Film Aesthetic: ' + selectedFilmAesthetic);
+            if (selectedGenres.length) parts.push('Genres: ' + selectedGenres.join(', '));
+            return parts.join('\n') || 'General short film';
+        }
+
+        async function regenerateCharacter(index) {
+            const context = buildCharacterContext();
+            const prompt = `Generate a character for a short film.
+
+Context:
+${context}
+
+Return ONLY valid JSON with these fields:
+- "name": a memorable character name
+- "description": 2-3 sentence description of personality, backstory, and role
+- "imagePrompt": a concise text-to-image prompt for this character's appearance
+
+Respond with raw JSON only, no markdown, no backticks.`;
+
+            try {
+                const data = await generateFromLLM(prompt);
+                if (data.success) {
+                    const text = data.response.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+                    const parsed = JSON.parse(text);
+                    charData[index] = {
+                        name: parsed.name || charData[index]?.name || '',
+                        description: parsed.description || charData[index]?.description || '',
+                        imagePrompt: parsed.imagePrompt || charData[index]?.imagePrompt || ''
+                    };
+                    renderCharacterCards();
+                }
+            } catch(e) {
+                notify('Error', 'Could not regenerate character');
+            }
+        }
+
+        function proceedToLocations() {
+            notify('Coming Soon', 'Locations module is not built yet', '🚧');
+        }
         document.querySelectorAll('.src-chk').forEach(cb => cb.addEventListener('change', updateIdeaInputs));
         updateIdeaInputs();
         renderRecentProjects();
