@@ -458,7 +458,12 @@ async def get_settings():
 
 @app.post("/api/settings")
 async def save_settings_endpoint(data: dict):
-    """Save settings."""
+    """Save settings, preserving genres and other non-overlapping keys."""
+    existing = load_settings()
+    # Merge: keep genres, workflows folder data, etc. that frontend doesn't send
+    for key in existing:
+        if key not in data:
+            data[key] = existing[key]
     save_settings(data)
     return {"success": True}
 
