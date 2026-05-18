@@ -383,26 +383,36 @@
                 <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🧠 LLM</h3>
                 <div class="form-group">
                     <label class="form-label">Provider</label>
-                    <select class="form-select" id="llm-provider">
+                    <select class="form-select" id="llm-provider" onchange="onLLMProviderChange()">
                         <option value="ollama">Ollama (Local)</option>
                         <option value="lm_studio">LM Studio</option>
                         <option value="openrouter">OpenRouter</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Model</label>
-                    <input type="text" class="form-input" id="llm-model" placeholder="gemma4:e4b">
-                </div>
-                <div class="form-group">
                     <label class="form-label">Host</label>
-                    <input type="text" class="form-input" id="llm-host" value="http://localhost:11434">
+                    <input type="text" class="form-input" id="llm-host" value="http://localhost:11434" onchange="loadLLMModels()">
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Model</label>
+                    <div style="display:flex;gap:8px;">
+                        <select class="form-select" id="llm-model" style="flex:1;">
+                            <option value="">-- Select or type model --</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="loadLLMModels()" title="Refresh models">🔄</button>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:4px;">
+                        <span id="llm-model-count"></span>
+                    </div>
+                </div>
+                <div class="form-group" id="llm-apikey-group" style="display:none;">
                     <label class="form-label">API Key</label>
                     <input type="password" class="form-input" id="llm-apikey" placeholder="For cloud providers">
                 </div>
-                <button class="btn btn-secondary" onclick="testLLM()">Test Connection</button>
-                <span id="llm-test-result" style="margin-left:10px;font-size:0.85rem;"></span>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <button class="btn btn-secondary" onclick="testLLM()">Test Connection</button>
+                    <span id="llm-test-result" style="font-size:0.85rem;"></span>
+                </div>
             </div>
 
             <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
@@ -623,13 +633,57 @@
             document.getElementById('settings-modal').classList.remove('active');
         }
 
+        function onLLMProviderChange() {
+            const provider = document.getElementById('llm-provider').value;
+            const apiKeyGroup = document.getElementById('llm-apikey-group');
+            apiKeyGroup.style.display = (provider === 'openrouter') ? 'block' : 'none';
+            if (provider === 'ollama') {
+                document.getElementById('llm-host').value = 'http://localhost:11434';
+            } else if (provider === 'lm_studio') {
+                document.getElementById('llm-host').value = 'http://localhost:1234';
+            }
+            loadLLMModels();
+        }
+
+        async function loadLLMModels() {
+            const provider = document.getElementById('llm-provider').value;
+            const host = document.getElementById('llm-host').value;
+            const modelSelect = document.getElementById('llm-model');
+            const countLabel = document.getElementById('llm-model-count');
+            
+            modelSelect.innerHTML = '<option value="">Loading models...</option>';
+            countLabel.textContent = 'Fetching...';
+            
+            try {
+                let url = '/api/llm/models?provider=' + provider;
+                if (host) url += '&host=' + encodeURIComponent(host);
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                modelSelect.innerHTML = '<option value="">-- Select model --</option>';
+                if (data.models && data.models.length > 0) {
+                    data.models.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m;
+                        opt.textContent = m;
+                        modelSelect.appendChild(opt);
+                    });
+                    countLabel.textContent = data.models.length + ' model(s) available';
+                } else {
+                    countLabel.textContent = 'No models found. Is the provider running?';
+                }
+            } catch(e) {
+                modelSelect.innerHTML = '<option value="">-- Could not load models --</option>';
+                countLabel.textContent = 'Connection failed. Check host URL.';
+            }
+        }
+
         async function loadSettingsUI() {
             try {
                 const res = await fetch('/api/settings');
                 const s = await res.json();
                 if (s.llm) {
                     document.getElementById('llm-provider').value = s.llm.provider || 'ollama';
-                    document.getElementById('llm-model').value = s.llm.model || '';
                     document.getElementById('llm-host').value = s.llm.host || 'http://localhost:11434';
                     document.getElementById('llm-apikey').value = s.llm.apiKey || '';
                 }
@@ -641,6 +695,12 @@
                     document.getElementById('image-width').value = s.image.width || 1024;
                     document.getElementById('image-height').value = s.image.height || 1024;
                 }
+                // Load models and set saved model value
+                await loadLLMModels();
+                if (s.llm && s.llm.model) {
+                    document.getElementById('llm-model').value = s.llm.model;
+                }
+                onLLMProviderChange();
             } catch(e) {}
         }
 
@@ -687,9 +747,15 @@
                     body: JSON.stringify({provider: document.getElementById('llm-provider').value, host, model})
                 });
                 const data = await res.json();
-                el.textContent = data.success ? '✓ Connected' : '✗ ' + (data.message || 'Failed');
-                el.style.color = data.success ? '#4ade80' : '#f87171';
-                if (data.success) document.getElementById('status-llm').textContent = 'LLM: Connected - ' + model;
+                if (data.success) {
+                    el.textContent = '✓ Connected';
+                    el.style.color = '#4ade80';
+                    document.getElementById('status-llm').textContent = 'LLM: Connected - ' + model;
+                    loadLLMModels();
+                } else {
+                    el.textContent = '✗ ' + (data.message || 'Failed');
+                    el.style.color = '#f87171';
+                }
             } catch(e) {
                 el.textContent = '✗ Connection failed';
                 el.style.color = '#f87171';

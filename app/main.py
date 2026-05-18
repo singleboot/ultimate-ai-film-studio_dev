@@ -357,23 +357,27 @@ async def test_comfyui_connect(url: str = "http://localhost:8188"):
         return {"success": False, "message": str(e)}
 
 @app.get("/api/llm/models")
-async def get_llm_models(provider: str):
+async def get_llm_models(provider: str, host: str = None):
     """Get available models for the provider."""
     models = []
     if provider == "ollama":
+        base = host or "http://localhost:11434"
         try:
             import requests
-            resp = requests.get("http://localhost:11434/api/tags", timeout=15)
-            data = resp.json()
-            models = [m["name"] for m in data.get("models", [])]
+            resp = requests.get(f"{base}/api/tags", timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = [m["name"] for m in data.get("models", [])]
         except:
             pass
     elif provider == "lm_studio":
+        base = host or "http://localhost:1234"
         try:
             import requests
-            resp = requests.get("http://localhost:1234/v1/models", timeout=15)
-            data = resp.json()
-            models = [m["id"] for m in data.get("data", [])]
+            resp = requests.get(f"{base}/v1/models", timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = [m["id"] for m in data.get("data", [])]
         except:
             pass
     return {"models": models}
