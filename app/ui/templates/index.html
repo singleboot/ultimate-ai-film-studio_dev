@@ -353,32 +353,14 @@
 
             <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
                 <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🎨 Visual Style</h3>
-                <div class="style-grid">
-                    <div class="style-card" data-style="cinematic" onclick="selectStyle(this)">
-                        <div class="style-icon">🎬</div>
-                        <div>Cinematic</div>
-                    </div>
-                    <div class="style-card" data-style="anime" onclick="selectStyle(this)">
-                        <div class="style-icon">🎨</div>
-                        <div>Anime</div>
-                    </div>
-                    <div class="style-card" data-style="realistic" onclick="selectStyle(this)">
-                        <div class="style-icon">📷</div>
-                        <div>Realistic</div>
-                    </div>
-                    <div class="style-card" data-style="pixelart" onclick="selectStyle(this)">
-                        <div class="style-icon">🟦</div>
-                        <div>Pixel Art</div>
-                    </div>
-                    <div class="style-card" data-style="3d" onclick="selectStyle(this)">
-                        <div class="style-icon">🧊</div>
-                        <div>3D Render</div>
-                    </div>
-                    <div class="style-card" data-style="sketch" onclick="selectStyle(this)">
-                        <div class="style-icon">✏️</div>
-                        <div>Sketch</div>
-                    </div>
-                </div>
+                <button class="btn btn-secondary" onclick="openVisualStyleModal()" style="margin-bottom:8px;">📁 Browse Styles</button>
+                <div id="selected-visual-style" style="font-size:0.85rem;color:var(--text-secondary);">None selected</div>
+            </div>
+
+            <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
+                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🎞️ Film Aesthetic</h3>
+                <button class="btn btn-secondary" onclick="openFilmAestheticModal()" style="margin-bottom:8px;">📁 Browse Aesthetics</button>
+                <div id="selected-film-aesthetic" style="font-size:0.85rem;color:var(--text-secondary);">None selected</div>
             </div>
 
             <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
@@ -544,6 +526,22 @@
                         <button class="btn btn-primary" onclick="openGenreManagerModal()" style="padding:6px 14px;font-size:0.8rem;">Manage Genres</button>
                     </div>
                 </div>
+
+                <!-- Visual Style Manager -->
+                <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <h3 style="color:var(--accent-primary);font-size:0.95rem;margin:0;">🎨 Visual Style Manager</h3>
+                        <button class="btn btn-primary" onclick="openVisualStyleManagerModal()" style="padding:6px 14px;font-size:0.8rem;">Manage Styles</button>
+                    </div>
+                </div>
+
+                <!-- Film Aesthetic Manager -->
+                <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <h3 style="color:var(--accent-primary);font-size:0.95rem;margin:0;">🎞️ Film Aesthetic Manager</h3>
+                        <button class="btn btn-primary" onclick="openFilmAestheticManagerModal()" style="padding:6px 14px;font-size:0.8rem;">Manage Aesthetics</button>
+                    </div>
+                </div>
             </div>
 
             <div class="modal-actions" style="border-top:1px solid var(--border-color);padding-top:10px;">
@@ -574,6 +572,48 @@
         </div>
     </div>
 
+    <!-- Visual Style Selection Modal -->
+    <div class="modal-overlay" id="visual-style-modal">
+        <div class="modal" style="max-width:90vw;width:90vw;height:85vh;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h2 style="color:var(--accent-primary);margin:0;">🎨 Select Visual Style</h2>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary" onclick="confirmVisualStyleSelection()" style="padding:6px 14px;font-size:0.8rem;">Done</button>
+                    <button class="btn btn-secondary" onclick="closeVisualStyleModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="text" class="form-input" id="vs-search-input" placeholder="Search styles..." oninput="filterVisualStyleGrid()" style="flex:1;">
+                <button class="btn btn-secondary" onclick="clearVisualStyleSelection()" style="padding:6px 14px;font-size:0.8rem;">Clear</button>
+            </div>
+            <div id="visual-style-grid" class="genre-sections" style="max-height:calc(85vh - 140px);overflow-y:auto;"></div>
+            <div class="modal-actions" style="margin-top:10px;">
+                <button class="btn btn-primary" onclick="confirmVisualStyleSelection()" style="flex:1">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Film Aesthetic Selection Modal -->
+    <div class="modal-overlay" id="film-aesthetic-modal">
+        <div class="modal" style="max-width:90vw;width:90vw;height:85vh;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h2 style="color:var(--accent-primary);margin:0;">🎞️ Select Film Aesthetic</h2>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary" onclick="confirmFilmAestheticSelection()" style="padding:6px 14px;font-size:0.8rem;">Done</button>
+                    <button class="btn btn-secondary" onclick="closeFilmAestheticModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="text" class="form-input" id="fa-search-input" placeholder="Search aesthetics..." oninput="filterFilmAestheticGrid()" style="flex:1;">
+                <button class="btn btn-secondary" onclick="clearFilmAestheticSelection()" style="padding:6px 14px;font-size:0.8rem;">Clear</button>
+            </div>
+            <div id="film-aesthetic-grid" class="genre-sections" style="max-height:calc(85vh - 140px);overflow-y:auto;"></div>
+            <div class="modal-actions" style="margin-top:10px;">
+                <button class="btn btn-primary" onclick="confirmFilmAestheticSelection()" style="flex:1">Done</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Genre Manager Modal -->
     <div class="modal-overlay" id="genre-manager-modal">
         <div class="modal" style="max-width:600px;">
@@ -596,6 +636,58 @@
             </div>
             <div class="modal-actions" style="margin-top:10px;">
                 <button class="btn btn-primary" onclick="closeGenreManagerModal()" style="flex:1">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Visual Style Manager Modal -->
+    <div class="modal-overlay" id="visual-style-manager-modal">
+        <div class="modal" style="max-width:600px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                <h2 style="color:var(--accent-primary);margin:0;">🎨 Manage Visual Styles</h2>
+                <button class="btn btn-secondary" onclick="closeVisualStyleManagerModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="text" class="form-input" id="vsm-name" placeholder="Style name" style="flex:1;">
+                <button class="btn btn-secondary" onclick="document.getElementById('vsm-image').click()" style="padding:6px 12px;font-size:0.8rem;">📷 Image</button>
+                <button class="btn btn-primary" onclick="addVisualStyleFromManager()" style="padding:6px 14px;font-size:0.8rem;">+ Add</button>
+            </div>
+            <input type="file" id="vsm-image" accept="image/*" style="display:none">
+            <div id="vsm-preview" style="display:none;margin-bottom:8px;padding:8px;background:var(--bg-tertiary);border-radius:6px;">
+                <img id="vsm-preview-img" style="width:50px;height:50px;object-fit:cover;border-radius:4px;vertical-align:middle;">
+                <span id="vsm-preview-name" style="font-size:0.8rem;color:var(--text-secondary);margin-left:8px;"></span>
+            </div>
+            <div id="vsm-list" style="max-height:300px;overflow-y:auto;">
+                <div style="font-size:0.85rem;color:var(--text-secondary);text-align:center;padding:20px;">Loading...</div>
+            </div>
+            <div class="modal-actions" style="margin-top:10px;">
+                <button class="btn btn-primary" onclick="closeVisualStyleManagerModal()" style="flex:1">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Film Aesthetic Manager Modal -->
+    <div class="modal-overlay" id="film-aesthetic-manager-modal">
+        <div class="modal" style="max-width:600px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                <h2 style="color:var(--accent-primary);margin:0;">🎞️ Manage Film Aesthetics</h2>
+                <button class="btn btn-secondary" onclick="closeFilmAestheticManagerModal()" style="padding:6px 12px;font-size:0.8rem;">✕</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="text" class="form-input" id="fam-name" placeholder="Aesthetic name" style="flex:1;">
+                <button class="btn btn-secondary" onclick="document.getElementById('fam-image').click()" style="padding:6px 12px;font-size:0.8rem;">📷 Image</button>
+                <button class="btn btn-primary" onclick="addFilmAestheticFromManager()" style="padding:6px 14px;font-size:0.8rem;">+ Add</button>
+            </div>
+            <input type="file" id="fam-image" accept="image/*" style="display:none">
+            <div id="fam-preview" style="display:none;margin-bottom:8px;padding:8px;background:var(--bg-tertiary);border-radius:6px;">
+                <img id="fam-preview-img" style="width:50px;height:50px;object-fit:cover;border-radius:4px;vertical-align:middle;">
+                <span id="fam-preview-name" style="font-size:0.8rem;color:var(--text-secondary);margin-left:8px;"></span>
+            </div>
+            <div id="fam-list" style="max-height:300px;overflow-y:auto;">
+                <div style="font-size:0.85rem;color:var(--text-secondary);text-align:center;padding:20px;">Loading...</div>
+            </div>
+            <div class="modal-actions" style="margin-top:10px;">
+                <button class="btn btn-primary" onclick="closeFilmAestheticManagerModal()" style="flex:1">Done</button>
             </div>
         </div>
     </div>
@@ -1565,33 +1657,282 @@
 
         function goToSelection() {
             showPage('selection');
-            resetSelectionStyles();
+            selectedVisualStyle = null;
+            selectedFilmAesthetic = null;
+            document.getElementById('selected-visual-style').textContent = 'None selected';
+            document.getElementById('selected-film-aesthetic').textContent = 'None selected';
         }
 
         let selectedVisualStyle = null;
-
-        function selectStyle(el) {
-            document.querySelectorAll('.style-card').forEach(c => c.classList.remove('selected'));
-            el.classList.add('selected');
-            selectedVisualStyle = el.dataset.style;
-        }
-
-        function resetSelectionStyles() {
-            document.querySelectorAll('.style-card').forEach(c => c.classList.remove('selected'));
-            selectedVisualStyle = null;
-        }
+        let selectedFilmAesthetic = null;
 
         function proceedToCharacters() {
-            if (!selectedVisualStyle) {
-                notify('Style Required', 'Please select a visual style before continuing.', '⚠️');
+            if (!selectedVisualStyle || !selectedFilmAesthetic) {
+                notify('Selection Required', 'Select both a Visual Style and a Film Aesthetic.', '⚠️');
                 return;
             }
             const chars = parseInt(document.getElementById('sel-characters').value) || 3;
             const locs = parseInt(document.getElementById('sel-locations').value) || 3;
             const scenes = parseInt(document.getElementById('sel-scenes').value) || 5;
-            currentProject.settings = { style: selectedVisualStyle, characters: chars, locations: locs, scenes: scenes };
+            currentProject.settings = { style: selectedVisualStyle, aesthetic: selectedFilmAesthetic, characters: chars, locations: locs, scenes: scenes };
             notify('✅ Selections Saved', `${chars} characters, ${locs} locations, ${scenes} scenes`, '✅');
         }
+
+        // === VISUAL STYLE MODAL ===
+        async function loadVisualStyleGrid() {
+            const container = document.getElementById('visual-style-grid');
+            try {
+                const res = await fetch('/api/visual-styles');
+                const data = await res.json();
+                const styles = data.styles || [];
+                if (styles.length === 0) {
+                    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No styles yet. Add some in Settings.</div>';
+                    return;
+                }
+                let html = '<div class="genre-grid">';
+                for (const s of styles) {
+                    const sel = selectedVisualStyle === s.name ? ' selected' : '';
+                    const imgUrl = s.image ? '/api/visual-styles/image/' + encodeURIComponent(s.image) : null;
+                    html += `<div class="genre-card${sel}" data-vs="${s.name}" onclick="selectVisualStyleCard(this)">
+                        ${imgUrl ? `<img src="${imgUrl}" alt="${s.name}" onerror="this.style.display='none'">` : `<div style="height:90px;background:#444;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">${s.name.charAt(0)}</div>`}
+                        <div class="genre-label">${s.name}</div>
+                    </div>`;
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            } catch(e) {
+                container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">Could not load styles</div>';
+            }
+        }
+
+        function selectVisualStyleCard(el) {
+            document.querySelectorAll('#visual-style-grid .genre-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedVisualStyle = el.dataset.vs;
+            document.getElementById('selected-visual-style').textContent = '🎨 ' + selectedVisualStyle;
+        }
+
+        function openVisualStyleModal() {
+            loadVisualStyleGrid();
+            document.getElementById('visual-style-modal').style.display = 'flex';
+        }
+        function closeVisualStyleModal() {
+            document.getElementById('visual-style-modal').style.display = 'none';
+        }
+        function confirmVisualStyleSelection() {
+            closeVisualStyleModal();
+        }
+        function clearVisualStyleSelection() {
+            selectedVisualStyle = null;
+            document.getElementById('selected-visual-style').textContent = 'None selected';
+            document.querySelectorAll('#visual-style-grid .genre-card').forEach(c => c.classList.remove('selected'));
+        }
+        function filterVisualStyleGrid() {
+            const q = document.getElementById('vs-search-input').value.toLowerCase().trim();
+            document.querySelectorAll('#visual-style-grid .genre-card').forEach(c => {
+                c.style.display = (!q || c.dataset.vs.toLowerCase().includes(q)) ? '' : 'none';
+            });
+        }
+
+        // === FILM AESTHETIC MODAL ===
+        async function loadFilmAestheticGrid() {
+            const container = document.getElementById('film-aesthetic-grid');
+            try {
+                const res = await fetch('/api/film-aesthetics');
+                const data = await res.json();
+                const aesthetics = data.aesthetics || [];
+                if (aesthetics.length === 0) {
+                    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No aesthetics yet. Add some in Settings.</div>';
+                    return;
+                }
+                let html = '<div class="genre-grid">';
+                for (const a of aesthetics) {
+                    const sel = selectedFilmAesthetic === a.name ? ' selected' : '';
+                    const imgUrl = a.image ? '/api/film-aesthetics/image/' + encodeURIComponent(a.image) : null;
+                    html += `<div class="genre-card${sel}" data-fa="${a.name}" onclick="selectFilmAestheticCard(this)">
+                        ${imgUrl ? `<img src="${imgUrl}" alt="${a.name}" onerror="this.style.display='none'">` : `<div style="height:90px;background:#444;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">${a.name.charAt(0)}</div>`}
+                        <div class="genre-label">${a.name}</div>
+                    </div>`;
+                }
+                html += '</div>';
+                container.innerHTML = html;
+            } catch(e) {
+                container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">Could not load aesthetics</div>';
+            }
+        }
+
+        function selectFilmAestheticCard(el) {
+            document.querySelectorAll('#film-aesthetic-grid .genre-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedFilmAesthetic = el.dataset.fa;
+            document.getElementById('selected-film-aesthetic').textContent = '🎞️ ' + selectedFilmAesthetic;
+        }
+
+        function openFilmAestheticModal() {
+            loadFilmAestheticGrid();
+            document.getElementById('film-aesthetic-modal').style.display = 'flex';
+        }
+        function closeFilmAestheticModal() {
+            document.getElementById('film-aesthetic-modal').style.display = 'none';
+        }
+        function confirmFilmAestheticSelection() {
+            closeFilmAestheticModal();
+        }
+        function clearFilmAestheticSelection() {
+            selectedFilmAesthetic = null;
+            document.getElementById('selected-film-aesthetic').textContent = 'None selected';
+            document.querySelectorAll('#film-aesthetic-grid .genre-card').forEach(c => c.classList.remove('selected'));
+        }
+        function filterFilmAestheticGrid() {
+            const q = document.getElementById('fa-search-input').value.toLowerCase().trim();
+            document.querySelectorAll('#film-aesthetic-grid .genre-card').forEach(c => {
+                c.style.display = (!q || c.dataset.fa.toLowerCase().includes(q)) ? '' : 'none';
+            });
+        }
+
+        // === VISUAL STYLE MANAGER MODAL ===
+        let vsmFile = null;
+        document.getElementById('vsm-image')?.addEventListener('change', function(e) {
+            vsmFile = e.target.files[0];
+            if (vsmFile) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    document.getElementById('vsm-preview-img').src = ev.target.result;
+                    document.getElementById('vsm-preview-name').textContent = vsmFile.name;
+                    document.getElementById('vsm-preview').style.display = 'block';
+                };
+                reader.readAsDataURL(vsmFile);
+            }
+        });
+
+        async function loadVisualStyleManagerList() {
+            const container = document.getElementById('vsm-list');
+            try {
+                const res = await fetch('/api/visual-styles');
+                const data = await res.json();
+                const styles = data.styles || [];
+                if (!styles.length) {
+                    container.innerHTML = '<div style="font-size:0.85rem;color:var(--text-secondary);text-align:center;padding:20px;">No styles added yet.</div>';
+                    return;
+                }
+                container.innerHTML = styles.map(s => {
+                    const imgUrl = s.image ? '/api/visual-styles/image/' + encodeURIComponent(s.image) : null;
+                    return `<div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg-secondary);border-radius:6px;margin-bottom:6px;">
+                        ${imgUrl ? `<img src="${imgUrl}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">` : '<div style="width:40px;height:40px;background:#444;border-radius:4px;display:flex;align-items:center;justify-content:center;">🎨</div>'}
+                        <span style="flex:1;font-size:0.85rem;">${s.name}</span>
+                        <button class="btn btn-secondary" onclick="deleteVisualStyleFromManager('${s.name.replace(/'/g, "\\'")}')" style="padding:4px 10px;font-size:0.75rem;">✕</button>
+                    </div>`;
+                }).join('');
+            } catch(e) {}
+        }
+
+        async function addVisualStyleFromManager() {
+            const name = document.getElementById('vsm-name').value.trim();
+            if (!name) return notify('Name Required', 'Enter a style name');
+            const formData = new FormData();
+            formData.append('name', name);
+            if (vsmFile) formData.append('file', vsmFile);
+            try {
+                const res = await fetch('/api/visual-styles', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('vsm-name').value = '';
+                    document.getElementById('vsm-image').value = '';
+                    vsmFile = null;
+                    document.getElementById('vsm-preview').style.display = 'none';
+                    await loadVisualStyleManagerList();
+                    await loadVisualStyleGrid();
+                } else {
+                    notify('Error', data.error || 'Failed to add');
+                }
+            } catch(e) { notify('Error', 'Could not add style'); }
+        }
+
+        async function deleteVisualStyleFromManager(name) {
+            try {
+                const res = await fetch('/api/visual-styles/' + encodeURIComponent(name), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    await loadVisualStyleManagerList();
+                    await loadVisualStyleGrid();
+                }
+            } catch(e) {}
+        }
+
+        function openVisualStyleManagerModal() { loadVisualStyleManagerList(); document.getElementById('visual-style-manager-modal').style.display = 'flex'; }
+        function closeVisualStyleManagerModal() { document.getElementById('visual-style-manager-modal').style.display = 'none'; }
+
+        // === FILM AESTHETIC MANAGER MODAL ===
+        let famFile = null;
+        document.getElementById('fam-image')?.addEventListener('change', function(e) {
+            famFile = e.target.files[0];
+            if (famFile) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    document.getElementById('fam-preview-img').src = ev.target.result;
+                    document.getElementById('fam-preview-name').textContent = famFile.name;
+                    document.getElementById('fam-preview').style.display = 'block';
+                };
+                reader.readAsDataURL(famFile);
+            }
+        });
+
+        async function loadFilmAestheticManagerList() {
+            const container = document.getElementById('fam-list');
+            try {
+                const res = await fetch('/api/film-aesthetics');
+                const data = await res.json();
+                const aesthetics = data.aesthetics || [];
+                if (!aesthetics.length) {
+                    container.innerHTML = '<div style="font-size:0.85rem;color:var(--text-secondary);text-align:center;padding:20px;">No aesthetics added yet.</div>';
+                    return;
+                }
+                container.innerHTML = aesthetics.map(a => {
+                    const imgUrl = a.image ? '/api/film-aesthetics/image/' + encodeURIComponent(a.image) : null;
+                    return `<div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg-secondary);border-radius:6px;margin-bottom:6px;">
+                        ${imgUrl ? `<img src="${imgUrl}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">` : '<div style="width:40px;height:40px;background:#444;border-radius:4px;display:flex;align-items:center;justify-content:center;">🎞️</div>'}
+                        <span style="flex:1;font-size:0.85rem;">${a.name}</span>
+                        <button class="btn btn-secondary" onclick="deleteFilmAestheticFromManager('${a.name.replace(/'/g, "\\'")}')" style="padding:4px 10px;font-size:0.75rem;">✕</button>
+                    </div>`;
+                }).join('');
+            } catch(e) {}
+        }
+
+        async function addFilmAestheticFromManager() {
+            const name = document.getElementById('fam-name').value.trim();
+            if (!name) return notify('Name Required', 'Enter an aesthetic name');
+            const formData = new FormData();
+            formData.append('name', name);
+            if (famFile) formData.append('file', famFile);
+            try {
+                const res = await fetch('/api/film-aesthetics', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('fam-name').value = '';
+                    document.getElementById('fam-image').value = '';
+                    famFile = null;
+                    document.getElementById('fam-preview').style.display = 'none';
+                    await loadFilmAestheticManagerList();
+                    await loadFilmAestheticGrid();
+                } else {
+                    notify('Error', data.error || 'Failed to add');
+                }
+            } catch(e) { notify('Error', 'Could not add aesthetic'); }
+        }
+
+        async function deleteFilmAestheticFromManager(name) {
+            try {
+                const res = await fetch('/api/film-aesthetics/' + encodeURIComponent(name), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    await loadFilmAestheticManagerList();
+                    await loadFilmAestheticGrid();
+                }
+            } catch(e) {}
+        }
+
+        function openFilmAestheticManagerModal() { loadFilmAestheticManagerList(); document.getElementById('film-aesthetic-manager-modal').style.display = 'flex'; }
+        function closeFilmAestheticManagerModal() { document.getElementById('film-aesthetic-manager-modal').style.display = 'none'; }
 
         // === INIT ===
         document.querySelectorAll('.src-chk').forEach(cb => cb.addEventListener('change', updateIdeaInputs));

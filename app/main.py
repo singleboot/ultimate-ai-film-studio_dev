@@ -412,6 +412,10 @@ async def test_llm_connection(data: dict):
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 GENRES_DIR = Path(__file__).parent / "genres"
 GENRES_DIR.mkdir(exist_ok=True)
+VISUAL_STYLES_DIR = Path(__file__).parent / "visual_styles"
+VISUAL_STYLES_DIR.mkdir(exist_ok=True)
+FILM_AESTHETICS_DIR = Path(__file__).parent / "film_aesthetics"
+FILM_AESTHETICS_DIR.mkdir(exist_ok=True)
 
 def load_settings() -> dict:
     if SETTINGS_FILE.exists():
@@ -525,6 +529,114 @@ async def delete_genre(name: str):
 async def get_genre_image(filename: str):
     """Serve a genre image."""
     img_path = GENRES_DIR / filename
+    if img_path.exists():
+        return FileResponse(str(img_path))
+    return JSONResponse(status_code=404, content={"error": "Image not found"})
+
+# Visual style management
+@app.get("/api/visual-styles")
+async def list_visual_styles():
+    settings = load_settings()
+    styles = settings.get("visual_styles", [])
+    for s in styles:
+        img_path = VISUAL_STYLES_DIR / s["image"]
+        s["has_image"] = img_path.exists()
+    return {"styles": styles}
+
+@app.post("/api/visual-styles")
+async def add_visual_style(name: str = Form(...), file: UploadFile = File(None)):
+    settings = load_settings()
+    styles = settings.get("visual_styles", [])
+    for s in styles:
+        if s["name"].lower() == name.lower():
+            return {"success": False, "error": "Style already exists"}
+    image_filename = None
+    if file and file.filename:
+        ext = Path(file.filename).suffix or ".png"
+        safe_name = name.lower().replace(" ", "_").replace("/", "_")
+        image_filename = f"{safe_name}{ext}"
+        dest = VISUAL_STYLES_DIR / image_filename
+        content = await file.read()
+        dest.write_bytes(content)
+    entry = {"name": name, "image": image_filename} if image_filename else {"name": name, "image": None}
+    styles.append(entry)
+    settings["visual_styles"] = styles
+    save_settings(settings)
+    return {"success": True, "style": entry}
+
+@app.delete("/api/visual-styles/{name}")
+async def delete_visual_style(name: str):
+    settings = load_settings()
+    styles = settings.get("visual_styles", [])
+    for i, s in enumerate(styles):
+        if s["name"].lower() == name.lower():
+            if s.get("image"):
+                img_path = VISUAL_STYLES_DIR / s["image"]
+                if img_path.exists():
+                    img_path.unlink()
+            styles.pop(i)
+            settings["visual_styles"] = styles
+            save_settings(settings)
+            return {"success": True}
+    return {"success": False, "error": "Style not found"}
+
+@app.get("/api/visual-styles/image/{filename}")
+async def get_visual_style_image(filename: str):
+    img_path = VISUAL_STYLES_DIR / filename
+    if img_path.exists():
+        return FileResponse(str(img_path))
+    return JSONResponse(status_code=404, content={"error": "Image not found"})
+
+# Film aesthetic management
+@app.get("/api/film-aesthetics")
+async def list_film_aesthetics():
+    settings = load_settings()
+    aesthetics = settings.get("film_aesthetics", [])
+    for a in aesthetics:
+        img_path = FILM_AESTHETICS_DIR / a["image"]
+        a["has_image"] = img_path.exists()
+    return {"aesthetics": aesthetics}
+
+@app.post("/api/film-aesthetics")
+async def add_film_aesthetic(name: str = Form(...), file: UploadFile = File(None)):
+    settings = load_settings()
+    aesthetics = settings.get("film_aesthetics", [])
+    for a in aesthetics:
+        if a["name"].lower() == name.lower():
+            return {"success": False, "error": "Aesthetic already exists"}
+    image_filename = None
+    if file and file.filename:
+        ext = Path(file.filename).suffix or ".png"
+        safe_name = name.lower().replace(" ", "_").replace("/", "_")
+        image_filename = f"{safe_name}{ext}"
+        dest = FILM_AESTHETICS_DIR / image_filename
+        content = await file.read()
+        dest.write_bytes(content)
+    entry = {"name": name, "image": image_filename} if image_filename else {"name": name, "image": None}
+    aesthetics.append(entry)
+    settings["film_aesthetics"] = aesthetics
+    save_settings(settings)
+    return {"success": True, "aesthetic": entry}
+
+@app.delete("/api/film-aesthetics/{name}")
+async def delete_film_aesthetic(name: str):
+    settings = load_settings()
+    aesthetics = settings.get("film_aesthetics", [])
+    for i, a in enumerate(aesthetics):
+        if a["name"].lower() == name.lower():
+            if a.get("image"):
+                img_path = FILM_AESTHETICS_DIR / a["image"]
+                if img_path.exists():
+                    img_path.unlink()
+            aesthetics.pop(i)
+            settings["film_aesthetics"] = aesthetics
+            save_settings(settings)
+            return {"success": True}
+    return {"success": False, "error": "Aesthetic not found"}
+
+@app.get("/api/film-aesthetics/image/{filename}")
+async def get_film_aesthetic_image(filename: str):
+    img_path = FILM_AESTHETICS_DIR / filename
     if img_path.exists():
         return FileResponse(str(img_path))
     return JSONResponse(status_code=404, content={"error": "Image not found"})
