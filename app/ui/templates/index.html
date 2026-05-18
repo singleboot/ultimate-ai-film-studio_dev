@@ -147,7 +147,16 @@
         }
         .idea-title { font-size: 1.1rem; font-weight: 600; color: var(--accent-primary); margin-bottom: 8px; }
         .idea-text { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 10px; white-space: pre-wrap; }
-        .idea-actions { margin-top: 12px; display: flex; gap: 10px; }
+
+        .style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+        .style-card {
+            background: var(--bg-tertiary); border: 2px solid var(--border-color); border-radius: 8px;
+            padding: 15px 10px; text-align: center; cursor: pointer; transition: all 0.2s;
+            font-size: 0.85rem; color: var(--text-secondary);
+        }
+        .style-card:hover { border-color: var(--accent-primary); color: var(--text-primary); }
+        .style-card.selected { border-color: var(--accent-primary); background: rgba(99,102,241,0.15); color: var(--accent-primary); }
+        .style-icon { font-size: 1.8rem; margin-bottom: 6px; }
 
         .spinner {
             width: 20px; height: 20px; border: 3px solid var(--bg-tertiary);
@@ -334,6 +343,74 @@
         </div>
     </div>
 
+    <!-- PAGE: Selection -->
+    <div class="page" id="page-selection">
+        <div class="container">
+            <div class="workflow-nav">
+                <span class="workflow-step">📝 Ideas</span>
+                <span class="workflow-step active">⚙️ Selection</span>
+                <span class="workflow-step">👤 Characters</span>
+                <span class="workflow-step">🏠 Locations</span>
+                <span class="workflow-step">🎬 Scenes</span>
+                <span class="workflow-step">🎥 Videos</span>
+            </div>
+
+            <h2 style="color:var(--accent-primary);margin-bottom:20px;">⚙️ Visual & Story Settings</h2>
+
+            <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
+                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🎨 Visual Style</h3>
+                <div class="style-grid">
+                    <div class="style-card" data-style="cinematic" onclick="selectStyle(this)">
+                        <div class="style-icon">🎬</div>
+                        <div>Cinematic</div>
+                    </div>
+                    <div class="style-card" data-style="anime" onclick="selectStyle(this)">
+                        <div class="style-icon">🎨</div>
+                        <div>Anime</div>
+                    </div>
+                    <div class="style-card" data-style="realistic" onclick="selectStyle(this)">
+                        <div class="style-icon">📷</div>
+                        <div>Realistic</div>
+                    </div>
+                    <div class="style-card" data-style="pixelart" onclick="selectStyle(this)">
+                        <div class="style-icon">🟦</div>
+                        <div>Pixel Art</div>
+                    </div>
+                    <div class="style-card" data-style="3d" onclick="selectStyle(this)">
+                        <div class="style-icon">🧊</div>
+                        <div>3D Render</div>
+                    </div>
+                    <div class="style-card" data-style="sketch" onclick="selectStyle(this)">
+                        <div class="style-icon">✏️</div>
+                        <div>Sketch</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
+                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">📊 Story Scale</h3>
+                <div class="input-row">
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Characters</label>
+                        <input type="number" class="form-input" id="sel-characters" value="3" min="1" max="20">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Locations</label>
+                        <input type="number" class="form-input" id="sel-locations" value="3" min="1" max="20">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Scenes</label>
+                        <input type="number" class="form-input" id="sel-scenes" value="5" min="1" max="50">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:20px;">
+                <button class="btn btn-primary" onclick="proceedToCharacters()" style="flex:1">👤 Continue to Characters →</button>
+            </div>
+        </div>
+    </div>
+
     <!-- New Project Modal -->
     <div class="modal-overlay" id="new-project-modal">
         <div class="modal">
@@ -455,24 +532,6 @@
                     <div id="uploaded-workflows" style="margin-top:10px;">
                         <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:6px;">Uploaded:</div>
                         <div id="workflow-list"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin-bottom:15px;">
-                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">🖼️ Image</h3>
-                <div class="form-group">
-                    <label class="form-label">Checkpoint Model</label>
-                    <input type="text" class="form-input" id="image-model" value="juggernaut_xl.safetensors">
-                </div>
-                <div class="input-row">
-                    <div class="form-group" style="flex:1">
-                        <label class="form-label">Width</label>
-                        <input type="number" class="form-input" id="image-width" value="1024">
-                    </div>
-                    <div class="form-group" style="flex:1">
-                        <label class="form-label">Height</label>
-                        <input type="number" class="form-input" id="image-height" value="1024">
                     </div>
                 </div>
             </div>
@@ -727,11 +786,6 @@
                 if (s.comfyui) {
                     document.getElementById('comfyui-url').value = s.comfyui.url || 'http://localhost:8188';
                 }
-                if (s.image) {
-                    document.getElementById('image-model').value = s.image.model || 'juggernaut_xl.safetensors';
-                    document.getElementById('image-width').value = s.image.width || 1024;
-                    document.getElementById('image-height').value = s.image.height || 1024;
-                }
                 // Load LLM models
                 await loadLLMModels();
                 if (s.llm && s.llm.model) {
@@ -759,11 +813,6 @@
                 },
                 comfyui: {
                     url: document.getElementById('comfyui-url').value
-                },
-                image: {
-                    model: document.getElementById('image-model').value,
-                    width: parseInt(document.getElementById('image-width').value),
-                    height: parseInt(document.getElementById('image-height').value)
                 },
                 workflows: {
                     t2i: document.getElementById('wf-t2i').value,
@@ -1100,7 +1149,33 @@ Separate each concept with "---".`
         }
 
         function goToSelection() {
-            notify('⚙️ Selection Module', 'Coming in the next build!', '🚧');
+            showPage('selection');
+            resetSelectionStyles();
+        }
+
+        let selectedVisualStyle = null;
+
+        function selectStyle(el) {
+            document.querySelectorAll('.style-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedVisualStyle = el.dataset.style;
+        }
+
+        function resetSelectionStyles() {
+            document.querySelectorAll('.style-card').forEach(c => c.classList.remove('selected'));
+            selectedVisualStyle = null;
+        }
+
+        function proceedToCharacters() {
+            if (!selectedVisualStyle) {
+                notify('Style Required', 'Please select a visual style before continuing.', '⚠️');
+                return;
+            }
+            const chars = parseInt(document.getElementById('sel-characters').value) || 3;
+            const locs = parseInt(document.getElementById('sel-locations').value) || 3;
+            const scenes = parseInt(document.getElementById('sel-scenes').value) || 5;
+            currentProject.settings = { style: selectedVisualStyle, characters: chars, locations: locs, scenes: scenes };
+            notify('✅ Selections Saved', `${chars} characters, ${locs} locations, ${scenes} scenes`, '✅');
         }
 
         // === INIT ===
