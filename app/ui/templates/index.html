@@ -17,262 +17,171 @@
             --text-secondary: #a0a0b0;
             --border-color: #333355;
         }
-
         * { box-sizing: border-box; margin: 0; padding: 0; }
-
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
-        }
-
-        .app-container {
-            display: grid;
-            grid-template-columns: 250px 1fr;
-            grid-template-rows: 60px 1fr 40px;
-            min-height: 100vh;
-        }
-
-        header {
-            grid-column: 1 / -1;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border-color);
-            padding: 10px 20px;
             display: flex;
-            align-items: center;
-            justify-content: space-between;
+            align-items: flex-start;
+            justify-content: center;
         }
-
+        .container {
+            max-width: 650px;
+            width: 100%;
+            margin: 80px 20px 40px;
+        }
         .logo {
-            font-size: 1.2rem;
-            font-weight: 700;
+            text-align: center;
+            margin-bottom: 50px;
+        }
+        .logo h1 {
+            font-size: 1.8rem;
             color: var(--accent-primary);
+            margin-bottom: 8px;
         }
-
-        .project-name {
+        .logo p {
             color: var(--text-secondary);
-            font-size: 0.9rem;
+            font-size: 0.95rem;
         }
-
-        .sidebar {
+        .main-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 40px;
+        }
+        .main-btn {
             background: var(--bg-secondary);
-            border-right: 1px solid var(--border-color);
-            padding: 15px;
-            overflow-y: auto;
-        }
-
-        .sidebar-section {
-            margin-bottom: 20px;
-        }
-
-        .sidebar-title {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            color: var(--text-secondary);
-            margin-bottom: 10px;
-            letter-spacing: 1px;
-        }
-
-        .nav-item {
-            padding: 10px 12px;
-            color: var(--text-secondary);
-            border-radius: 6px;
-            margin-bottom: 4px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 35px 20px;
+            text-align: center;
             cursor: pointer;
             transition: all 0.2s;
-            display: flex;
-            justify-content: space-between;
+        }
+        .main-btn:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0,212,255,0.1);
+        }
+        .main-btn .icon { font-size: 2.5rem; margin-bottom: 12px; }
+        .main-btn h3 { font-size: 1.1rem; margin-bottom: 6px; }
+        .main-btn p { font-size: 0.85rem; color: var(--text-secondary); }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
             align-items: center;
+            justify-content: center;
         }
-
-        .nav-item:hover, .nav-item.active {
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 30px;
+            width: 90%;
+            max-width: 480px;
         }
-
-        .nav-item.active {
-            background: var(--accent-primary);
-            color: var(--bg-primary);
-        }
-
-        .badge {
-            background: var(--accent-secondary);
-            color: white;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.7rem;
-        }
-
-        .main-content {
-            padding: 20px;
-            overflow-y: auto;
-        }
-
-        .page { display: none; }
-        .page.active { display: block; }
-
-        .page-header {
-            font-size: 1.5rem;
-            margin-bottom: 20px;
+        .modal h2 {
+            font-size: 1.3rem;
             color: var(--accent-primary);
+            margin-bottom: 20px;
         }
-
-        .form-group { margin-bottom: 15px; }
-        
+        .form-group { margin-bottom: 18px; }
         .form-label {
             display: block;
             font-size: 0.85rem;
             color: var(--text-secondary);
             margin-bottom: 6px;
         }
-
-        .form-input, .form-select, .form-textarea {
+        .form-input, .form-select {
             width: 100%;
             padding: 10px 14px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 6px;
+            border-radius: 8px;
             color: var(--text-primary);
             font-size: 0.95rem;
         }
-
-        .form-input:focus, .form-select:focus, .form-textarea:focus {
-            outline: none;
-            border-color: var(--accent-primary);
+        .form-input:focus { outline: none; border-color: var(--accent-primary); }
+        .input-row {
+            display: flex;
+            gap: 10px;
         }
-
-        .form-textarea { min-height: 80px; resize: vertical; }
-
+        .input-row .form-input { flex: 1; }
         .btn {
             padding: 10px 20px;
-            border-radius: 6px;
+            border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
             border: none;
             font-size: 0.9rem;
             transition: all 0.2s;
         }
-
-        .btn-primary {
-            background: var(--accent-primary);
-            color: var(--bg-primary);
-        }
-
+        .btn-primary { background: var(--accent-primary); color: var(--bg-primary); }
         .btn-primary:hover { background: #00b8e0; }
-
-        .btn-secondary {
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-        }
-
+        .btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { border-color: var(--text-secondary); }
         .btn-success { background: var(--accent-success); color: white; }
         .btn-danger { background: var(--accent-danger); color: white; }
+        .modal-actions { display: flex; gap: 10px; margin-top: 10px; }
 
-        .idea-card {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 15px;
+        .section-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
             margin-bottom: 15px;
         }
-
-        .idea-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: var(--accent-primary);
-            margin-bottom: 8px;
-        }
-
-        .idea-hook {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
+        .recent-list { margin-top: 10px; }
+        .recent-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
             margin-bottom: 10px;
-        }
-
-        .idea-scene {
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-            font-style: italic;
-        }
-
-        .idea-actions {
-            margin-top: 12px;
-            display: flex;
-            gap: 10px;
-        }
-
-        .tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 10px;
-        }
-
-        .tab {
-            padding: 8px 16px;
             cursor: pointer;
-            border-radius: 6px;
-            color: var(--text-secondary);
-        }
-
-        .tab.active {
-            background: var(--accent-primary);
-            color: var(--bg-primary);
-        }
-
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-
-        .generation-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        .preview-panel {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 15px;
-            min-height: 400px;
-        }
-
-        .preview-image {
-            width: 100%;
-            max-height: 350px;
-            object-fit: contain;
-            border-radius: 4px;
-            background: var(--bg-tertiary);
-        }
-
-        .prompt-panel {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 15px;
-        }
-
-        .prompt-text {
-            background: var(--bg-tertiary);
-            padding: 15px;
-            border-radius: 6px;
-            white-space: pre-wrap;
-            font-size: 0.9rem;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .approval-buttons {
             display: flex;
-            gap: 10px;
-            margin-top: 15px;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
         }
+        .recent-item:hover { border-color: var(--accent-primary); }
+        .recent-item .name { font-weight: 600; margin-bottom: 4px; }
+        .recent-item .meta { font-size: 0.8rem; color: var(--text-secondary); }
+        .recent-item .arrow { font-size: 1.2rem; color: var(--text-secondary); }
+        .recent-item:hover .arrow { color: var(--accent-primary); }
+
+        .notification-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        .notification-overlay.active { display: flex; }
+        .notification {
+            background: var(--bg-secondary);
+            border-radius: 14px;
+            padding: 30px 40px;
+            width: 90%;
+            max-width: 420px;
+            text-align: center;
+        }
+        .notification .icon { font-size: 2.5rem; margin-bottom: 12px; }
+        .notification .msg { font-size: 1.05rem; margin-bottom: 8px; }
+        .notification .detail { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 18px; }
 
         .status-bar {
-            grid-column: 1 / -1;
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
             background: var(--bg-secondary);
             border-top: 1px solid var(--border-color);
             padding: 8px 20px;
@@ -281,1394 +190,135 @@
             font-size: 0.8rem;
             color: var(--text-secondary);
         }
-
-        .project-files {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            margin-top: 15px;
-        }
-
-        .project-file {
-            background: var(--bg-tertiary);
-            border-radius: 6px;
-            padding: 10px;
-            text-align: center;
-            cursor: pointer;
-        }
-
-        .project-file img {
-            width: 100%;
-            height: 80px;
-            object-fit: cover;
-            border-radius: 4px;
-        }
-
-        .project-file-name {
-            font-size: 0.75rem;
-            margin-top: 5px;
-            color: var(--text-secondary);
-        }
-
         .empty-state {
             text-align: center;
-            padding: 40px;
+            padding: 30px;
             color: var(--text-secondary);
+            font-size: 0.9rem;
         }
-
-        .progress-indicator {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .progress-step {
-            padding: 8px 16px;
-            background: var(--bg-tertiary);
-            border-radius: 20px;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-        }
-
-        .progress-step.active {
-            background: var(--accent-primary);
-            color: var(--bg-primary);
-        }
-
-        .progress-step.completed {
-            background: var(--accent-success);
-            color: white;
-        }
-
-        .arrow { color: var(--text-secondary); }
     </style>
 </head>
 <body>
-    <div class="app-container">
-        <header>
-            <div class="logo">🎬 Ultimate AI Film Studio</div>
-            <span class="project-name" id="project-name">No Project</span>
-        </header>
+    <div class="container">
+        <div class="logo">
+            <h1>🎬 Ultimate AI Film Studio</h1>
+            <p>Create stunning short films with AI</p>
+        </div>
 
-        <aside class="sidebar" id="main-sidebar" style="display: none;">
-            <div class="sidebar-section">
-                <div class="nav-item" onclick="showPage('settings')" id="nav-settings" style="margin-bottom:15px; border:1px solid var(--accent-secondary);">
-                    ⚙️ Settings
-                </div>
+        <!-- Main Buttons -->
+        <div class="main-buttons">
+            <div class="main-btn" onclick="openNewProject()">
+                <div class="icon">➕</div>
+                <h3>New Project</h3>
+                <p>Start a fresh short film</p>
             </div>
-
-            <div class="sidebar-section">
-                <div class="sidebar-title">Workflow</div>
-                <div class="nav-item active" onclick="showPage('ideas')" id="nav-ideas">
-                    📝 Topic Ideas
-                </div>
-                <div class="nav-item" onclick="showPage('selection')" id="nav-selection">
-                    ⚙️ Selection
-                </div>
-                <div class="nav-item" onclick="showPage('characters')" id="nav-characters">
-                    👤 Characters <span class="badge" id="char-count">0</span>
-                </div>
-                <div class="nav-item" onclick="showPage('locations')" id="nav-locations">
-                    🏠 Locations <span class="badge" id="loc-count">0</span>
-                </div>
-                <div class="nav-item" onclick="showPage('scenes')" id="nav-scenes">
-                    🎬 Scenes
-                </div>
-                <div class="nav-item" onclick="showPage('videos')" id="nav-videos">
-                    🎥 Videos
-                </div>
-                <div class="nav-item" onclick="showPage('home')" id="nav-home" style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px;">
-                    🏠 Home
-                </div>
+            <div class="main-btn" onclick="openExistingProject()">
+                <div class="icon">📂</div>
+                <h3>Open Project</h3>
+                <p>Continue existing project</p>
             </div>
+        </div>
 
-            <div class="sidebar-section">
-                <div class="sidebar-title">Project Files</div>
-                <div id="sidebar-files">
-                    <div class="empty-state">No files yet</div>
-                </div>
-            </div>
-
-            <!-- Hide sidebar new project since we have home page -->
-            <!-- <div class="sidebar-section">... -->
-        </aside>
-
-        <main class="main-content">
-            <!-- PAGE 1: Home / Project Selection -->
-            <div class="page active" id="page-home">
-                <div style="max-width: 600px; margin: 50px auto; text-align: center;">
-                    <h1 class="page-header">🎬 Ultimate AI Film Studio</h1>
-                    <p style="color: var(--text-secondary); margin-bottom: 40px;">Create stunning short films with AI</p>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                        <div class="form-group" style="background: var(--bg-secondary); padding: 30px; border-radius: 12px; cursor: pointer; transition: transform 0.2s;" onclick="showNewProjectForm()">
-                            <div style="font-size: 3rem; margin-bottom: 15px;">➕</div>
-                            <h3>New Project</h3>
-                            <p style="color: var(--text-secondary); font-size: 0.9rem;">Start a fresh short film</p>
-                        </div>
-                        
-                        <div class="form-group" style="background: var(--bg-secondary); padding: 30px; border-radius: 12px; cursor: pointer; transition: transform 0.2s;" onclick="showOpenProject()">
-                            <div style="font-size: 3rem; margin-bottom: 15px;">📂</div>
-                            <h3>Open Project</h3>
-                            <p style="color: var(--text-secondary); font-size: 0.9rem;">Continue existing project</p>
-                        </div>
-                    </div>
-                    
-                    <!-- New Project Form (hidden by default) -->
-                    <div id="new-project-form" style="display: none; margin-top: 30px; background: var(--bg-secondary); padding: 25px; border-radius: 12px;">
-                        <h3 style="margin-bottom: 15px;">Create New Project</h3>
-                        <div class="form-group">
-                            <label class="form-label">Project Name</label>
-                            <input type="text" class="form-input" id="home-project-name" placeholder="Enter project name">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">📁 Save Location</label>
-                            <div style="display: flex; gap: 10px;">
-                                <input type="text" class="form-input" id="project-location" placeholder="Select folder..." style="flex: 1;" readonly>
-                                <button class="btn btn-secondary" onclick="browseProjectLocation()">Choose Folder</button>
-                            </div>
-                        </div>
-                        <button class="btn btn-primary" onclick="createProjectFromHome()">Create Project</button>
-                        <button class="btn btn-secondary" onclick="hideNewProjectForm()" style="margin-left: 10px;">Cancel</button>
-                    </div>
-                    
-                    <!-- Open Project List (hidden by default) -->
-                    <div id="open-project-list" style="display: none; margin-top: 30px; background: var(--bg-secondary); padding: 25px; border-radius: 12px;">
-                        <h3 style="margin-bottom: 15px;">Your Projects</h3>
-                        <div id="projects-list-container"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- All other pages - hidden until project loaded -->
-            <div id="workflow-pages" style="display: none;">
-                <h1 class="page-header">📝 Topic Ideas Generator</h1>
-                
-                <div class="tabs" style="margin-bottom: 20px;">
-                    <button class="tab active" onclick="switchIdeaTab('genre')">🎭 Genre</button>
-                    <button class="tab" onclick="switchIdeaTab('era')">📅 Era/Period</button>
-                    <button class="tab" onclick="switchIdeaTab('custom')">✏️ Custom</button>
-                    <button class="tab" onclick="switchIdeaTab('websearch')">🌐 Web Search</button>
-                </div>
-
-                <div id="tab-genre" class="tab-content active">
-                    <div class="form-group">
-                        <label class="form-label">Select Genre</label>
-                        <select class="form-select" id="genre-select">
-                            <option value="">-- Select Genre --</option>
-                            <optgroup label="Indian Cinema">
-                                <option value="Indian 90s">Indian 90s Bollywood</option>
-                                <option value="Indian 80s">Indian 80s</option>
-                                <option value="Indian 2000s">Indian 2000s</option>
-                                <option value="Indian Rural">Indian Rural/Regional</option>
-                                <option value="Indian Parallel">Indian Parallel Cinema</option>
-                            </optgroup>
-                            <optgroup label="Asian Cinema">
-                                <option value="Japanese 80s">Japanese 80s</option>
-                                <option value="Japanese 90s">Japanese 90s</option>
-                                <option value="Korean 2000s">Korean 2000s</option>
-                                <option value="Korean 2010s">Korean 2010s</option>
-                                <option value="Chinese 80s">Chinese 80s</option>
-                                <option value="Chinese 90s">Chinese 90s</option>
-                                <option value="Hong Kong Action">Hong Kong Action</option>
-                            </optgroup>
-                            <optgroup label="Western Cinema">
-                                <option value="American 70s">American 70s</option>
-                                <option value="American 80s">American 80s</option>
-                                <option value="American 90s">American 90s</option>
-                                <option value="European 90s">European 90s</option>
-                                <option value="British 80s">British 80s</option>
-                            </optgroup>
-                            <optgroup label="Film Styles">
-                                <option value="Noir">Film Noir</option>
-                                <option value="Sci-Fi Classic">Sci-Fi Classic</option>
-                                <option value="Horror Classic">Horror Classic</option>
-                                <option value="Western">Western</option>
-                                <option value="Anime">Anime-Inspired</option>
-                            </optgroup>
-                            <option value="custom">➕ Custom Genre...</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="custom-genre-input" style="display:none;">
-                        <label class="form-label">Enter Custom Genre</label>
-                        <input type="text" class="form-input" id="custom-genre" placeholder="e.g., Cyberpunk 2020s">
-                    </div>
-                    <button class="btn btn-primary" onclick="generateTopicIdeas()">Generate 5 Ideas</button>
-                </div>
-
-                <div id="tab-era" class="tab-content">
-                    <div class="form-group">
-                        <label class="form-label">Select Era/Time Period</label>
-                        <select class="form-select" id="era-select">
-                            <option value="">-- Select Era --</option>
-                            <option value="1950s">1950s - Post War Era</option>
-                            <option value="1960s">1960s - Swinging Sixties</option>
-                            <option value="1970s">1970s - Disco & Change</option>
-                            <option value="1980s">1980s - MTV Era</option>
-                            <option value="1990s">1990s - Digital Dawn</option>
-                            <option value="2000s">2000s - New Millennium</option>
-                            <option value="2010s">2010s - Streaming Era</option>
-                            <option value="2020s">2020s - AI Age</option>
-                        </select>
-                    </div>
-                    <button class="btn btn-primary" onclick="generateTopicIdeasFromEra()">Generate 5 Ideas</button>
-                </div>
-
-                <div id="tab-custom" class="tab-content">
-                    <div class="form-group">
-                        <label class="form-label">Enter Your Own Topic/Concept</label>
-                        <textarea class="form-textarea" id="custom-topic-input" rows="4" placeholder="Describe your story idea, theme, or concept..."></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Style/Mood (optional)</label>
-                        <input type="text" class="form-input" id="custom-style" placeholder="e.g., dark, nostalgic, action-packed">
-                    </div>
-                    <button class="btn btn-primary" onclick="generateFromCustomTopic()">Generate Variations</button>
-                </div>
-
-                <div id="tab-websearch" class="tab-content">
-                    <div class="form-group">
-                        <label class="form-label">Search the Web for Inspiration</label>
-                        <input type="text" class="form-input" id="web-search-input" placeholder="e.g., trending short film themes 2025, popular indie film topics">
-                    </div>
-                    <button class="btn btn-primary" onclick="webSearchIdeas()">🔍 Search & Generate Ideas</button>
-                    <div id="web-search-results" style="margin-top: 15px; display:none;">
-                        <div class="form-group" style="background: var(--bg-tertiary); padding: 15px; border-radius: 8px;">
-                            <h4 style="margin-bottom: 10px;">📰 Search Results</h4>
-                            <div id="web-results-content"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="generation-status" style="margin: 20px 0; display: none;">
-                    <div style="background: var(--bg-tertiary); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent-primary);">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div class="spinner" id="status-spinner"></div>
-                            <span id="status-text-ideas">Generating ideas...</span>
-                        </div>
-                        <div style="margin-top: 10px; background: var(--bg-secondary); height: 6px; border-radius: 3px; overflow: hidden;">
-                            <div id="progress-bar" style="background: var(--accent-primary); height: 100%; width: 0%; transition: width 0.3s;"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="ideas-container" style="margin-top: 20px;"></div>
-            </div>
-
-            <!-- Workflow Pages - Only visible after project loaded -->
-            <div id="workflow-container" style="display: none;">
-            <!-- PAGE 2: Selection Module -->
-            <div class="page" id="page-selection">
-                <h1 class="page-header">⚙️ Selection Module</h1>
-                
-                <div class="form-group">
-                    <label class="form-label">Selected Topic</label>
-                    <div id="selected-topic" style="padding: 10px; background: var(--bg-tertiary); border-radius: 6px;">
-                        No topic selected
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Visual Style</label>
-                    <select class="form-select" id="visual-style">
-                        <option value="Studio Ghibli">Studio Ghibli</option>
-                        <option value="PIXAR">PIXAR</option>
-                        <option value="Disney Classic">Disney Classic</option>
-                        <option value="Anime">Anime</option>
-                        <option value="Watercolor">Watercolor</option>
-                        <option value="Oil Painting">Oil Painting</option>
-                        <option value="Cyberpunk">Cyberpunk</option>
-                        <option value="Film Noir">Film Noir</option>
-                        <option value="Photorealistic">Photorealistic</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Character Count</label>
-                    <input type="number" class="form-input" id="character-count" value="3" min="1" max="10">
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Location Count</label>
-                    <input type="number" class="form-input" id="location-count" value="3" min="1" max="6">
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Scene Count</label>
-                    <input type="number" class="form-input" id="scene-count" value="50" min="10" max="500">
-                </div>
-
-                <button class="btn btn-primary" onclick="startGeneration()">Start Generation →</button>
-            </div>
-
-            <!-- PAGE 3: Character Generation -->
-            <div class="page" id="page-characters">
-                <h1 class="page-header">👤 Character Generation</h1>
-                
-                <div class="tabs">
-                    <div class="tab active" onclick="switchCharTab('text-image')">Text to Image</div>
-                    <div class="tab" onclick="switchCharTab('image-image')">Image to Image (Reference)</div>
-                </div>
-
-                <div id="char-text-image" class="tab-content active">
-                    <div class="generation-grid">
-                        <div class="prompt-panel">
-                            <h3>Character Prompt</h3>
-                            <div id="current-char-prompt" class="prompt-text">No prompt loaded</div>
-                            <button class="btn btn-primary" style="margin-top:10px" onclick="generateCharImage()">Generate Image</button>
-                        </div>
-                        <div class="preview-panel">
-                            <h3>Preview</h3>
-                            <img id="char-preview" class="preview-image" src="" style="display:none">
-                            <div id="char-preview-placeholder" class="empty-state">No image generated yet</div>
-                            <div class="approval-buttons" id="char-approval" style="display:none">
-                                <button class="btn btn-success" onclick="approveChar()">✓ Approve</button>
-                                <button class="btn btn-danger" onclick="rejectChar()">✗ Reject</button>
-                                <button class="btn btn-secondary" onclick="skipChar()">→ Skip</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="char-image-image" class="tab-content">
-                    <div class="form-group">
-                        <label class="form-label">Upload Reference Image</label>
-                        <input type="file" class="form-input" id="ref-image-input" accept="image/*">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Edit Prompt</label>
-                        <textarea class="form-textarea" id="image-edit-prompt" placeholder="Describe what to change..."></textarea>
-                    </div>
-                    <button class="btn btn-primary" onclick="generateFromImage()">Generate from Image</button>
-                </div>
-
-                <div style="margin-top: 20px;">
-                    <h3>Generated Characters</h3>
-                    <div id="char-files" class="project-files"></div>
-                </div>
-            </div>
-
-            <!-- PAGE 4: Location Generation -->
-            <div class="page" id="page-locations">
-                <h1 class="page-header">🏠 Location Generation</h1>
-                
-                <div class="tabs">
-                    <div class="tab active" onclick="switchLocTab('text-image')">Text to Image</div>
-                    <div class="tab" onclick="switchLocTab('image-image')">Image to Image</div>
-                </div>
-
-                <div id="loc-text-image" class="tab-content active">
-                    <div class="generation-grid">
-                        <div class="prompt-panel">
-                            <h3>Location Prompt</h3>
-                            <div id="current-loc-prompt" class="prompt-text">No prompt loaded</div>
-                            <button class="btn btn-primary" style="margin-top:10px" onclick="generateLocImage()">Generate Image</button>
-                        </div>
-                        <div class="preview-panel">
-                            <h3>Preview</h3>
-                            <img id="loc-preview" class="preview-image" src="" style="display:none">
-                            <div id="loc-preview-placeholder" class="empty-state">No image generated yet</div>
-                            <div class="approval-buttons" id="loc-approval" style="display:none">
-                                <button class="btn btn-success" onclick="approveLoc()">✓ Approve</button>
-                                <button class="btn btn-danger" onclick="rejectLoc()">✗ Reject</button>
-                                <button class="btn btn-secondary" onclick="skipLoc()">→ Skip</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="loc-image-image" class="tab-content">
-                    <div class="form-group">
-                        <label class="form-label">Upload Reference Image</label>
-                        <input type="file" class="form-input" id="loc-ref-image-input" accept="image/*">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Edit Prompt</label>
-                        <textarea class="form-textarea" id="loc-image-edit-prompt" placeholder="Describe what to change..."></textarea>
-                    </div>
-                    <button class="btn btn-primary" onclick="generateLocFromImage()">Generate from Image</button>
-                </div>
-
-                <div style="margin-top: 20px;">
-                    <h3>Generated Locations</h3>
-                    <div id="loc-files" class="project-files"></div>
-                </div>
-            </div>
-
-            <!-- PAGE 5: Scene Prompts -->
-            <div class="page" id="page-scenes">
-                <h1 class="page-header">🎬 Scene Prompts</h1>
-                <p style="color: var(--text-secondary)">Scene prompt generation coming soon...</p>
-            </div>
-
-            <!-- PAGE 6: Video Generation -->
-            <div class="page" id="page-videos">
-                <h1 class="page-header">🎥 Video Generation</h1>
-                <p style="color: var(--text-secondary)">Video generation coming soon...</p>
-            </div>
-
-            <!-- PAGE: Settings -->
-            <div class="page" id="page-settings">
-                <h1 class="page-header">⚙️ Settings</h1>
-
-                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">🧠 LLM Configuration</h3>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Provider</label>
-                        <select class="form-select" id="llm-provider" onchange="loadLLMModels()">
-                            <option value="">Select Provider</option>
-                            <option value="ollama">Ollama (Local)</option>
-                            <option value="lm_studio">LM Studio (Local)</option>
-                            <option value="openrouter">OpenRouter (Cloud)</option>
-                            <option value="gemini">Gemini (Cloud)</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Model</label>
-                        <select class="form-select" id="llm-model">
-                            <option value="">Select Model</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">API Key (for cloud providers)</label>
-                        <input type="password" class="form-input" id="llm-api-key" placeholder="Enter API key...">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Custom Host URL (for local)</label>
-                        <input type="text" class="form-input" id="llm-host" placeholder="http://localhost:11434">
-                    </div>
-
-                    <button class="btn btn-secondary" onclick="testLLMConnection()">Test Connection</button>
-                    <span id="llm-test-result" style="margin-left: 10px; color: var(--text-secondary);"></span>
-                </div>
-
-                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">🎨 ComfyUI Configuration</h3>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Connection Type</label>
-                        <select class="form-select" id="comfyui-connection-type">
-                            <option value="local">Local</option>
-                            <option value="remote">Remote</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">ComfyUI URL</label>
-                        <input type="text" class="form-input" id="comfyui-url" value="http://localhost:8188" placeholder="http://localhost:8188">
-                    </div>
-
-                    <button class="btn btn-secondary" onclick="testComfyUIConnection()">Test Connection</button>
-                    <span id="comfyui-test-result" style="margin-left: 10px; color: var(--text-secondary);"></span>
-                </div>
-
-                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">🖼️ Image Generation Models</h3>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Default Checkpoint Model</label>
-                        <input type="text" class="form-input" id="image-model" value="juggernaut_xl.safetensors" placeholder="model_name.safetensors">
-                        <small style="color: var(--text-secondary);">Enter the exact checkpoint filename from ComfyUI/models/checkpoints/</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Image Width</label>
-                        <input type="number" class="form-input" id="image-width" value="1024">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Image Height</label>
-                        <input type="number" class="form-input" id="image-height" value="1024">
-                    </div>
-                </div>
-
-                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">🎬 Video Generation Models</h3>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Video Type</label>
-                        <select class="form-select" id="video-type">
-                            <option value="text_to_video">Text to Video</option>
-                            <option value="image_to_video">Image to Video</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Video Model</label>
-                        <select class="form-select" id="video-model">
-                            <option value="ltx_23">LTX 2.3</option>
-                            <option value="ltx_23_distilled">LTX 2.3 Distilled</option>
-                            <option value="wan_21">Wan 2.1</option>
-                            <option value="hunyuan">Hunyuan Video</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Default Frames</label>
-                        <input type="number" class="form-input" id="video-frames" value="81">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">FPS</label>
-                        <input type="number" class="form-input" id="video-fps" value="24">
-                    </div>
-                </div>
-
-                <div class="form-group" style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="margin-bottom: 15px; color: var(--accent-primary);">📁 Project Settings</h3>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Projects Folder</label>
-                        <input type="text" class="form-input" id="projects-folder" value="projects" placeholder="projects">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Auto-save Prompts</label>
-                        <input type="checkbox" id="auto-save-prompts" checked> Enable
-                    </div>
-                </div>
-
-                <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
-                <button class="btn btn-secondary" onclick="resetSettings()" style="margin-left: 10px;">Reset to Default</button>
-            </div>
-            </div> <!-- End workflow container -->
-        </main>
-
-        <footer class="status-bar">
-            <span id="status-text">Ready</span>
-            <span id="llm-status">LLM: Not connected</span>
-        </footer>
+        <!-- Recent Projects -->
+        <div class="section-title">Recent Projects</div>
+        <div id="recent-list" class="recent-list">
+            <div class="empty-state">No recent projects</div>
+        </div>
     </div>
 
-    <script>
-        // State
-        let currentProject = null;
-        let topicIdeas = [];
-        let selectedIdea = null;
-        let charIndex = 0;
-        let locIndex = 0;
-        let generatedCharPrompts = [];
-        let generatedLocPrompts = [];
-        
-        // Page navigation
-        function showPage(page) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            const pageEl = document.getElementById('page-' + page);
-            if (pageEl) pageEl.classList.add('active');
-            
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            const navEl = document.getElementById('nav-' + page);
-            if (navEl) navEl.classList.add('active');
-        }
-
-        // Tab switching
-        function switchCharTab(tab) {
-            document.querySelectorAll('#page-characters .tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('#page-characters .tab-content').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById('char-' + tab).classList.add('active');
-        }
-
-        function switchLocTab(tab) {
-            document.querySelectorAll('#page-locations .tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('#page-locations .tab-content').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById('loc-' + tab).classList.add('active');
-        }
-
-        // Project management - Home page functions
-        function showNewProjectForm() {
-            document.getElementById('new-project-form').style.display = 'block';
-            document.getElementById('open-project-list').style.display = 'none';
-            document.getElementById('home-project-name').focus();
-        }
-
-        function hideNewProjectForm() {
-            document.getElementById('new-project-form').style.display = 'none';
-            document.getElementById('home-project-name').value = '';
-        }
-
-        async function showOpenProject() {
-            document.getElementById('new-project-form').style.display = 'none';
-            document.getElementById('open-project-list').style.display = 'block';
-            
-            try {
-                const response = await fetch('/api/projects');
-                const data = await response.json();
-                const container = document.getElementById('projects-list-container');
-                
-                if (data.projects && data.projects.length > 0) {
-                    container.innerHTML = data.projects.map(p => `
-                        <div style="padding: 15px; background: var(--bg-tertiary); border-radius: 8px; margin-bottom: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="openProject('${p.name}')">
-                            <div>
-                                <strong>${p.name}</strong>
-                                <div style="color: var(--text-secondary); font-size: 0.8rem;">${p.created || 'Recently opened'}</div>
-                            </div>
-                            <span style="font-size: 1.5rem;">➡️</span>
-                        </div>
-                    `).join('');
-                } else {
-                    container.innerHTML = '<p style="color: var(--text-secondary);">No projects found. Create a new one!</p>';
-                }
-            } catch(e) {
-                console.error(e);
-            }
-        }
-
-        async function createProjectFromHome() {
-            const name = document.getElementById('home-project-name').value;
-            if (!name) {
-                showError('Project Name Required', 'Please enter a name for your project');
-                return;
-            }
-            
-            const location = document.getElementById('project-location').value;
-            if (!location) {
-                showError('Location Required', 'Please choose a folder to save your project');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/projects', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name, location})
-                });
-                const data = await response.json();
-                if (data.success) {
-                    currentProject = name;
-                    document.getElementById('project-name').textContent = name;
-                    hideNewProjectForm();
-                    loadWorkflow();
-                    showSuccess('Project created successfully!');
-                } else {
-                    showError('Failed to create project', data.message || 'Unknown error');
-                }
-            } catch(e) {
-                console.error(e);
-                showError('Error creating project', e.message);
-            }
-        }
-
-        async function openProject(name) {
-            currentProject = name;
-            document.getElementById('project-name').textContent = name;
-            document.getElementById('open-project-list').style.display = 'none';
-            loadWorkflow();
-        }
-
-        function loadWorkflow() {
-            document.getElementById('main-sidebar').style.display = 'block';
-            document.getElementById('workflow-container').style.display = 'block';
-            showPage('ideas');
-        }
-
-        // Legacy function for compatibility
-        async function createProject() {
-            const name = document.getElementById('new-project-name')?.value;
-            if (!name) return alert('Please enter a project name');
-            
-            try {
-                const response = await fetch('/api/projects', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name})
-                });
-                const data = await response.json();
-                if (data.success) {
-                    currentProject = name;
-                    document.getElementById('project-name').textContent = name;
-                    showPage('ideas');
-                }
-            } catch(e) {
-                console.error(e);
-            }
-        }
-
-        // Topic Ideas Generation
-        async function generateTopicIdeas() {
-            const genreSelect = document.getElementById('genre-select');
-            let genre = genreSelect.value;
-            
-            if (genre === 'custom') {
-                genre = document.getElementById('custom-genre').value;
-                if (!genre) return alert('Please enter a custom genre');
-            }
-            
-            if (!genre) return alert('Please select a genre');
-            
-            showGenerationStatus('Generating ideas for ' + genre + '...');
-            
-            try {
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        provider: 'ollama',
-                        model: 'gemma4:e4b',
-                        prompt: `Act as a top film producer. Generate 5 creative short film ideas for the genre/theme: "${genre}". 
-
-For each idea provide:
-1. **Title:** (compelling title)
-2. **Logline:** (1-2 sentence summary)
-3. **Setting:** (specific time/place)
-4. **Characters:** (brief description of main characters)
-5. **Conflict:** (main dramatic tension)
-
-Format each idea clearly separated by "---".`
-                    })
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    topicIdeas = data.response.split('---').slice(0, 5).map(s => s.trim());
-                    renderIdeas();
-                    hideGenerationStatus();
-                } else {
-                    showError('Failed to generate ideas: ' + (data.message || 'Unknown error'));
-                }
-            } catch(e) {
-                console.error(e);
-                showError('Error: ' + e.message);
-            }
-        }
-
-        async function generateTopicIdeasFromEra() {
-            const era = document.getElementById('era-select').value;
-            if (!era) return alert('Please select an era');
-            
-            showGenerationStatus('Generating ideas for ' + era + ' era...');
-            
-            try {
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        provider: 'ollama',
-                        model: 'gemma4:e4b',
-                        prompt: `Generate 5 short film ideas set in the ${era}. Capture the authentic feel, culture, and stories of that time period.
-
-For each idea provide:
-1. **Title:**
-2. **Logline:**
-3. **Setting:** (specific location)
-4. **Authentic Element:** (what makes it era-accurate)
-5. **Conflict:**
-
-Separate each idea with "---".`
-                    })
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    topicIdeas = data.response.split('---').slice(0, 5).map(s => s.trim());
-                    renderIdeas();
-                    hideGenerationStatus();
-                } else {
-                    showError('Failed: ' + data.message);
-                }
-            } catch(e) {
-                showError('Error: ' + e.message);
-            }
-        }
-
-        async function generateFromCustomTopic() {
-            const topic = document.getElementById('custom-topic-input').value;
-            const style = document.getElementById('custom-style').value;
-            if (!topic) return alert('Please enter your topic idea');
-            
-            showGenerationStatus('Generating variations of your topic...');
-            
-            try {
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        provider: 'ollama',
-                        model: 'gemma4:e4b',
-                        prompt: `Create 5 short film variations based on this concept: "${topic}"${style ? '. Style/Mood: ' + style : ''}.
-
-For each variation:
-1. **Title:**
-2. **Angle:** (unique perspective on the topic)
-3. **Logline:**
-4. **Key Scene:**
-
-Separate with "---".`
-                    })
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    topicIdeas = data.response.split('---').slice(0, 5).map(s => s.trim());
-                    renderIdeas();
-                    hideGenerationStatus();
-                } else {
-                    showError('Failed: ' + data.message);
-                }
-            } catch(e) {
-                showError('Error: ' + e.message);
-            }
-        }
-
-        async function webSearchIdeas() {
-            const query = document.getElementById('web-search-input').value;
-            if (!query) return alert('Please enter a search term');
-            
-            showGenerationStatus('Searching web for trends and generating ideas...');
-            
-            try {
-                // Use web search API
-                const response = await fetch('/api/websearch?q=' + encodeURIComponent(query));
-                const searchData = await response.json();
-                
-                const resultsSummary = searchData.results ? searchData.results.map(r => r.title + ': ' + r.snippet).join('\n\n') : '';
-                
-                // Now use search results to generate ideas
-                const genResponse = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        provider: 'ollama',
-                        model: 'gemma4:e4b',
-                        prompt: `Based on these trending topics and search results:\n\n${resultsSummary}\n\nGenerate 5 unique short film ideas that would be popular and engaging for modern audiences.
-
-For each:
-1. **Title:**
-2. **Why It Works:** (relatability)
-3. **Logline:**
-4. **Viral Potential:**
-
-Separate with "---".`
-                    })
-                });
-                const genData = await genResponse.json();
-                
-                if (genData.success) {
-                    // Show search results
-                    const resultsDiv = document.getElementById('web-search-results');
-                    const resultsContent = document.getElementById('web-results-content');
-                    resultsContent.innerHTML = searchData.results ? searchData.results.map(r => 
-                        `<div style="margin-bottom:10px; padding:8px; background:var(--bg-secondary); border-radius:4px;">
-                            <strong>${r.title}</strong>
-                            <p style="color:var(--text-secondary); font-size:0.85rem;">${r.snippet}</p>
-                        </div>`
-                    ).join('') : '<p>No search results found</p>';
-                    resultsDiv.style.display = 'block';
-                    
-                    topicIdeas = genData.response.split('---').slice(0, 5).map(s => s.trim());
-                    renderIdeas();
-                    hideGenerationStatus();
-                } else {
-                    showError('Failed to generate: ' + genData.message);
-                }
-            } catch(e) {
-                showError('Error: ' + e.message);
-            }
-        }
-
-        function showGenerationStatus(message) {
-            const statusDiv = document.getElementById('generation-status');
-            document.getElementById('status-text-ideas').textContent = message;
-            document.getElementById('progress-bar').style.width = '30%';
-            statusDiv.style.display = 'block';
-        }
-
-        function hideGenerationStatus() {
-            document.getElementById('progress-bar').style.width = '100%';
-            setTimeout(() => {
-                document.getElementById('generation-status').style.display = 'none';
-                document.getElementById('progress-bar').style.width = '0%';
-            }, 500);
-        }
-
-        function showError(message) {
-            hideGenerationStatus();
-            alert(message);
-        }
-
-        function switchIdeaTab(tab) {
-            document.querySelectorAll('#page-ideas .tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('#page-ideas .tab-content').forEach(c => c.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById('tab-' + tab).classList.add('active');
-        }
-
-        // Custom genre show/hide
-        document.getElementById('genre-select').addEventListener('change', function() {
-            const customInput = document.getElementById('custom-genre-input');
-            customInput.style.display = this.value === 'custom' ? 'block' : 'none';
-        });
-
-        function renderIdeas() {
-            const container = document.getElementById('ideas-container');
-            container.innerHTML = topicIdeas.map((idea, i) => `
-                <div class="idea-card">
-                    <div class="idea-title">Idea ${i+1}</div>
-                    <div class="idea-hook">${idea.substring(0, 200)}...</div>
-                    <div class="idea-actions">
-                        <button class="btn btn-primary" onclick="selectIdea(${i})">Select →</button>
-                    </div>
+    <!-- New Project Modal -->
+    <div class="modal-overlay" id="new-project-modal">
+        <div class="modal">
+            <h2>➕ Create New Project</h2>
+            <div class="form-group">
+                <label class="form-label">Project Name</label>
+                <input type="text" class="form-input" id="project-name-input" placeholder="Enter project name...">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Save Location</label>
+                <div class="input-row">
+                    <input type="text" class="form-input" id="project-path-input" placeholder="Select folder..." readonly>
+                    <button class="btn btn-secondary" onclick="browseFolder()">Browse</button>
                 </div>
-            `).join('');
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">All project files, prompts, and images will be saved here</div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" onclick="createProject()" style="flex:1">Create Project</button>
+                <button class="btn btn-secondary" onclick="closeNewProject()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Open Project Modal -->
+    <div class="modal-overlay" id="open-project-modal">
+        <div class="modal">
+            <h2>📂 Open Project</h2>
+            <div class="form-group">
+                <label class="form-label">Project Folder</label>
+                <div class="input-row">
+                    <input type="text" class="form-input" id="open-project-path" placeholder="Select project folder..." readonly>
+                    <button class="btn btn-secondary" onclick="browseProjectFolder()">Browse</button>
+                </div>
+            </div>
+            <div id="open-project-details" style="display:none;">
+                <div style="background: var(--bg-tertiary); padding: 15px; border-radius: 8px; margin: 10px 0;">
+                    <div id="open-project-name" style="font-weight:600;margin-bottom:4px;"></div>
+                    <div id="open-project-meta" style="font-size:0.85rem;color:var(--text-secondary);"></div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-success" id="open-project-btn" onclick="openSelectedProject()" style="display:none;flex:1">Open Project</button>
+                <button class="btn btn-secondary" onclick="closeOpenProject()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div class="notification-overlay" id="notification">
+        <div class="notification">
+            <div class="icon" id="notif-icon">⚠️</div>
+            <div class="msg" id="notif-msg">Error</div>
+            <div class="detail" id="notif-detail">Details here</div>
+            <button class="btn btn-primary" onclick="closeNotification()">OK</button>
+        </div>
+    </div>
+
+    <footer class="status-bar">
+        <span>Ready</span>
+        <span id="status-llm">LLM: Not connected</span>
+    </footer>
+
+    <script>
+        let recentProjects = JSON.parse(localStorage.getItem('recentProjects') || '[]');
+
+        function notify(msg, detail, icon) {
+            document.getElementById('notif-icon').textContent = icon || '⚠️';
+            document.getElementById('notif-msg').textContent = msg;
+            document.getElementById('notif-detail').textContent = detail || '';
+            document.getElementById('notification').classList.add('active');
+        }
+        function closeNotification() {
+            document.getElementById('notification').classList.remove('active');
         }
 
-        function selectIdea(index) {
-            selectedIdea = topicIdeas[index];
-            document.getElementById('selected-topic').textContent = selectedIdea.substring(0, 100) + '...';
-            showPage('selection');
+        function openNewProject() {
+            document.getElementById('project-name-input').value = '';
+            document.getElementById('project-path-input').value = '';
+            document.getElementById('new-project-modal').classList.add('active');
+            setTimeout(() => document.getElementById('project-name-input').focus(), 100);
+        }
+        function closeNewProject() {
+            document.getElementById('new-project-modal').classList.remove('active');
         }
 
-        // Start Generation
-        async function startGeneration() {
-            if (!currentProject) return alert('Create a project first');
-            if (!selectedIdea) return alert('Select a topic idea first');
-            
-            const style = document.getElementById('visual-style').value;
-            const charCount = document.getElementById('character-count').value;
-            const locCount = document.getElementById('location-count').value;
-            
-            // Generate character prompts
-            document.getElementById('status-text').textContent = 'Generating character prompts...';
-            
-            try {
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        provider: 'ollama',
-                        model: 'llama3.1',
-                        prompt: `Generate ${charCount} character prompts for this topic idea: ${selectedIdea}
-
-For each character provide:
-- Name, Age, Physical Appearance
-- Clothing Style (era appropriate)
-- Personality Traits
-- Visual Style: ${style}
-- Full body portrait description for image generation
-
-Format as numbered list.`
-                    })
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    generatedCharPrompts = data.response.split('\n').filter(p => p.trim());
-                    charIndex = 0;
-                    showCharPrompt();
-                    showPage('characters');
-                }
-            } catch(e) {
-                console.error(e);
-            }
-            
-            document.getElementById('status-text').textContent = 'Ready';
+        function openExistingProject() {
+            document.getElementById('open-project-path').value = '';
+            document.getElementById('open-project-details').style.display = 'none';
+            document.getElementById('open-project-btn').style.display = 'none';
+            document.getElementById('open-project-modal').classList.add('active');
         }
-
-        // Character Generation
-        function showCharPrompt() {
-            if (charIndex >= generatedCharPrompts.length) {
-                document.getElementById('current-char-prompt').textContent = 'All character prompts generated!';
-                return;
-            }
-            document.getElementById('current-char-prompt').textContent = generatedCharPrompts[charIndex];
-        }
-
-        async function generateCharImage() {
-            const prompt = document.getElementById('current-char-prompt').textContent;
-            document.getElementById('status-text').textContent = 'Generating image...';
-            
-            try {
-                const response = await fetch('/api/comfyui/generate/image', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        prompt: prompt,
-                        model: 'juggernaut_xl.safetensors'
-                    })
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    document.getElementById('char-preview').src = `/api/comfyui/view?filename=${data.filename}`;
-                    document.getElementById('char-preview').style.display = 'block';
-                    document.getElementById('char-preview-placeholder').style.display = 'none';
-                    document.getElementById('char-approval').style.display = 'flex';
-                } else {
-                    alert('Error: ' + data.error);
-                }
-            } catch(e) {
-                console.error(e);
-            }
-            
-            document.getElementById('status-text').textContent = 'Ready';
-        }
-
-        function approveChar() {
-            alert('Character ' + (charIndex + 1) + ' approved!');
-            charIndex++;
-            document.getElementById('char-count').textContent = charIndex;
-            showCharPrompt();
-            document.getElementById('char-preview').style.display = 'none';
-            document.getElementById('char-approval').style.display = 'none';
-        }
-
-        function rejectChar() {
-            alert('Rejected - will regenerate');
-        }
-
-        function skipChar() {
-            charIndex++;
-            showCharPrompt();
-            document.getElementById('char-preview').style.display = 'none';
-            document.getElementById('char-approval').style.display = 'none';
-        }
-
-        // Location Generation
-        async function startLocGeneration() {
-            const locCount = document.getElementById('location-count').value;
-            
-            try {
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        provider: 'ollama',
-                        model: 'llama3.1',
-                        prompt: `Generate ${locCount} location prompts for this topic: ${selectedIdea}
-
-For each location provide:
-- Location Name
-- Location Type
-- Layout Details
-- Objects Present
-- Atmosphere
-
-Format as numbered list.`
-                    })
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    generatedLocPrompts = data.response.split('\n').filter(p => p.trim());
-                    locIndex = 0;
-                    showLocPrompt();
-                }
-            } catch(e) {
-                console.error(e);
-            }
-        }
-
-        function showLocPrompt() {
-            if (locIndex >= generatedLocPrompts.length) {
-                document.getElementById('current-loc-prompt').textContent = 'All location prompts generated!';
-                return;
-            }
-            document.getElementById('current-loc-prompt').textContent = generatedLocPrompts[locIndex];
-        }
-
-        async function generateLocImage() {
-            const prompt = document.getElementById('current-loc-prompt').textContent;
-            document.getElementById('status-text').textContent = 'Generating location image...';
-            
-            try {
-                const response = await fetch('/api/comfyui/generate/image', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        prompt: prompt,
-                        model: 'juggernaut_xl.safetensors'
-                    })
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    document.getElementById('loc-preview').src = `/api/comfyui/view?filename=${data.filename}`;
-                    document.getElementById('loc-preview').style.display = 'block';
-                    document.getElementById('loc-preview-placeholder').style.display = 'none';
-                    document.getElementById('loc-approval').style.display = 'flex';
-                }
-            } catch(e) {
-                console.error(e);
-            }
-            
-            document.getElementById('status-text').textContent = 'Ready';
-        }
-
-        function approveLoc() {
-            alert('Location ' + (locIndex + 1) + ' approved!');
-            locIndex++;
-            document.getElementById('loc-count').textContent = locIndex;
-            showLocPrompt();
-            document.getElementById('loc-preview').style.display = 'none';
-            document.getElementById('loc-approval').style.display = 'none';
-        }
-
-        function rejectLoc() {
-            alert('Rejected - will regenerate');
-        }
-
-        function skipLoc() {
-            locIndex++;
-            showLocPrompt();
-            document.getElementById('loc-preview').style.display = 'none';
-            document.getElementById('loc-approval').style.display = 'none';
-        }
-
-        // Image to Image
-        function showError(message, details = '') {
-            const errorDiv = document.createElement('div');
-            errorDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #dc2626; color: white; padding: 20px 30px; border-radius: 12px; z-index: 9999; max-width: 450px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.4); text-align: center;';
-            errorDiv.innerHTML = `
-                <div style="font-size: 2rem; margin-bottom: 10px;">⚠️</div>
-                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 8px;">${message}</div>
-                ${details ? `<div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 15px;">${details}</div>` : ''}
-                <button onclick="this.parentElement.remove()" style="padding: 8px 20px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">OK</button>
-            `;
-            document.body.appendChild(errorDiv);
-            setTimeout(() => errorDiv.remove(), 10000);
-        }
-
-        function showSuccess(message) {
-            const successDiv = document.createElement('div');
-            successDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #16a34a; color: white; padding: 20px 30px; border-radius: 12px; z-index: 9999; max-width: 400px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.4); text-align: center;';
-            successDiv.innerHTML = `
-                <div style="font-size: 2rem; margin-bottom: 10px;">✓</div>
-                <div style="font-weight: bold; font-size: 1.1rem;">${message}</div>
-                <button onclick="this.parentElement.remove()" style="margin-top: 15px; padding: 8px 20px; background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 6px; cursor: pointer;">OK</button>
-            `;
-            document.body.appendChild(successDiv);
-            setTimeout(() => successDiv.remove(), 5000);
-        }
-
-        function generateFromImage() {
-            const refImage = document.getElementById('char-ref-image-input').files[0];
-            if (!refImage) {
-                showError('No reference image selected', 'Please upload an image first');
-                return;
-            }
-            const editPrompt = document.getElementById('char-image-edit-prompt').value;
-            if (!editPrompt) {
-                showError('Edit prompt is empty', 'Please describe what you want to change in the image');
-                return;
-            }
-            
-            showGenerationStatus('Generating image from reference...');
-            
-            const formData = new FormData();
-            formData.append('image', refImage);
-            formData.append('prompt', editPrompt);
-            formData.append('type', 'character');
-            
-            fetch('/api/comfyui/image-to-image', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
-                hideGenerationStatus();
-                if (data.success) {
-                    showSuccess('Image generated successfully!');
-                    updateProjectFiles();
-                } else {
-                    showError('Image Generation Failed', data.message || 'Check ComfyUI connection and model support');
-                }
-            })
-            .catch(err => {
-                hideGenerationStatus();
-                showError('Connection Error', 'Could not connect to ComfyUI. Make sure it is running.');
-            });
-        }
-
-        function generateLocFromImage() {
-            const refImage = document.getElementById('loc-ref-image-input').files[0];
-            if (!refImage) {
-                showError('No reference image selected', 'Please upload an image first');
-                return;
-            }
-            const editPrompt = document.getElementById('loc-image-edit-prompt').value;
-            if (!editPrompt) {
-                showError('Edit prompt is empty', 'Please describe what you want to change in the image');
-                return;
-            }
-            
-            showGenerationStatus('Generating location from reference...');
-            
-            const formData = new FormData();
-            formData.append('image', refImage);
-            formData.append('prompt', editPrompt);
-            formData.append('type', 'location');
-            
-            fetch('/api/comfyui/image-to-image', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
-                hideGenerationStatus();
-                if (data.success) {
-                    showSuccess('Image generated successfully!');
-                    updateProjectFiles();
-                } else {
-                    showError('Image Generation Failed', data.message || 'Check ComfyUI connection and model support');
-                }
-            })
-            .catch(err => {
-                hideGenerationStatus();
-                showError('Connection Error', 'Could not connect to ComfyUI. Make sure it is running.');
-            });
-        }
-
-        // Settings Functions
-        async function loadLLMModels() {
-            const provider = document.getElementById('llm-provider').value;
-            const modelSelect = document.getElementById('llm-model');
-            modelSelect.innerHTML = '<option value="">Select Model</option>';
-            
-            if (!provider) return;
-            
-            try {
-                const response = await fetch('/api/llm/models?provider=' + provider);
-                const data = await response.json();
-                if (data.models) {
-                    data.models.forEach(m => {
-                        const option = document.createElement('option');
-                        option.value = m;
-                        option.textContent = m;
-                        modelSelect.appendChild(option);
-                    });
-                }
-            } catch (e) {
-                console.log('Could not load models:', e);
-            }
-        }
-
-        async function testLLMConnection() {
-            const provider = document.getElementById('llm-provider').value;
-            const host = document.getElementById('llm-host').value || 'http://localhost:11434';
-            const model = document.getElementById('llm-model').value;
-            const apiKey = document.getElementById('llm-api-key').value;
-            
-            if (!provider) {
-                showError('No provider selected', 'Please select an LLM provider first');
-                return;
-            }
-            if (!model) {
-                showError('No model selected', 'Please select a model from the dropdown');
-                return;
-            }
-            
-            document.getElementById('llm-test-result').textContent = 'Testing...';
-            
-            try {
-                const response = await fetch('/api/llm/test', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({provider, host, model, apiKey})
-                });
-                const data = await response.json();
-                if (data.success) {
-                    document.getElementById('llm-test-result').textContent = '✓ Connected';
-                    document.getElementById('llm-test-result').style.color = '#4ade80';
-                    document.getElementById('llm-status').textContent = 'LLM: Connected - ' + model;
-                    showSuccess('LLM connected successfully!');
-                } else {
-                    document.getElementById('llm-test-result').textContent = '✗ ' + data.message;
-                    document.getElementById('llm-test-result').style.color = '#f87171';
-                    showError('LLM Connection Failed', data.message || 'Check if Ollama is running');
-                }
-            } catch (e) {
-                document.getElementById('llm-test-result').textContent = '✗ Connection failed';
-                document.getElementById('llm-test-result').style.color = '#f87171';
-                showError('Cannot connect to LLM', 'Make sure Ollama is running at ' + host);
-            }
-        }
-
-        async function testComfyUIConnection() {
-            const url = document.getElementById('comfyui-url').value;
-            document.getElementById('comfyui-test-result').textContent = 'Testing...';
-            
-            try {
-                const response = await fetch('/api/comfyui/connect?url=' + encodeURIComponent(url));
-                const data = await response.json();
-                if (data.success) {
-                    document.getElementById('comfyui-test-result').textContent = '✓ Connected';
-                    document.getElementById('comfyui-test-result').style.color = '#4ade80';
-                } else {
-                    document.getElementById('comfyui-test-result').textContent = '✗ ' + data.message;
-                    document.getElementById('comfyui-test-result').style.color = '#f87171';
-                }
-            } catch (e) {
-                document.getElementById('comfyui-test-result').textContent = '✗ Connection failed';
-                document.getElementById('comfyui-test-result').style.color = '#f87171';
-            }
-        }
-
-        async function saveSettings() {
-            const settings = {
-                llm: {
-                    provider: document.getElementById('llm-provider').value,
-                    model: document.getElementById('llm-model').value,
-                    apiKey: document.getElementById('llm-api-key').value,
-                    host: document.getElementById('llm-host').value
-                },
-                comfyui: {
-                    url: document.getElementById('comfyui-url').value,
-                    connectionType: document.getElementById('comfyui-connection-type').value
-                },
-                image: {
-                    model: document.getElementById('image-model').value,
-                    width: parseInt(document.getElementById('image-width').value),
-                    height: parseInt(document.getElementById('image-height').value)
-                },
-                video: {
-                    type: document.getElementById('video-type').value,
-                    model: document.getElementById('video-model').value,
-                    frames: parseInt(document.getElementById('video-frames').value),
-                    fps: parseInt(document.getElementById('video-fps').value)
-                },
-                project: {
-                    folder: document.getElementById('projects-folder').value,
-                    autoSavePrompts: document.getElementById('auto-save-prompts').checked
-                }
-            };
-            
-            try {
-                const response = await fetch('/api/settings', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(settings)
-                });
-                const data = await response.json();
-                if (data.success) {
-                    alert('Settings saved successfully!');
-                } else {
-                    alert('Failed to save settings');
-                }
-            } catch (e) {
-                alert('Error saving settings');
-            }
-        }
-
-        function resetSettings() {
-            document.getElementById('llm-provider').value = '';
-            document.getElementById('llm-model').innerHTML = '<option value="">Select Model</option>';
-            document.getElementById('llm-api-key').value = '';
-            document.getElementById('llm-host').value = '';
-            document.getElementById('comfyui-url').value = 'http://localhost:8188';
-            document.getElementById('image-model').value = 'juggernaut_xl.safetensors';
-            document.getElementById('image-width').value = '1024';
-            document.getElementById('image-height').value = '1024';
-            document.getElementById('video-model').value = 'ltx_23';
-            document.getElementById('video-frames').value = '81';
-            document.getElementById('video-fps').value = '24';
-            document.getElementById('projects-folder').value = 'projects';
-            document.getElementById('auto-save-prompts').checked = true;
+        function closeOpenProject() {
+            document.getElementById('open-project-modal').classList.remove('active');
         }
 
         function browseFolder() {
@@ -1676,62 +326,122 @@ Format as numbered list.`
             input.type = 'file';
             input.webkitdirectory = true;
             input.onchange = (e) => {
-                const folder = e.target.files[0]?.webkitRelativePath?.split('/')[0] || 'projects';
-                document.getElementById('projects-folder').value = folder;
+                if (e.target.files[0]) {
+                    const path = e.target.files[0].webkitRelativePath.split('/')[0];
+                    document.getElementById('project-path-input').value = path;
+                }
             };
             input.click();
         }
 
-        function browseProjectLocation() {
+        function browseProjectFolder() {
             const input = document.createElement('input');
             input.type = 'file';
             input.webkitdirectory = true;
-            input.onchange = (e) => {
-                if (e.target.files[0]) {
-                    const folderPath = e.target.files[0].webkitRelativePath.split('/')[0];
-                    document.getElementById('project-location').value = folderPath;
+            input.onchange = async (e) => {
+                if (!e.target.files[0]) return;
+                const path = e.target.files[0].webkitRelativePath.split('/')[0];
+                document.getElementById('open-project-path').value = path;
+                try {
+                    const res = await fetch('/api/projects/check?path=' + encodeURIComponent(path));
+                    const data = await res.json();
+                    const details = document.getElementById('open-project-details');
+                    const btn = document.getElementById('open-project-btn');
+                    if (data.exists) {
+                        details.style.display = 'block';
+                        document.getElementById('open-project-name').textContent = data.name;
+                        document.getElementById('open-project-meta').textContent = data.info || 'Valid project';
+                        btn.style.display = 'block';
+                        btn.dataset.path = path;
+                    } else {
+                        details.style.display = 'block';
+                        document.getElementById('open-project-name').textContent = 'Invalid project';
+                        document.getElementById('open-project-meta').textContent = 'No project.json found in this folder';
+                        btn.style.display = 'none';
+                    }
+                } catch(e) {
+                    notify('Error', 'Could not read project details');
                 }
             };
             input.click();
         }
 
-        // Load settings on page load
-        window.onload = async function() {
+        async function createProject() {
+            const name = document.getElementById('project-name-input').value.trim();
+            const path = document.getElementById('project-path-input').value.trim();
+            if (!name) { notify('Project Name Required', 'Please enter a name for your project'); return; }
+            if (!path) { notify('Save Location Required', 'Please choose a folder to save your project'); return; }
             try {
-                const response = await fetch('/api/settings');
-                const settings = await response.json();
-                if (settings.project && settings.project.folder) {
-                    document.getElementById('projects-folder').value = settings.project.folder;
+                const res = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name, location: path})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeNewProject();
+                    addRecentProject(name, path);
+                    notify('🎉 Project Created', '"' + name + '" is ready. Continue to build your short film!', '✅');
+                } else {
+                    notify('Failed to Create', data.error || data.message || 'Unknown error');
                 }
-                if (settings.llm) {
-                    document.getElementById('llm-provider').value = settings.llm.provider || '';
-                    document.getElementById('llm-model').value = settings.llm.model || '';
-                    document.getElementById('llm-api-key').value = settings.llm.apiKey || '';
-                    document.getElementById('llm-host').value = settings.llm.host || '';
-                }
-                if (settings.comfyui) {
-                    document.getElementById('comfyui-url').value = settings.comfyui.url || 'http://localhost:8188';
-                    document.getElementById('comfyui-connection-type').value = settings.comfyui.connectionType || 'local';
-                }
-                if (settings.image) {
-                    document.getElementById('image-model').value = settings.image.model || 'juggernaut_xl.safetensors';
-                    document.getElementById('image-width').value = settings.image.width || 1024;
-                    document.getElementById('image-height').value = settings.image.height || 1024;
-                }
-                if (settings.video) {
-                    document.getElementById('video-type').value = settings.video.type || 'text_to_video';
-                    document.getElementById('video-model').value = settings.video.model || 'ltx_23';
-                    document.getElementById('video-frames').value = settings.video.frames || 81;
-                    document.getElementById('video-fps').value = settings.video.fps || 24;
-                }
-                if (settings.project) {
-                    document.getElementById('projects-folder').value = settings.project.folder || 'projects';
-                    document.getElementById('auto-save-prompts').checked = settings.project.autoSavePrompts !== false;
-                }
-            } catch (e) {
-                console.log('Could not load settings');
+            } catch(e) {
+                notify('Error', e.message || 'Could not create project');
             }
-        };
+        }
+
+        function openSelectedProject() {
+            const path = document.getElementById('open-project-btn').dataset.path;
+            const name = document.getElementById('open-project-name').textContent;
+            addRecentProject(name, path);
+            closeOpenProject();
+            notify('📂 Project Opened', '"' + name + '" loaded successfully', '✅');
+        }
+
+        function addRecentProject(name, path) {
+            recentProjects = recentProjects.filter(p => p.path !== path);
+            recentProjects.unshift({name, path, opened: new Date().toLocaleString()});
+            if (recentProjects.length > 10) recentProjects = recentProjects.slice(0, 10);
+            localStorage.setItem('recentProjects', JSON.stringify(recentProjects));
+            renderRecentProjects();
+        }
+
+        function renderRecentProjects() {
+            const container = document.getElementById('recent-list');
+            if (recentProjects.length === 0) {
+                container.innerHTML = '<div class="empty-state">No recent projects</div>';
+                return;
+            }
+            container.innerHTML = recentProjects.map(p => `
+                <div class="recent-item" onclick="quickOpen('${p.path}')">
+                    <div>
+                        <div class="name">${p.name}</div>
+                        <div class="meta">${p.path} · ${p.opened}</div>
+                    </div>
+                    <div class="arrow">➡️</div>
+                </div>
+            `).join('');
+        }
+
+        async function quickOpen(path) {
+            try {
+                const res = await fetch('/api/projects/check?path=' + encodeURIComponent(path));
+                const data = await res.json();
+                if (data.exists) {
+                    addRecentProject(data.name, path);
+                    notify('📂 Project Opened', '"' + data.name + '" loaded successfully', '✅');
+                } else {
+                    notify('Project Not Found', 'The project at ' + path + ' no longer exists');
+                    recentProjects = recentProjects.filter(p => p.path !== path);
+                    localStorage.setItem('recentProjects', JSON.stringify(recentProjects));
+                    renderRecentProjects();
+                }
+            } catch(e) {
+                notify('Error', 'Could not open project');
+            }
+        }
+
+        renderRecentProjects();
     </script>
 </body>
 </html>

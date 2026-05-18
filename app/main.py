@@ -173,6 +173,25 @@ async def get_projects():
     """Get all projects."""
     return {"success": True, "projects": project_manager.get_projects()}
 
+@app.get("/api/projects/check")
+async def check_project(path: str):
+    """Check if a path contains a valid project."""
+    project_path = Path(path)
+    project_file = project_path / "project.json"
+    if project_file.exists():
+        with open(project_file, 'r') as f:
+            data = json.load(f)
+        return {"exists": True, "name": data.get("name", "Unknown"), "info": f"Created: {data.get('created_at', 'Unknown')}"}
+    # Also check if path contains name/project.json
+    for sub in project_path.iterdir():
+        if sub.is_dir():
+            pf = sub / "project.json"
+            if pf.exists():
+                with open(pf, 'r') as f:
+                    data = json.load(f)
+                return {"exists": True, "name": data.get("name", sub.name), "info": f"Path: {sub}"}
+    return {"exists": False}
+
 @app.post("/api/projects")
 async def create_project(request: ProjectCreateRequest):
     """Create a new project."""
