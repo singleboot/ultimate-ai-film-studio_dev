@@ -6,7 +6,10 @@
       "host": "http://localhost:11434",
       "default_model": "llama3.1",
       "api_endpoint": "/api/generate",
-      "requires_api_key": false
+      "requires_api_key": false,
+      "binary": "ollama",
+      "start_cmd": ["ollama", "serve"],
+      "health_endpoint": "/api/tags"
     },
     "lm_studio": {
       "name": "LM Studio",
@@ -19,10 +22,31 @@
     "llama_cpp": {
       "name": "llama.cpp",
       "type": "local",
-      "binary_path": "llama-server",
+      "host": "http://localhost:8080",
       "default_model": "models/mistral-7b.gguf",
       "api_endpoint": "/v1/chat/completions",
-      "requires_api_key": false
+      "requires_api_key": false,
+      "binary": "llama-server",
+      "start_cmd": ["llama-server", "--host", "0.0.0.0", "--port", "8080"],
+      "health_endpoint": "/v1/models"
+    },
+    "openai": {
+      "name": "OpenAI",
+      "type": "cloud",
+      "host": "https://api.openai.com/v1",
+      "default_model": "gpt-4o",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": true,
+      "api_key_env": "OPENAI_API_KEY"
+    },
+    "claude": {
+      "name": "Claude (Anthropic)",
+      "type": "cloud",
+      "host": "https://api.anthropic.com/v1",
+      "default_model": "claude-sonnet-4-20250514",
+      "api_endpoint": "/messages",
+      "requires_api_key": true,
+      "api_key_env": "ANTHROPIC_API_KEY"
     },
     "openrouter": {
       "name": "OpenRouter",

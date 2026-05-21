@@ -1,6 +1,8 @@
 import json
 import os
 import time
+import subprocess
+import signal
 import requests
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -17,6 +19,8 @@ class ComfyUIClient:
         self.client_id = "ultimate_ai_film_studio"
         self.queue = []
         self.history = []
+        self._proc: Optional[subprocess.Popen] = None
+        self._comfyui_path: Optional[str] = None
 
     def _load_config(self, config_path: str) -> Dict:
         """Load ComfyUI workflow configuration."""
@@ -88,10 +92,16 @@ class ComfyUIClient:
     def get_available_checkpoints(self) -> List[str]:
         """Get list of available checkpoint models from ComfyUI."""
         try:
-            response = requests.get(f"{self.host}/api/get_checkpoints", timeout=10)
+            response = requests.get(f"{self.host}/api/object_info/CheckpointLoaderSimple", timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                return data.get("checkpoints", [])
+                ckpt_info = data.get("CheckpointLoaderSimple", {})
+                inputs = ckpt_info.get("input", {})
+                required = inputs.get("required", {})
+                ckpt_list = required.get("ckpt_name", [])
+                if ckpt_list and isinstance(ckpt_list[0], list):
+                    return ckpt_list[0]
+                return ckpt_list if isinstance(ckpt_list, list) else []
         except Exception as e:
             print(f"Error getting checkpoints: {e}")
         return []
@@ -161,9 +171,13 @@ class ComfyUIClient:
                 response = requests.post(f"{self.host}/upload/image", files=files, timeout=30)
                 if response.status_code == 200:
                     data = response.json()
-                    return data.get("name")
+                    name = data.get("name")
+                    print(f"[Upload] '{image_path}' -> ComfyUI input as '{name}'")
+                    return name
+                else:
+                    print(f"[Upload] Failed: HTTP {response.status_code} - {response.text[:200]}")
         except Exception as e:
-            print(f"Error uploading image: {e}")
+            print(f"[Upload] Error uploading {image_path}: {e}")
         return None
 
     def download_output(self, filename: str, output_dir: str) -> Optional[str]:
@@ -282,6 +296,269 @@ class ComfyUIClient:
         }
         
         return workflow
+
+    def generate_with_workflow(self, prompt: str, workflow_name: str, negative_prompt: str = None, seed: int = None, input_images: List[str] = None, aspect_ratio: str = None, resolution: str = None) -> Dict:
+        """Generate using a custom workflow JSON from the workflows folder.
+        UAIImageSlot nodes get their image_path set directly from input_images paths.
+        Unused slots default to empty string (1x1 black image = bypass)."""
+        base = Path(__file__).parent.parent / "workflows"
+        workflow_path = base / workflow_name
+        if not workflow_path.exists():
+            workflow_path = base / (workflow_name + ".json")
+        if not workflow_path.exists():
+            return self.generate_image(prompt, "model.safetensors", 1024, 1024)
+
+        try:
+            with open(workflow_path, 'r') as f:
+                workflow = json.load(f)
+
+            debug_log = []
+            print(f"[generate_with_workflow] workflow={workflow_name}, prompt='{prompt[:60]}...'")
+            print(f"[generate_with_workflow] seed={seed}, input_images={input_images}, resolution={resolution}")
+            # Phase 1: set prompt text
+            # If the workflow has a PrimitiveStringMultiline node, use it as the prompt source
+            # (only overwrite CLIPTextEncode direct strings when there's no PrimitiveStringMultiline)
+            has_psm = any(
+                isinstance(n, dict) and n.get("class_type") == "PrimitiveStringMultiline"
+                for n in workflow.values()
+            )
+            debug_log.append(f"has PrimitiveStringMultiline: {has_psm}")
+            if has_psm:
+                # Update the PSM value — prompt flows through connection to CLIPTextEncode
+                for nid, nd in workflow.items():
+                    if isinstance(nd, dict) and nd.get("class_type") == "PrimitiveStringMultiline" and "value" in nd.get("inputs", {}):
+                        nd["inputs"]["value"] = prompt
+                        debug_log.append(f"Set PrimitiveStringMultiline {nid} value: '{prompt[:50]}...'")
+                        break
+            else:
+                # No PSM — trace LTXVConditioning to find the positive CLIPTextEncode
+                # This avoids overwriting the negative CLIPTextEncode
+                positive_nid = None
+                for nid, nd in workflow.items():
+                    if not isinstance(nd, dict):
+                        continue
+                    if nd.get("class_type") == "LTXVConditioning":
+                        pos = nd.get("inputs", {}).get("positive")
+                        if isinstance(pos, list) and len(pos) >= 1:
+                            candidate = str(pos[0])
+                            if isinstance(workflow.get(candidate), dict) and workflow[candidate].get("class_type") == "CLIPTextEncode":
+                                positive_nid = candidate
+                                break
+                if positive_nid:
+                    workflow[positive_nid]["inputs"]["text"] = prompt
+                    debug_log.append(f"Overwrote positive CLIPTextEncode {positive_nid}: '{prompt[:50]}...'")
+                else:
+                    debug_log.append("No LTXVConditioning found, overwriting all CLIPTextEncode string nodes")
+                    for nid, nd in workflow.items():
+                        if not isinstance(nd, dict):
+                            continue
+                        inputs = nd.get("inputs", {})
+                        if nd.get("class_type") == "CLIPTextEncode" and "text" in inputs and isinstance(inputs["text"], str):
+                            inputs["text"] = prompt
+                            debug_log.append(f"Overwrote CLIPTextEncode {nid}: '{prompt[:50]}...'")
+
+            # Phase 2: inject image paths into UAIImageSlot nodes
+            slot_nodes = []
+            for node_id, node_data in workflow.items():
+                if not isinstance(node_data, dict):
+                    continue
+                if node_data.get("class_type") == "UAIImageSlot":
+                    slot_nodes.append(node_id)
+            slot_nodes.sort(key=int)
+            debug_log.append(f"Found {len(slot_nodes)} UAIImageSlot nodes: {slot_nodes}")
+            for idx, nid in enumerate(slot_nodes):
+                if input_images and idx < len(input_images):
+                    img_path = input_images[idx]
+                    debug_log.append(f"Slot {nid} <- {img_path}")
+                    workflow[nid]["inputs"]["image_path"] = img_path
+                else:
+                    debug_log.append(f"Slot {nid} <- (empty, bypass)")
+                    workflow[nid]["inputs"]["image_path"] = ""
+
+            # Phase 2b: inject image into LoadImage nodes (for video workflows)
+            if not slot_nodes and input_images:
+                load_image_nodes = []
+                for node_id, node_data in workflow.items():
+                    if not isinstance(node_data, dict):
+                        continue
+                    if node_data.get("class_type") == "LoadImage":
+                        load_image_nodes.append(node_id)
+                load_image_nodes.sort(key=int)
+                debug_log.append(f"Found {len(load_image_nodes)} LoadImage nodes: {load_image_nodes}")
+                for idx, nid in enumerate(load_image_nodes):
+                    if idx < len(input_images):
+                        img_path = input_images[idx]
+                        if not Path(img_path).exists():
+                            debug_log.append(f"LoadImage {nid} <- FILE NOT FOUND: {img_path}")
+                        else:
+                            uploaded_name = self.upload_image(img_path)
+                            if uploaded_name:
+                                debug_log.append(f"LoadImage {nid} <- uploaded: {uploaded_name}")
+                                workflow[nid]["inputs"]["image"] = uploaded_name
+                            else:
+                                debug_log.append(f"LoadImage {nid} <- upload failed, using original")
+                    else:
+                        debug_log.append(f"LoadImage {nid} <- no input image provided")
+
+            # Phase 3: set seed
+            if seed is not None:
+                for node_id, node_data in workflow.items():
+                    if not isinstance(node_data, dict):
+                        continue
+                    ct = node_data.get("class_type", "")
+                    inputs = node_data.get("inputs", {})
+                    if ct == "KSampler" and "seed" in inputs:
+                        inputs["seed"] = seed
+                    if ct == "RandomNoise" and "noise_seed" in inputs:
+                        inputs["noise_seed"] = seed
+
+            # Phase 4: override resolution
+            if resolution:
+                try:
+                    parts = resolution.lower().split("x")
+                    if len(parts) == 2:
+                        w, h = int(parts[0]), int(parts[1])
+                        debug_log.append(f"Overriding resolution to {w}x{h}")
+                        for node_id, node_data in workflow.items():
+                            if not isinstance(node_data, dict):
+                                continue
+                            ct = node_data.get("class_type", "")
+                            inputs = node_data.get("inputs", {})
+                            if ct in ("EmptyFlux2LatentImage", "Flux2Scheduler"):
+                                inputs["width"] = w
+                                inputs["height"] = h
+                                debug_log.append(f"{ct} {node_id} -> {w}x{h}")
+                except (ValueError, IndexError):
+                    debug_log.append(f"Failed to parse resolution: {resolution}")
+
+            # Phase 5: LoRA substitution
+            try:
+                obj_info = requests.get(f"{self.host}/object_info/LoraLoader", timeout=10).json()
+                lora_field = obj_info.get("LoraLoader", {}).get("input", {}).get("required", {}).get("lora_name", [])
+                if isinstance(lora_field, list) and len(lora_field) > 0 and isinstance(lora_field[0], list):
+                    avail_loras = lora_field[0]
+                else:
+                    avail_loras = lora_field if isinstance(lora_field, list) else []
+            except Exception as e:
+                debug_log.append(f"LoRA fetch error: {e}")
+                avail_loras = []
+            for node_id, node_data in workflow.items():
+                if not isinstance(node_data, dict):
+                    continue
+                ct = node_data.get("class_type", "")
+                if ct == "LoraLoader":
+                    needed = node_data["inputs"].get("lora_name", "")
+                    if needed and needed not in avail_loras and isinstance(avail_loras, list) and avail_loras:
+                        subfolder = needed.rsplit("\\", 1)[0] if "\\" in needed else ""
+                        candidates = [l for l in avail_loras if subfolder and l.startswith(subfolder + "\\")]
+                        if not candidates:
+                            candidates = avail_loras
+                        substitute = candidates[0]
+                        debug_log.append(f"LoraLoader substitution: '{needed}' -> '{substitute}' (strength=0)")
+                        node_data["inputs"]["lora_name"] = substitute
+                        node_data["inputs"]["strength_model"] = 0.0
+                        node_data["inputs"]["strength_clip"] = 0.0
+                    elif needed in avail_loras:
+                        debug_log.append(f"LoraLoader '{needed}' found, keeping as-is")
+                elif ct == "LoraLoaderModelOnly":
+                    needed = node_data["inputs"].get("lora_name", "")
+                    if needed and needed not in avail_loras and isinstance(avail_loras, list) and avail_loras:
+                        subfolder = needed.rsplit("\\", 1)[0] if "\\" in needed else ""
+                        candidates = [l for l in avail_loras if subfolder and l.startswith(subfolder + "\\")]
+                        if not candidates:
+                            candidates = avail_loras
+                        substitute = candidates[0]
+                        debug_log.append(f"LoraLoaderModelOnly substitution: '{needed}' -> '{substitute}' (strength=0)")
+                        node_data["inputs"]["lora_name"] = substitute
+                        node_data["inputs"]["strength_model"] = 0.0
+                    elif needed in avail_loras:
+                        debug_log.append(f"LoraLoaderModelOnly '{needed}' found, keeping as-is")
+
+            # Log final state of key nodes before queueing
+            for nid in ["269", "149", "121", "110", "320:319", "320:303", "320:313"]:
+                if nid in workflow:
+                    n = workflow[nid]
+                    inp = n.get("inputs", {})
+                    ct = n.get("class_type", "")
+                    if "image" in inp:
+                        debug_log.append(f"[final] {nid} ({ct}): image='{inp['image']}'")
+                    elif "value" in inp:
+                        debug_log.append(f"[final] {nid} ({ct}): value='{str(inp['value'])[:60]}'")
+                    elif "text" in inp:
+                        debug_log.append(f"[final] {nid} ({ct}): text='{str(inp['text'])[:60]}'")
+
+            with open(r"C:\Users\avik\AppData\Local\Temp\opencode\lora_debug.log", "w") as df:
+                df.write("\n".join(debug_log))
+
+            prompt_id = self.queue_prompt(workflow)
+            if not prompt_id:
+                return {"success": False, "error": "Failed to queue workflow on ComfyUI"}
+
+            output = self.get_output(prompt_id, timeout=600)
+            if not output:
+                return {"success": False, "error": "Generation timeout"}
+
+            for nid, nout in output.items():
+                if "images" in nout and nout["images"]:
+                    img = nout["images"][0]
+                    return {"success": True, "filename": img.get("filename"), "subfolder": img.get("subfolder", "")}
+                if "gifs" in nout and nout["gifs"]:
+                    gif = nout["gifs"][0]
+                    return {"success": True, "filename": gif.get("filename"), "subfolder": gif.get("subfolder", "")}
+
+            if isinstance(output, dict) and "_error" in output:
+                return {"success": False, "workflow_errored": True, "error": f"ComfyUI error: {output['_error']}"}
+
+            return {"success": False, "error": "No output generated"}
+        except Exception as e:
+            return {"success": False, "error": f"Workflow error: {str(e)}"}
+
+    def _upload_placeholder(self) -> Optional[str]:
+        """Upload a small blank placeholder image to ComfyUI for LoadImage nodes."""
+        try:
+            from PIL import Image
+            import io
+            img = Image.new('RGB', (64, 64), color=(72, 72, 72))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+            resp = requests.post(f"{self.host}/upload/image", files={'image': ('blank_input.png', buf, 'image/png')}, timeout=15)
+            if resp.status_code == 200:
+                name = resp.json().get("name")
+                if name:
+                    return name
+                # Sometimes ComfyUI returns subfolder/name
+                if "subfolder" in resp.json():
+                    sub = resp.json()["subfolder"]
+                    if sub:
+                        return sub + "/" + name
+            # Try uploading to a predictable name
+            buf.seek(0)
+            resp = requests.post(f"{self.host}/upload/image", files={'image': ('placeholder.png', buf, 'image/png')}, timeout=15)
+            if resp.status_code == 200:
+                return resp.json().get("name")
+        except ImportError:
+            # Fallback if PIL not available
+            try:
+                import struct, zlib
+                def _png(w, h, r, g, b):
+                    def chunk(t, d):
+                        c = t + d
+                        return struct.pack('>I', len(d)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+                    raw = b''
+                    for _ in range(h):
+                        raw += b'\x00' + bytes([r, g, b] * w)
+                    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+                            + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
+                png = _png(64, 64, 72, 72, 72)
+                resp = requests.post(f"{self.host}/upload/image", files={'image': ('blank_input.png', png, 'image/png')}, timeout=15)
+                if resp.status_code == 200:
+                    return resp.json().get("name")
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return None
 
     def generate_video(self, prompt: str, model: str, input_image: str = None, width: int = 1280, height: int = 720, frames: int = 81, fps: int = 24, **kwargs) -> Dict:
         """Generate a video using a simple workflow."""
@@ -440,3 +717,130 @@ class ComfyUIClient:
             return response.status_code == 200
         except Exception:
             return False
+
+    # === Subprocess Management ===
+
+    def set_comfyui_path(self, path: str):
+        """Set the ComfyUI installation path."""
+        self._comfyui_path = path
+
+    def detect_comfyui(self) -> Dict:
+        """Detect if ComfyUI is installed on the system."""
+        search_dirs = [
+            self._comfyui_path,
+            os.environ.get("COMFYUI_PATH", ""),
+            os.path.join(os.path.expanduser("~"), "ComfyUI"),
+            os.path.join(os.path.expanduser("~"), "comfyui"),
+            r"C:\ComfyUI",
+            r"C:\Program Files\ComfyUI",
+            os.path.join(os.path.expanduser("~"), "Documents", "ComfyUI"),
+        ]
+        search_dirs = [d for d in search_dirs if d]
+
+        for d in search_dirs:
+            main_py = os.path.join(d, "main.py")
+            if os.path.isfile(main_py):
+                return {"installed": True, "path": d}
+
+        # Try `where` / `which` on git clone scenario
+        try:
+            if os.name == 'nt':
+                result = subprocess.run(["where", "main.py"], capture_output=True, text=True, timeout=5, shell=True)
+            else:
+                result = subprocess.run(["find", "/", "-name", "main.py", "-path", "*/ComfyUI/*"],
+                                       capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                for line in result.stdout.strip().split("\n"):
+                    if "ComfyUI" in line and "main.py" in line:
+                        return {"installed": True, "path": str(Path(line).parent)}
+        except Exception:
+            pass
+
+        return {"installed": False, "error": "ComfyUI not found. Install from https://github.com/comfyanonymous/ComfyUI"}
+
+    def get_comfyui_status(self) -> Dict:
+        """Check if ComfyUI is currently running."""
+        if self._proc and self._proc.poll() is None:
+            return {"running": True, "pid": self._proc.pid, "source": "subprocess"}
+        try:
+            resp = requests.get(f"{self.host}/system_stats", timeout=3)
+            if resp.status_code == 200:
+                return {"running": True, "pid": None, "source": "http"}
+        except requests.ConnectionError:
+            return {"running": False, "error": f"Connection refused at {self.host}"}
+        except requests.Timeout:
+            return {"running": False, "error": f"Timeout connecting to {self.host}"}
+        except Exception as e:
+            return {"running": False, "error": str(e)}
+        return {"running": False, "error": "Unknown - server returned non-200"}
+
+    def launch_comfyui(self, path: str = None, host: str = "0.0.0.0", port: int = 8188) -> Dict:
+        """Launch ComfyUI as a subprocess."""
+        status = self.get_comfyui_status()
+        if status.get("running"):
+            return {"success": True, "message": "ComfyUI already running", "pid": status.get("pid")}
+
+        comfy_path = path or self._comfyui_path
+        if not comfy_path or not os.path.isfile(os.path.join(comfy_path, "main.py")):
+            detect = self.detect_comfyui()
+            if detect.get("installed"):
+                comfy_path = detect["path"]
+            else:
+                return {"success": False, "error": "ComfyUI not found. Set the path in Settings or install it."}
+
+        try:
+            main_py = os.path.join(comfy_path, "main.py")
+            cmd = ["python", main_py, "--listen", host, "--port", str(port)]
+            self._proc = subprocess.Popen(
+                cmd,
+                cwd=comfy_path,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            self._comfyui_path = comfy_path
+
+            # Wait for startup
+            timeout = 60
+            start = time.time()
+            while time.time() - start < timeout:
+                try:
+                    resp = requests.get(f"{self.host}/system_stats", timeout=2)
+                    if resp.status_code == 200:
+                        return {"success": True, "message": "ComfyUI started", "pid": self._proc.pid}
+                except Exception:
+                    pass
+                time.sleep(2)
+
+            return {"success": True, "message": "ComfyUI starting (may take longer)", "pid": self._proc.pid}
+        except FileNotFoundError:
+            return {"success": False, "error": "Python not found. Ensure Python is in PATH."}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def stop_comfyui(self) -> Dict:
+        """Stop ComfyUI subprocess."""
+        if self._proc:
+            try:
+                if os.name == 'nt':
+                    self._proc.terminate()
+                else:
+                    os.kill(self._proc.pid, signal.SIGTERM)
+                self._proc.wait(timeout=15)
+                self._proc = None
+                return {"success": True, "message": "ComfyUI stopped"}
+            except Exception as e:
+                try:
+                    self._proc.kill()
+                    self._proc = None
+                    return {"success": True, "message": "ComfyUI force stopped"}
+                except Exception:
+                    return {"success": False, "error": str(e)}
+        return {"success": True, "message": "Not running"}
+
+    def __del__(self):
+        if self._proc:
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass

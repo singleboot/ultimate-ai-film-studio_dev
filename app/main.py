@@ -1,5 +1,7 @@
 import os
 import json
+import shutil
+import platform
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -13,11 +15,18 @@ try:
     from core.llm_engine import LLMEngine
     from core.project_manager import ProjectManager
     from core.approval_workflow import ApprovalWorkflow
+    from core.image_engine import ImageEngine
     HAS_LLM = True
 except ImportError:
     HAS_LLM = False
 
 app = FastAPI(title="Ultimate AI Film Studio")
+
+# Cleanup subprocesses on shutdown
+@app.on_event("shutdown")
+async def shutdown_event():
+    if llm_engine:
+        llm_engine.cleanup_subprocesses()
 
 # Global exception handler - always return JSON
 @app.exception_handler(Exception)
@@ -38,7 +47,45 @@ templates = Jinja2Templates(directory=str(templates_dir)) if templates_dir.exist
 
 # Initialize core modules
 template_manager = TemplateManager() if HAS_LLM else None
-llm_engine = LLMEngine() if HAS_LLM else None
+# Settings storage — persist outside app directory so updates never overwrite data
+_APP_DATA_NAME = "UltimateAIFilmStudio"
+if platform.system() == "Windows":
+    _base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+else:
+    _base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+DATA_DIR = _base / _APP_DATA_NAME
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+SETTINGS_FILE = DATA_DIR / "settings.json"
+GENRES_DIR = DATA_DIR / "genres"
+VISUAL_STYLES_DIR = DATA_DIR / "visual_styles"
+FILM_AESTHETICS_DIR = DATA_DIR / "film_aesthetics"
+
+# Migrate old data from app/ directory on first run
+_old_app_dir = Path(__file__).parent
+for _name, _dir_var in [("settings.json", SETTINGS_FILE), ("genres", GENRES_DIR),
+                         ("visual_styles", VISUAL_STYLES_DIR), ("film_aesthetics", FILM_AESTHETICS_DIR)]:
+    _old = _old_app_dir / _name
+    if _old.exists() and not _dir_var.exists():
+        try:
+            _dir_var.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(_old), str(_dir_var))
+            print(f"Migrated {_name} to {_dir_var}")
+        except Exception as e:
+            print(f"Could not migrate {_name}: {e}")
+            # Copy instead of move if cross-drive move failed
+            if _old.is_file() and not _dir_var.exists():
+                shutil.copy2(str(_old), str(_dir_var))
+                print(f"Copied {_name} to {_dir_var}")
+            elif _old.is_dir() and not _dir_var.exists():
+                shutil.copytree(str(_old), str(_dir_var))
+                print(f"Copied directory {_name} to {_dir_var}")
+
+GENRES_DIR.mkdir(exist_ok=True)
+VISUAL_STYLES_DIR.mkdir(exist_ok=True)
+FILM_AESTHETICS_DIR.mkdir(exist_ok=True)
+
+llm_engine = LLMEngine(settings_path=str(SETTINGS_FILE)) if HAS_LLM else None
 project_manager = ProjectManager() if HAS_LLM else None
 approval_workflow = ApprovalWorkflow() if HAS_LLM else None
 
@@ -46,6 +93,7 @@ approval_workflow = ApprovalWorkflow() if HAS_LLM else None
 # User can manually connect ComfyUI when they want to use it
 from core.comfyui_client import ComfyUIClient
 comfyui_client = ComfyUIClient()
+image_engine = ImageEngine(comfyui_client=comfyui_client, settings_path=str(SETTINGS_FILE)) if HAS_LLM else None
 
 class GenerateRequest(BaseModel):
     provider: str
@@ -56,6 +104,8 @@ class GenerateRequest(BaseModel):
     template_name: Optional[str] = None
     stage_name: Optional[str] = None
     variables: Optional[Dict] = None
+    images: Optional[List[str]] = None
+    api_key: Optional[str] = None
 
 class ProjectCreateRequest(BaseModel):
     name: str
@@ -137,10 +187,118 @@ async def generate(request: GenerateRequest):
         model=request.model,
         prompt=prompt,
         system_prompt=system_prompt,
-        host=request.host
+        host=request.host,
+        images=request.images,
+        api_key=request.api_key
     )
 
     return result
+
+# === LLM Subprocess Management ===
+
+@app.get("/api/llm/detect")
+async def detect_local_llm(provider: str):
+    """Detect if a local LLM binary is installed."""
+    return llm_engine.detect_local_llm(provider) if llm_engine else {"installed": False, "error": "LLM engine not available"}
+
+@app.get("/api/llm/status")
+async def get_llm_status(provider: str):
+    """Check if a local LLM is running."""
+    return llm_engine.get_local_status(provider) if llm_engine else {"running": False}
+
+@app.post("/api/llm/start")
+async def start_local_llm(data: dict):
+    """Start a local LLM as a subprocess."""
+    if not llm_engine:
+        return {"success": False, "error": "LLM engine not available"}
+    provider = data.get("provider", "")
+    model_path = data.get("model_path", None)
+    return llm_engine.launch_local_llm(provider, model_path)
+
+@app.post("/api/llm/stop")
+async def stop_local_llm(data: dict):
+    """Stop a local LLM subprocess."""
+    if not llm_engine:
+        return {"success": False, "error": "LLM engine not available"}
+    return llm_engine.stop_local_llm(data.get("provider", ""))
+
+# === Image / Video Generation Provider Management ===
+
+@app.get("/api/image/providers")
+async def get_image_providers():
+    """List available image/video generation providers."""
+    if not image_engine:
+        return {"success": True, "providers": []}
+    return {"success": True, "providers": image_engine.get_providers()}
+
+@app.post("/api/image/test")
+async def test_image_provider(data: dict):
+    """Test connection to an image/video provider."""
+    if not image_engine:
+        return {"success": False, "error": "Image engine not available"}
+    return image_engine.test_connection(
+        provider_id=data.get("provider", ""),
+        host=data.get("host"),
+        api_key=data.get("api_key")
+    )
+
+@app.post("/api/image/generate")
+async def generate_image_endpoint(data: dict):
+    """Generate an image using the selected provider."""
+    if not image_engine:
+        return {"success": False, "error": "Image engine not available"}
+    return image_engine.generate_image(
+        provider_id=data.get("provider", "comfyui"),
+        model=data.get("model", ""),
+        prompt=data.get("prompt", ""),
+        host=data.get("host"),
+        api_key=data.get("api_key"),
+        width=data.get("width", 1024),
+        height=data.get("height", 1024),
+        workflow_name=data.get("workflow_name"),
+        input_images=data.get("input_images"),
+        aspect_ratio=data.get("aspect_ratio"),
+        resolution=data.get("resolution"),
+        seed=data.get("seed")
+    )
+
+@app.post("/api/video/generate")
+async def generate_video_endpoint(data: dict):
+    """Generate a video using the selected provider."""
+    if not image_engine:
+        return {"success": False, "error": "Image engine not available"}
+    return image_engine.generate_video(
+        provider_id=data.get("provider", "comfyui"),
+        model=data.get("model", ""),
+        prompt=data.get("prompt", ""),
+        host=data.get("host"),
+        api_key=data.get("api_key"),
+        input_image=data.get("input_image"),
+        workflow_name=data.get("workflow_name")
+    )
+
+# === ComfyUI Subprocess Management ===
+
+@app.post("/api/comfyui/detect")
+async def detect_comfyui():
+    """Detect local ComfyUI installation."""
+    return comfyui_client.detect_comfyui()
+
+@app.get("/api/comfyui/status")
+async def get_comfyui_status():
+    """Check if ComfyUI is running."""
+    return comfyui_client.get_comfyui_status()
+
+@app.post("/api/comfyui/start")
+async def start_comfyui(data: dict = None):
+    """Launch ComfyUI as a subprocess."""
+    path = data.get("path") if data else None
+    return comfyui_client.launch_comfyui(path=path)
+
+@app.post("/api/comfyui/stop")
+async def stop_comfyui():
+    """Stop ComfyUI subprocess."""
+    return comfyui_client.stop_comfyui()
 
 @app.get("/api/comfyui/categories")
 async def get_comfyui_categories():
@@ -178,6 +336,194 @@ async def generate_image(
     
     result = comfyui_client.generate_image(prompt, model, width, height, seed)
     return result
+
+@app.post("/api/comfyui/generate/t2i")
+async def generate_t2i_endpoint(request: Request):
+    """Generate image using T2I workflow from settings."""
+    data = await request.json()
+    prompt = data.get("prompt", "")
+    seed = data.get("seed")
+    if not prompt:
+        return {"success": False, "error": "No prompt provided"}
+    settings = load_settings()
+    workflow_name = settings.get("workflows", {}).get("t2i", "")
+    if not workflow_name:
+        return {"success": False, "error": "No T2I workflow assigned in Settings"}
+    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed)
+
+@app.post("/api/comfyui/generate/i2i")
+async def generate_i2i_endpoint(request: Request):
+    """Generate image using I2I workflow from settings with reference images."""
+    data = await request.json()
+    prompt = data.get("prompt", "")
+    seed = data.get("seed")
+    project_path = data.get("project_path", "")
+    input_images = data.get("input_images", [])
+    aspect_ratio = data.get("aspect_ratio")
+    resolution = data.get("resolution")
+    if not prompt:
+        return {"success": False, "error": "No prompt provided"}
+    settings = load_settings()
+    workflow_name = settings.get("workflows", {}).get("i2i", "")
+    if not workflow_name:
+        return {"success": False, "error": "No I2I workflow assigned in Settings"}
+    abs_paths = []
+    for rel in input_images:
+        p = Path(project_path) / rel
+        if p.exists():
+            abs_paths.append(str(p))
+        else:
+            print(f"[I2I] Image NOT FOUND: {p}")
+    if abs_paths:
+        print(f"[I2I] Resolved {len(abs_paths)}/{len(input_images)} images: {abs_paths}")
+    else:
+        print(f"[I2I] No input images resolved (requested {len(input_images)})")
+    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, input_images=abs_paths if abs_paths else None, aspect_ratio=aspect_ratio, resolution=resolution)
+
+@app.post("/api/comfyui/generate/i2v")
+async def generate_i2v_endpoint(request: Request):
+    """Generate video using I2V workflow from settings with scene image input."""
+    data = await request.json()
+    prompt = data.get("prompt", "")
+    seed = data.get("seed")
+    project_path = data.get("project_path", "")
+    input_image = data.get("input_image")
+    scene_index = data.get("scene_index")
+    print(f"\n[I2V] ===== REQUEST =====")
+    print(f"[I2V] prompt='{prompt[:80]}...' seed={seed}")
+    print(f"[I2V] project_path='{project_path}'")
+    print(f"[I2V] input_image='{input_image}'")
+    print(f"[I2V] scene_index={scene_index}")
+    if not prompt:
+        return {"success": False, "error": "No prompt provided"}
+    settings = load_settings()
+    workflow_name = settings.get("workflows", {}).get("i2v", "")
+    if not workflow_name:
+        return {"success": False, "error": "No I2V workflow assigned in Settings"}
+    abs_image = None
+    if input_image:
+        p = Path(input_image)
+        if p.exists():
+            abs_image = str(p)
+            print(f"[I2V] Resolved input image: {abs_image}")
+        else:
+            stem = p.stem
+            parent = p.parent
+            print(f"[I2V] Input image NOT at {p}, trying alt extensions...")
+            for ext in ['.png', '.jpg', '.jpeg', '.webp']:
+                alt = parent / f"{stem}{ext}"
+                if alt.exists():
+                    abs_image = str(alt)
+                    print(f"[I2V] Found image with alt extension: {abs_image}")
+                    break
+            if not abs_image:
+                print(f"[I2V] No alt extension found for {p}")
+    # Auto-discover scene image from project if not resolved yet
+    if not abs_image and project_path:
+        scene_index = data.get("scene_index", 0)
+        scenes_dir = Path(project_path) / "scenes"
+        if scenes_dir.exists():
+            candidates = sorted([
+                f for f in scenes_dir.iterdir()
+                if f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.webp')
+            ])
+            # Try scene_{index+1} first, then fall back to any scene image
+            target = f"scene_{scene_index + 1}"
+            for c in candidates:
+                if c.stem == target:
+                    abs_image = str(c)
+                    print(f"[I2V] Auto-discovered scene image: {abs_image}")
+                    break
+            if not abs_image:
+                # Try any scene image
+                scene_files = [c for c in candidates if c.stem.startswith("scene_")]
+                if scene_files:
+                    abs_image = str(scene_files[0])
+                    print(f"[I2V] Auto-discovered first scene image: {abs_image}")
+    if not abs_image:
+        return {"success": False, "error": "Scene image not found. Make sure you approved the storyboard image first."}
+    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, input_images=[abs_image] if abs_image else None)
+
+@app.post("/api/projects/save-image")
+async def save_project_image(request: Request):
+    """Save a generated image to project folder."""
+    data = await request.json()
+    stage = data.get("stage", "")
+    filename = data.get("filename", "")
+    project_path = data.get("project_path", "")
+    card_name = data.get("card_name", "")
+    project_name = data.get("project_name", "")
+    previous_file = data.get("previous_file")
+    import requests
+    try:
+        resp = requests.get(f"{comfyui_client.host}/view?filename={filename}", timeout=60)
+        if resp.status_code != 200:
+            return {"success": False, "error": "Failed to download from ComfyUI"}
+    except Exception as e:
+        return {"success": False, "error": f"Download error: {str(e)}"}
+    ext = Path(filename).suffix or ".png"
+    safe = card_name.replace(" ", "_").replace("/", "_") if card_name else filename
+    save_name = f"{safe}{ext}"
+    # Delete previous file if re-saving (use same path resolution as save)
+    if previous_file:
+        if project_path:
+            prev_path = Path(project_path) / stage / previous_file
+            if prev_path.exists():
+                prev_path.unlink()
+        elif project_name:
+            project_manager.load_project(project_name)
+            prev_path = project_manager.projects_dir / project_name / stage / previous_file
+            if prev_path.exists():
+                prev_path.unlink()
+    # Save to project_path first (ensures I2I can find it), fall back to project_manager
+    if project_path:
+        stage_dir = Path(project_path) / stage
+        stage_dir.mkdir(exist_ok=True)
+        dest = stage_dir / save_name
+        dest.write_bytes(resp.content)
+        return {"success": True, "path": str(dest)}
+    elif project_name:
+        project_manager.load_project(project_name)
+        result = project_manager.save_approved_output(stage, save_name, resp.content)
+        return result
+    return {"success": False, "error": "No project specified"}
+
+@app.post("/api/projects/save-video")
+async def save_project_video(request: Request):
+    """Save a generated video to project folder by downloading from ComfyUI."""
+    data = await request.json()
+    filename = data.get("filename", "")
+    subfolder = data.get("subfolder", "")
+    project_path = data.get("project_path", "")
+    card_name = data.get("card_name", "")
+    project_name = data.get("project_name", "")
+    if not filename:
+        return {"success": False, "error": "No filename provided"}
+    import requests
+    try:
+        params = {"filename": filename, "type": "output"}
+        if subfolder:
+            params["subfolder"] = subfolder
+        resp = requests.get(f"{comfyui_client.host}/view", params=params, timeout=120)
+        if resp.status_code != 200:
+            return {"success": False, "error": "Failed to download video from ComfyUI"}
+    except Exception as e:
+        return {"success": False, "error": f"Download error: {str(e)}"}
+    ext = Path(filename).suffix or ".mp4"
+    safe = card_name.replace(" ", "_").replace("/", "_") if card_name else Path(filename).stem
+    save_name = f"{safe}{ext}"
+    stage = "videos"
+    if project_path:
+        stage_dir = Path(project_path) / stage
+        stage_dir.mkdir(exist_ok=True)
+        dest = stage_dir / save_name
+        dest.write_bytes(resp.content)
+        return {"success": True, "path": str(dest)}
+    elif project_name:
+        project_manager.load_project(project_name)
+        result = project_manager.save_approved_output(stage, save_name, resp.content)
+        return result
+    return {"success": False, "error": "No project specified"}
 
 @app.get("/api/projects")
 async def get_projects():
@@ -245,12 +591,75 @@ async def save_prompts(name: str, stage: str, content: str):
     result = project_manager.save_prompt(stage, content)
     return {"success": result}
 
+@app.post("/api/projects/{name}/state")
+async def save_project_state(name: str, request: Request):
+    """Save full project state (charData, sceneData, etc.)."""
+    body = await request.json()
+    state = body.get("state", {})
+    project_path = body.get("project_path")
+    result = project_manager.save_project_state(name, state, project_path)
+    return result
+
+@app.get("/api/projects/{name}/state")
+async def load_project_state(name: str, path: str = None):
+    """Load full project state from disk."""
+    result = project_manager.load_project_state(name, path)
+    if result is None:
+        return {"success": False, "state": None}
+    return {"success": True, "state": result}
+
 @app.get("/api/projects/{name}/files/{stage}")
 async def get_stage_files(name: str, stage: str):
     """Get files for a stage."""
     project_manager.load_project(name)
     files = project_manager.get_stage_files(stage)
     return {"success": True, "files": files}
+
+@app.delete("/api/projects/{name}/file")
+async def delete_project_file(name: str, request: Request):
+    """Delete a file from a project stage."""
+    data = await request.json()
+    project_path = data.get("project_path")
+    stage = data.get("stage", "")
+    filename = data.get("filename", "")
+    if not filename:
+        return {"success": False, "error": "No filename provided"}
+    try:
+        if project_path:
+            target = Path(project_path) / stage / filename
+        else:
+            project_manager.load_project(name)
+            target = project_manager.projects_dir / name / stage / filename
+        if target.exists():
+            target.unlink()
+            return {"success": True}
+        return {"success": False, "error": "File not found"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/projects/{name}/saved-image/{stage}/{filename:path}")
+async def get_saved_project_image(name: str, stage: str, filename: str):
+    """Serve a saved project image."""
+    try:
+        project_manager.load_project(name)
+        img_path = project_manager.projects_dir / name / stage / filename
+        if not img_path.exists():
+            return JSONResponse(status_code=404, content={"success": False, "error": "Image not found"})
+        return FileResponse(str(img_path), media_type="image/png")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+@app.get("/api/projects/{name}/saved-video/{filename:path}")
+async def get_saved_project_video(name: str, filename: str):
+    """Serve a saved project video."""
+    try:
+        project_manager.load_project(name)
+        vid_path = project_manager.projects_dir / name / "videos" / filename
+        if not vid_path.exists():
+            return JSONResponse(status_code=404, content={"success": False, "error": "Video not found"})
+        return FileResponse(str(vid_path), media_type="video/mp4")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 @app.post("/api/projects/{name}/approve")
 async def approve_output(name: str, action: ApprovalAction):
@@ -297,13 +706,19 @@ async def set_comfyui_host(host: str):
     return {"success": True, "message": f"ComfyUI host set to {host}"}
 
 @app.get("/api/comfyui/view")
-async def view_comfyui_image(filename: str):
-    """View an image from ComfyUI output."""
+async def view_comfyui_image(filename: str, subfolder: str = ""):
+    """View an image or video from ComfyUI output."""
     try:
         import requests
-        response = requests.get(f"http://localhost:8188/view?filename={filename}")
+        host = comfyui_client.host
+        params = {"filename": filename}
+        if subfolder:
+            params["subfolder"] = subfolder
+            params["type"] = "output"
+        response = requests.get(f"{host}/view", params=params, timeout=60)
         from fastapi.responses import Response
-        return Response(content=response.content, media_type="image/png")
+        ctype = response.headers.get("content-type", "video/mp4") if filename.endswith(('.mp4','.webm','.gif')) else response.headers.get("content-type", "image/png")
+        return Response(content=response.content, media_type=ctype)
     except Exception as e:
         return {"error": str(e)}
 
@@ -360,7 +775,7 @@ async def test_comfyui_connect(url: str = "http://localhost:8188"):
         return {"success": False, "message": str(e)}
 
 @app.get("/api/llm/models")
-async def get_llm_models(provider: str, host: str = None):
+async def get_llm_models(provider: str, host: str = None, models_path: str = None):
     """Get available models for the provider."""
     models = []
     if provider == "ollama":
@@ -383,47 +798,87 @@ async def get_llm_models(provider: str, host: str = None):
                 models = [m["id"] for m in data.get("data", [])]
         except:
             pass
+    elif provider == "llama_cpp":
+        # Try running server first
+        base = host or "http://localhost:8080"
+        try:
+            import requests
+            resp = requests.get(f"{base}/v1/models", timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = [m["id"] for m in data.get("data", [])]
+        except:
+            pass
+        # Also scan local models folder for GGUF files
+        if models_path:
+            p = Path(models_path)
+            if p.is_dir():
+                gguf_files = list(p.glob("**/*.gguf"))
+                local_models = sorted(set(str(f.relative_to(p)) for f in gguf_files))
+                for m in local_models:
+                    if m not in models:
+                        models.append(m)
     return {"models": models}
 
 @app.post("/api/llm/test")
 async def test_llm_connection(data: dict):
-    """Test LLM connection."""
-    provider = data.get("provider", "")
-    host = data.get("host", "http://localhost:11434")
-    model = data.get("model", "")
-    
-    try:
-        import requests
-        if provider == "ollama":
-            resp = requests.post(f"{host}/api/generate", 
-                json={"model": model, "prompt": "Hello", "stream": False}, timeout=30)
-            if resp.status_code == 200:
-                return {"success": True}
-        elif provider == "lm_studio":
-            resp = requests.post(f"{host}/v1/chat/completions",
-                json={"model": model, "messages": [{"role": "user", "content": "Hi"}]}, timeout=30)
-            if resp.status_code == 200:
-                return {"success": True}
-        return {"success": False, "message": "Connection failed"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+    """Test LLM connection using the engine."""
+    if not llm_engine:
+        return {"success": False, "message": "LLM engine not available"}
+    return llm_engine.test_connection(
+        provider_id=data.get("provider", ""),
+        host=data.get("host"),
+        api_key=data.get("api_key")
+    )
 
-# Settings storage
-SETTINGS_FILE = Path(__file__).parent / "settings.json"
-GENRES_DIR = Path(__file__).parent / "genres"
-GENRES_DIR.mkdir(exist_ok=True)
-VISUAL_STYLES_DIR = Path(__file__).parent / "visual_styles"
-VISUAL_STYLES_DIR.mkdir(exist_ok=True)
-FILM_AESTHETICS_DIR = Path(__file__).parent / "film_aesthetics"
-FILM_AESTHETICS_DIR.mkdir(exist_ok=True)
+@app.post("/api/llm/download-model")
+async def download_model(data: dict):
+    """Download a GGUF model from HuggingFace."""
+    url = data.get("url", "")
+    models_path = data.get("models_path", "")
+    if not url or not models_path:
+        return {"success": False, "error": "URL and models_path required"}
+    if "huggingface.co" not in url:
+        return {"success": False, "error": "Only HuggingFace URLs supported"}
+    try:
+        from urllib.parse import urlparse
+        import subprocess, sys, shutil
+        p = Path(models_path)
+        p.mkdir(parents=True, exist_ok=True)
+        # Extract repo from URL: https://huggingface.co/username/repo
+        parts = urlparse(url).path.strip("/").split("/")
+        if len(parts) < 2:
+            return {"success": False, "error": "Invalid HuggingFace URL"}
+        repo = "/".join(parts[:2])
+        dest = p / parts[-1]
+        dest.mkdir(exist_ok=True)
+        # Try using huggingface-hub if available
+        try:
+            import huggingface_hub
+            from huggingface_hub import snapshot_download
+            snapshot_download(repo_id=repo, local_dir=str(dest), local_dir_use_symlinks=False)
+            return {"success": True, "message": f"Downloaded {repo} to {dest}"}
+        except ImportError:
+            pass
+        # Fallback: try git clone
+        if shutil.which("git"):
+            clone_url = f"https://huggingface.co/{repo}"
+            result = subprocess.run(["git", "clone", "--depth=1", clone_url, str(dest)],
+                                    capture_output=True, text=True, timeout=300)
+            if result.returncode == 0:
+                return {"success": True, "message": f"Downloaded {repo} to {dest}"}
+            return {"success": False, "error": result.stderr[:200]}
+        return {"success": False, "error": "huggingface-hub not installed. Run: pip install huggingface-hub"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 def load_settings() -> dict:
     if SETTINGS_FILE.exists():
-        return json.loads(SETTINGS_FILE.read_text())
+        return json.loads(SETTINGS_FILE.read_text(encoding='utf-8-sig'))
     return {}
 
 def save_settings(settings: dict):
-    SETTINGS_FILE.write_text(json.dumps(settings, indent=2))
+    SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
 
 @app.get("/api/websearch")
 async def web_search(q: str, num: int = 5):
@@ -464,11 +919,32 @@ async def get_settings():
 async def save_settings_endpoint(data: dict):
     """Save settings, preserving genres and other non-overlapping keys."""
     existing = load_settings()
-    # Merge: keep genres, workflows folder data, etc. that frontend doesn't send
     for key in existing:
         if key not in data:
             data[key] = existing[key]
+    # Ensure image_gen section exists
+    if "image_gen" not in data:
+        data["image_gen"] = existing.get("image_gen", {"provider": "comfyui", "model": "", "host": "http://localhost:8188", "apiKey": ""})
+    # Ensure llm auto_start flag
+    if "llm" not in data:
+        data["llm"] = existing.get("llm", {"provider": "ollama", "model": "", "host": "http://localhost:11434", "apiKey": "", "auto_start": False})
     save_settings(data)
+    if data.get("comfyui", {}).get("url"):
+        comfyui_client.set_host(data["comfyui"]["url"])
+    if data.get("comfyui", {}).get("path"):
+        comfyui_client.set_comfyui_path(data["comfyui"]["path"])
+    # Auto-start ComfyUI if enabled
+    if data.get("comfyui", {}).get("auto_start", False):
+        try:
+            comfyui_client.launch_comfyui()
+        except Exception:
+            pass
+    # Auto-start local LLM if enabled
+    if data.get("llm", {}).get("auto_start", False) and llm_engine:
+        try:
+            llm_engine.launch_local_llm(data["llm"]["provider"])
+        except Exception:
+            pass
     return {"success": True}
 
 # Genre management
@@ -483,8 +959,8 @@ async def list_genres():
     return {"genres": genres}
 
 @app.post("/api/genres")
-async def add_genre(name: str = Form(...), file: UploadFile = File(None)):
-    """Add a custom genre with optional image."""
+async def add_genre(name: str = Form(...), file: UploadFile = File(None), category: str = Form(None)):
+    """Add a custom genre with optional image and category."""
     settings = load_settings()
     genres = settings.get("genres", [])
     
@@ -502,11 +978,41 @@ async def add_genre(name: str = Form(...), file: UploadFile = File(None)):
         content = await file.read()
         dest.write_bytes(content)
     
-    genre_entry = {"name": name, "image": image_filename} if image_filename else {"name": name, "image": None}
+    genre_entry = {"name": name, "image": image_filename, "category": category or "Other"} if image_filename else {"name": name, "image": None, "category": category or "Other"}
     genres.append(genre_entry)
     settings["genres"] = genres
     save_settings(settings)
     return {"success": True, "genre": genre_entry}
+
+@app.post("/api/genres/batch")
+async def add_genres_batch(files: List[UploadFile] = File(...)):
+    """Add multiple genres from a folder drop (names derived from filenames, categories from subfolder names)."""
+    settings = load_settings()
+    genres = settings.get("genres", [])
+    added = []
+    errors = []
+    for file in files:
+        original_name = Path(file.filename).stem
+        name = original_name.replace("_", " ").replace("-", " ").title()
+        parts = Path(file.filename).parts
+        category = parts[-2] if len(parts) > 1 else "Other"
+        for g in genres:
+            if g["name"].lower() == name.lower():
+                errors.append(f"{name}: already exists")
+                break
+        else:
+            ext = Path(file.filename).suffix or ".png"
+            safe_name = name.lower().replace(" ", "_").replace("/", "_")
+            image_filename = f"{safe_name}{ext}"
+            dest = GENRES_DIR / image_filename
+            content = await file.read()
+            dest.write_bytes(content)
+            entry = {"name": name, "image": image_filename, "category": category}
+            genres.append(entry)
+            added.append(entry)
+    settings["genres"] = genres
+    save_settings(settings)
+    return {"success": True, "added": added, "errors": errors, "count": len(added)}
 
 @app.delete("/api/genres/{name}")
 async def delete_genre(name: str):
@@ -564,6 +1070,28 @@ async def add_visual_style(name: str = Form(...), file: UploadFile = File(None))
     save_settings(settings)
     return {"success": True, "style": entry}
 
+@app.post("/api/visual-styles/batch")
+async def add_visual_styles_batch(files: List[UploadFile] = File(...)):
+    settings = load_settings()
+    styles = settings.get("visual_styles", [])
+    added = []; errors = []
+    for file in files:
+        original_name = Path(file.filename).stem
+        name = original_name.replace("_", " ").replace("-", " ").title()
+        for s in styles:
+            if s["name"].lower() == name.lower():
+                errors.append(f"{name}: already exists"); break
+        else:
+            ext = Path(file.filename).suffix or ".png"
+            safe_name = name.lower().replace(" ", "_").replace("/", "_")
+            dest = VISUAL_STYLES_DIR / f"{safe_name}{ext}"
+            dest.write_bytes(await file.read())
+            entry = {"name": name, "image": f"{safe_name}{ext}"}
+            styles.append(entry); added.append(entry)
+    settings["visual_styles"] = styles
+    save_settings(settings)
+    return {"success": True, "added": added, "errors": errors, "count": len(added)}
+
 @app.delete("/api/visual-styles/{name}")
 async def delete_visual_style(name: str):
     settings = load_settings()
@@ -617,6 +1145,28 @@ async def add_film_aesthetic(name: str = Form(...), file: UploadFile = File(None
     settings["film_aesthetics"] = aesthetics
     save_settings(settings)
     return {"success": True, "aesthetic": entry}
+
+@app.post("/api/film-aesthetics/batch")
+async def add_film_aesthetics_batch(files: List[UploadFile] = File(...)):
+    settings = load_settings()
+    aesthetics = settings.get("film_aesthetics", [])
+    added = []; errors = []
+    for file in files:
+        original_name = Path(file.filename).stem
+        name = original_name.replace("_", " ").replace("-", " ").title()
+        for a in aesthetics:
+            if a["name"].lower() == name.lower():
+                errors.append(f"{name}: already exists"); break
+        else:
+            ext = Path(file.filename).suffix or ".png"
+            safe_name = name.lower().replace(" ", "_").replace("/", "_")
+            dest = FILM_AESTHETICS_DIR / f"{safe_name}{ext}"
+            dest.write_bytes(await file.read())
+            entry = {"name": name, "image": f"{safe_name}{ext}"}
+            aesthetics.append(entry); added.append(entry)
+    settings["film_aesthetics"] = aesthetics
+    save_settings(settings)
+    return {"success": True, "added": added, "errors": errors, "count": len(added)}
 
 @app.delete("/api/film-aesthetics/{name}")
 async def delete_film_aesthetic(name: str):

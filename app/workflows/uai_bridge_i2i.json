@@ -1,0 +1,634 @@
+{
+  "100": {
+    "inputs": {
+      "image_path": ""
+    },
+    "class_type": "UAIImageSlot",
+    "_meta": {
+      "title": "Image Slot 1"
+    }
+  },
+  "101": {
+    "inputs": {
+      "image_path": ""
+    },
+    "class_type": "UAIImageSlot",
+    "_meta": {
+      "title": "Image Slot 2"
+    }
+  },
+  "102": {
+    "inputs": {
+      "image_path": ""
+    },
+    "class_type": "UAIImageSlot",
+    "_meta": {
+      "title": "Image Slot 3"
+    }
+  },
+  "103": {
+    "inputs": {
+      "image_path": ""
+    },
+    "class_type": "UAIImageSlot",
+    "_meta": {
+      "title": "Image Slot 4"
+    }
+  },
+  "104": {
+    "inputs": {
+      "image_path": ""
+    },
+    "class_type": "UAIImageSlot",
+    "_meta": {
+      "title": "Image Slot 5"
+    }
+  },
+  "105": {
+    "inputs": {
+      "image_path": ""
+    },
+    "class_type": "UAIImageSlot",
+    "_meta": {
+      "title": "Image Slot 6"
+    }
+  },
+  "106": {
+    "inputs": {
+      "image_path": ""
+    },
+    "class_type": "UAIImageSlot",
+    "_meta": {
+      "title": "Image Slot 7"
+    }
+  },
+  "107": {
+    "inputs": {
+      "image_path": ""
+    },
+    "class_type": "UAIImageSlot",
+    "_meta": {
+      "title": "Image Slot 8"
+    }
+  },
+  "200": {
+    "inputs": {
+      "conditioning": [
+        "10",
+        0
+      ],
+      "image": [
+        "100",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Positive Ref 1"
+    }
+  },
+  "201": {
+    "inputs": {
+      "conditioning": [
+        "200",
+        0
+      ],
+      "image": [
+        "101",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Positive Ref 2"
+    }
+  },
+  "202": {
+    "inputs": {
+      "conditioning": [
+        "201",
+        0
+      ],
+      "image": [
+        "102",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Positive Ref 3"
+    }
+  },
+  "203": {
+    "inputs": {
+      "conditioning": [
+        "202",
+        0
+      ],
+      "image": [
+        "103",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Positive Ref 4"
+    }
+  },
+  "204": {
+    "inputs": {
+      "conditioning": [
+        "203",
+        0
+      ],
+      "image": [
+        "104",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Positive Ref 5"
+    }
+  },
+  "205": {
+    "inputs": {
+      "conditioning": [
+        "204",
+        0
+      ],
+      "image": [
+        "105",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Positive Ref 6"
+    }
+  },
+  "206": {
+    "inputs": {
+      "conditioning": [
+        "205",
+        0
+      ],
+      "image": [
+        "106",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Positive Ref 7"
+    }
+  },
+  "207": {
+    "inputs": {
+      "conditioning": [
+        "206",
+        0
+      ],
+      "image": [
+        "107",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Positive Ref 8"
+    }
+  },
+  "300": {
+    "inputs": {
+      "conditioning": [
+        "20",
+        0
+      ],
+      "image": [
+        "100",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Negative Ref 1"
+    }
+  },
+  "301": {
+    "inputs": {
+      "conditioning": [
+        "300",
+        0
+      ],
+      "image": [
+        "101",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Negative Ref 2"
+    }
+  },
+  "302": {
+    "inputs": {
+      "conditioning": [
+        "301",
+        0
+      ],
+      "image": [
+        "102",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Negative Ref 3"
+    }
+  },
+  "303": {
+    "inputs": {
+      "conditioning": [
+        "302",
+        0
+      ],
+      "image": [
+        "103",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Negative Ref 4"
+    }
+  },
+  "304": {
+    "inputs": {
+      "conditioning": [
+        "303",
+        0
+      ],
+      "image": [
+        "104",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Negative Ref 5"
+    }
+  },
+  "305": {
+    "inputs": {
+      "conditioning": [
+        "304",
+        0
+      ],
+      "image": [
+        "105",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Negative Ref 6"
+    }
+  },
+  "306": {
+    "inputs": {
+      "conditioning": [
+        "305",
+        0
+      ],
+      "image": [
+        "106",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Negative Ref 7"
+    }
+  },
+  "307": {
+    "inputs": {
+      "conditioning": [
+        "306",
+        0
+      ],
+      "image": [
+        "107",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ],
+      "megapixels": 1.0,
+      "upscale_method": "nearest-exact",
+      "resolution_steps": 1
+    },
+    "class_type": "UAIConditioningBypass",
+    "_meta": {
+      "title": "Negative Ref 8"
+    }
+  },
+  "10": {
+    "inputs": {
+      "text": "prompt placeholder",
+      "clip": [
+        "90",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "20": {
+    "inputs": {
+      "conditioning": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Zero Out"
+    }
+  },
+  "50": {
+    "inputs": {
+      "unet_name": "IMAGE\\FLUX 2\\flux-2-klein-9b-fp8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "51": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "52": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "90": {
+    "inputs": {
+      "lora_name": "Flux\\klein_slider_detail.safetensors",
+      "strength_model": 1.0,
+      "strength_clip": 1.0,
+      "model": [
+        "50",
+        0
+      ],
+      "clip": [
+        "51",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA (Model and CLIP)"
+    }
+  },
+  "60": {
+    "inputs": {
+      "cfg": 1.0,
+      "model": [
+        "90",
+        0
+      ],
+      "positive": [
+        "207",
+        0
+      ],
+      "negative": [
+        "307",
+        0
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG Guider"
+    }
+  },
+  "70": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSampler Select"
+    }
+  },
+  "71": {
+    "inputs": {
+      "steps": 5,
+      "width": 1024,
+      "height": 576
+    },
+    "class_type": "Flux2Scheduler",
+    "_meta": {
+      "title": "Flux2 Scheduler"
+    }
+  },
+  "72": {
+    "inputs": {
+      "noise_seed": 245293339796575
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "Random Noise"
+    }
+  },
+  "73": {
+    "inputs": {
+      "width": 1024,
+      "height": 576,
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "80": {
+    "inputs": {
+      "noise": [
+        "72",
+        0
+      ],
+      "guider": [
+        "60",
+        0
+      ],
+      "sampler": [
+        "70",
+        0
+      ],
+      "sigmas": [
+        "71",
+        0
+      ],
+      "latent_image": [
+        "73",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "Sampler Custom Advanced"
+    }
+  },
+  "81": {
+    "inputs": {
+      "samples": [
+        "80",
+        0
+      ],
+      "vae": [
+        "52",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "82": {
+    "inputs": {
+      "filename_prefix": "Flux2-Klein",
+      "images": [
+        "81",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

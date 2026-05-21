@@ -223,6 +223,36 @@ class ProjectManager:
         except Exception:
             return False
 
+    def save_project_state(self, name: str, state_data: Dict, project_path_str: str = None) -> Dict:
+        """Save full project state (charData, locationData, sceneData, etc.)."""
+        if project_path_str:
+            project_path = Path(project_path_str)
+        else:
+            project_path = self.projects_dir / name
+        if not project_path.exists():
+            return {"success": False, "error": "Project path not found"}
+        state_file = project_path / "project_state.json"
+        try:
+            with open(state_file, 'w', encoding='utf-8') as f:
+                json.dump(state_data, f, indent=2, default=str)
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def load_project_state(self, name: str, project_path_str: str = None) -> Optional[Dict]:
+        """Load full project state from disk."""
+        if project_path_str:
+            state_file = Path(project_path_str) / "project_state.json"
+        else:
+            state_file = self.projects_dir / name / "project_state.json"
+        if not state_file.exists():
+            return None
+        try:
+            with open(state_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return None
+
     def export_project(self, name: str, export_path: str) -> bool:
         """Export project as ZIP."""
         import zipfile

@@ -18,8 +18,8 @@ A prompt-to-media pipeline with human-in-the-loop approval workflow - generate c
 
 ## Installation
 
-1. Click "Install" in the Pinokio UI
-2. Wait for dependencies to install
+1. Create a virtual environment: `python -m venv env`
+2. Activate it and install dependencies: `pip install -r requirements.txt`
 
 ## Usage
 
@@ -66,7 +66,6 @@ ultimate-ai-film-studio/
 │       ├── templates/       # Built-in templates
 │       ├── llm_providers.json
 │       └── comfyui_workflows.json
-├── pinokio/                 # Pinokio launcher files
 └── README.md
 ```
 
