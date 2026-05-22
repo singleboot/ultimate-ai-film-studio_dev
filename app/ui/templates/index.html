@@ -3634,12 +3634,13 @@
                         const locked = false;
                         const lighting = (sh.lighting_language || '').toLowerCase();
                         const todIcon = (lighting.includes('night') || lighting.includes('dark') || lighting.includes('moon') || lighting.includes('shadow')) ? '🌙' : '☀️';
+                        function _str(v) { return Array.isArray(v) ? v.join(', ') : (v || ''); }
                         const charsStr = (sh.characters_present || []).join(', ') || '—';
-                        const actionStr = (sh.action || '').substring(0, 120);
-                        const motifStr = (sh.visual_motifs || '').substring(0, 60);
-                        const camStr = (sh.camera_language || '').substring(0, 60);
-                        const litStr = (sh.lighting_language || '').substring(0, 60);
-                        const emotion = sh.emotion || '';
+                        const actionStr = _str(sh.action).substring(0, 120);
+                        const motifStr = _str(sh.visual_motifs).substring(0, 60);
+                        const camStr = _str(sh.camera_language).substring(0, 60);
+                        const litStr = _str(sh.lighting_language).substring(0, 60);
+                        const emotion = _str(sh.emotion);
                         html += `
                             <div style="width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;">
                                 <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
@@ -3650,7 +3651,7 @@
                                 <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
                                     <div style="color:var(--text-secondary);font-size:0.6rem;">👥 ${charsStr}</div>
                                     ${motifStr ? `<div style="color:var(--accent-secondary);font-size:0.6rem;">🎨 ${motifStr}</div>` : ''}
-                                    <div style="color:var(--text-primary);font-size:0.65rem;">${actionStr}${(sh.action || '').length > 120 ? '…' : ''}</div>
+                                    <div style="color:var(--text-primary);font-size:0.65rem;">${actionStr}${_str(sh.action).length > 120 ? '…' : ''}</div>
                                     <div style="color:var(--text-secondary);font-size:0.6rem;">📷 ${camStr}</div>
                                     <div style="color:var(--text-secondary);font-size:0.6rem;">💡 ${litStr}</div>
                                     <div style="color:var(--text-secondary);font-size:0.6rem;">🎭 ${emotion}</div>
