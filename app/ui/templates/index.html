@@ -779,6 +779,7 @@
                 </div>
                 <div style="display:flex;gap:8px;">
                     <button class="btn btn-secondary" onclick="generateScreenplay()" id="generate-screenplay-btn" style="padding:4px 12px;font-size:0.75rem;">📜 Generate/Regenerate</button>
+                    <button class="btn btn-secondary" onclick="generateAllShots()" id="generate-all-shots-btn" style="padding:4px 12px;font-size:0.75rem;">🎬 Generate All Shots</button>
                     <button class="btn btn-primary" onclick="proceedToAssetStudio()" id="proceed-to-asset-studio-btn" style="padding:4px 12px;font-size:0.75rem;display:none;">🎬 Continue to Asset Studio →</button>
                 </div>
             </div>
@@ -3658,7 +3659,6 @@
                                 </div>
                                 <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
                                     <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;">⛶</button>
-                                    <button class="btn btn-primary" onclick="siGenerateImage('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;">🎨</button>
                                     <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}');setTimeout(()=>siShowVariantInput('${sh.shot_id}'),300)" style="padding:2px 4px;font-size:0.5rem;">✏️</button>
                                     <button class="btn btn-secondary" onclick="shotRegenerate('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;">🔄</button>
                                     <button class="btn btn-secondary" onclick="shotToggleLock('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;">${locked ? '🔓' : '🔒'}</button>
@@ -4249,6 +4249,52 @@
                 notify('Error', e.message, '❌');
                 if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate Shots'; }
             }
+        }
+
+        async function generateAllShots() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            const btn = document.getElementById('generate-all-shots-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating all shots...'; }
+            let total = 0, failed = 0;
+            for (let i = 0; i < screenplayData.scenes.length; i++) {
+                const s = screenplayData.scenes[i];
+                if (s.shots && s.shots.length > 0) continue; // skip already-generated
+                try {
+                    const res = await fetch('/api/orchestrator/generate-scene-shots', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            scene_id: s.scene_id || '',
+                            scene_title: s.scene_title || '',
+                            location_id: s.location_id || '',
+                            characters_present: s.characters_present || [],
+                            emotional_tone: s.emotional_tone || '',
+                            synopsis: s.synopsis || '',
+                            time_of_day: s.time_of_day || '',
+                            shot_count: s.estimated_shots || 1,
+                            dialogue_enabled: screenplayData.dialogue_enabled !== false,
+                        }),
+                    });
+                    const data = await res.json();
+                    if (data.success && data.shots && data.shots.length > 0) {
+                        if (!s.shots) s.shots = [];
+                        const prefix = s.scene_id ? s.scene_id + '_' : 'SHOT_';
+                        data.shots.forEach((sh, idx) => {
+                            if (!sh.shot_id) sh.shot_id = prefix + (idx + 1);
+                            if (!sh.shot_number) sh.shot_number = idx + 1;
+                        });
+                        s.shots = data.shots;
+                        total += data.shots.length;
+                    } else {
+                        failed++;
+                    }
+                } catch(e) {
+                    failed++;
+                }
+            }
+            renderScreenplay();
+            if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate All Shots'; }
+            if (total > 0) notify('All Shots Generated', `${total} shots created across scenes${failed ? `, ${failed} failed` : ''}`, '🎬');
+            else if (failed > 0) notify('Failed', 'All scenes failed to generate shots', '❌');
         }
 
         function proceedToScenesFromScreenplay() {
