@@ -1726,15 +1726,20 @@
 
         // === PAGE NAVIGATION ===
         function navigateToWorkflow(step) {
-            const built = { ideas: 1, screenplay: 1, 'asset-studio': 1, storyboard: 1, 'video-prompts': 1, videos: 1 };
-            if (built[step]) {
-                if (step === 'screenplay') renderScreenplay();
-                if (step === 'asset-studio') loadAssetStudioData();
-                if (step === 'storyboard') renderStoryboard();
-                if (step === 'video-prompts') renderVideoStoryboard();
-                showPage(step);
-            } else {
-                notify('Coming Soon', 'This module is not built yet', '🚧');
+            try {
+                const built = { ideas: 1, screenplay: 1, 'asset-studio': 1, storyboard: 1, 'video-prompts': 1, videos: 1 };
+                if (built[step]) {
+                    if (step === 'screenplay') renderScreenplay();
+                    if (step === 'asset-studio') loadAssetStudioData();
+                    if (step === 'storyboard') renderStoryboard();
+                    if (step === 'video-prompts') renderVideoStoryboard();
+                    showPage(step);
+                } else {
+                    notify('Coming Soon', 'This module is not built yet', '🚧');
+                }
+            } catch(e) {
+                notify('Navigation Error', e.message, '⚠️');
+                console.error('navigateToWorkflow error:', e);
             }
         }
 
@@ -3542,6 +3547,7 @@
         let _psResults = []; // array of 3 variant objects from placeholder modal
 
         function renderScreenplay() {
+            try {
             const container = document.getElementById('screenplay-container');
             if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.length) {
                 container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
@@ -3694,6 +3700,7 @@
             html += '</div>';
             container.innerHTML = html;
             _updateShotSummaryCounts();
+            } catch(e) { console.error('renderScreenplay error:', e); notify('Render Error', e.message, '⚠️'); }
         }
 
         function _updateShotSummaryCounts() {
