@@ -348,6 +348,9 @@ MAXIMUM_CHARACTERS:
 MAXIMUM_LOCATIONS:
 {loc_count}
 
+MAXIMUM_SCENES:
+{scene_count}
+
 MAXIMUM_TOTAL_SHOTS:
 {shot_count}
 
@@ -377,10 +380,10 @@ You MUST obey:
 
 - Character count cannot exceed MAXIMUM_CHARACTERS
 - Location count cannot exceed MAXIMUM_LOCATIONS
+- Scene count MUST be EXACTLY MAXIMUM_SCENES
 - Total shot count cannot exceed MAXIMUM_TOTAL_SHOTS
 
 The AI must intelligently determine:
-- number of scenes
 - shots per scene
 - pacing structure
 - narrative segmentation
@@ -584,10 +587,25 @@ Every concept must feel:
             valid, issues = self._validate_idea_counts(result["data"])
             if not valid:
                 self.set_progress(85, "Count mismatch, retrying with correction...")
-                correction = f"The previous output had count issues: {'; '.join(issues)}. Regenerate ensuring exact counts."
+                correction = f"The previous output had count issues: {'; '.join(issues)}. Regenerate ensuring EXACT counts: scenes={scene_count}, characters={char_count}, locations={loc_count}, shots={shot_count}."
                 result = self._call_llm(prompt + "\n\n" + correction, system_suffix=system_suffix)
 
             if result.get("success") and result.get("data") and isinstance(result["data"], list):
+                valid2, issues2 = self._validate_idea_counts(result["data"])
+                if not valid2:
+                    for idea in result["data"]:
+                        esc = idea.get("estimated_scene_count", 0)
+                        if esc != self.memory.selected_scenes:
+                            idea["estimated_scene_count"] = self.memory.selected_scenes
+                        ets = idea.get("estimated_total_shots", 0)
+                        if ets > self.memory.selected_total_shots:
+                            idea["estimated_total_shots"] = self.memory.selected_total_shots
+                        cc = idea.get("character_count", 0)
+                        if cc > self.memory.selected_characters:
+                            idea["character_count"] = self.memory.selected_characters
+                        lc = idea.get("location_count", 0)
+                        if lc > self.memory.selected_locations:
+                            idea["location_count"] = self.memory.selected_locations
                 self.memory.ideas = result["data"]
                 self.set_progress(100, "Ideas generated!", f"{len(result['data'])} concepts ready")
                 return {"success": True, "ideas": result["data"], "raw": result.get("raw")}
@@ -745,6 +763,14 @@ IMPORTANT CONSTRAINTS:
                 )
                 if result.get("success") and result.get("data"):
                     data = result["data"]
+                    valid, issues = self._validate_screenplay_counts(data)
+                    if not valid:
+                        scenes = data.get("scenes", [])
+                        while len(scenes) < self.memory.selected_scenes:
+                            scenes.append(scenes[-1] if scenes else {"scene_id": "SC_FILL", "scene_title": "Replacement Scene", "shots": []})
+                        while len(scenes) > self.memory.selected_scenes:
+                            scenes.pop()
+                        data["scenes"] = scenes
 
             self.memory.screenplay = data
             # Also populate project_graph
@@ -799,8 +825,8 @@ IMPORTANT CONSTRAINTS:
             if lc > self.memory.selected_locations:
                 issues.append(f"Idea {i+1}: location_count {lc} > {self.memory.selected_locations}")
             esc = idea.get("estimated_scene_count", 0)
-            if esc > self.memory.selected_scenes:
-                issues.append(f"Idea {i+1}: estimated_scene_count {esc} > {self.memory.selected_scenes}")
+            if esc != self.memory.selected_scenes:
+                issues.append(f"Idea {i+1}: estimated_scene_count {esc} != {self.memory.selected_scenes}")
             ets = idea.get("estimated_total_shots", 0)
             if ets > self.memory.selected_total_shots:
                 issues.append(f"Idea {i+1}: estimated_total_shots {ets} > {self.memory.selected_total_shots}")
@@ -1673,6 +1699,243 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
             "prompt": prompt,
             "shot": shot,
         }
+
+    def generate_shot_from_scene(self, params: Dict) -> Dict:
+        """Generate 3 shot variants from scene context (no existing shot needed)."""
+        self._reset_progress()
+        self.set_progress(10, "Preparing shot generation from scene...")
+
+        scene_id = params.get("scene_id", "")
+        scene_title = params.get("scene_title", "")
+        location_id = params.get("location_id", "")
+        characters_present = params.get("characters_present", [])
+        emotional_tone = params.get("emotional_tone", "")
+        synopsis = params.get("synopsis", "")
+        shot_number = params.get("shot_number", 1)
+        user_instruction = params.get("user_instruction", "").strip()
+        if not user_instruction:
+            user_instruction = "Vary the seed and generate 3 creative cinematic alternatives with different camera placements, lighting setups, and compositions."
+
+        self.set_progress(30, "Sending to LLM...")
+
+        prompt = f"""You are a SHOT GENERATION ENGINE. Create 3 distinct cinematic shot variants from scene context.
+
+SCENE CONTEXT:
+- Scene ID: {scene_id}
+- Scene Title: {scene_title}
+- Location: {location_id}
+- Characters: {', '.join(characters_present) if isinstance(characters_present, list) else str(characters_present)}
+- Emotional Tone: {emotional_tone}
+- Synopsis: {synopsis}
+- Shot Number: {shot_number} of scene
+
+USER INSTRUCTION:
+{user_instruction}
+
+CONTINUITY CONTEXT:
+{self.get_continuity_context()}
+
+Generate 3 distinct shot variants. Each variant must be a complete shot object with these fields:
+- shot_type (string: Wide, Medium, Close-Up, Extreme Close-Up, Over-the-Shoulder, Two-Shot, POV, Dutch Angle, Crane, Drone, Tracking, etc.)
+- camera_language (string describing camera position, movement, angle)
+- lighting_language (string describing lighting setup, mood, color scheme)
+- emotion (string describing the emotional quality of the shot)
+- action (string describing the physical action in the shot)
+- characters_present (array of character names/IDs present in the shot)
+- visual_motifs (array of recurring visual themes)
+- motion_opportunities (array of dynamic motion elements)
+- environmental_motion (array of environmental movements)
+- audio_notes (array of sound design notes)
+- continuity_notes (string describing how this shot connects to adjacent shots)
+- cinematic_notes (string with directorial notes)
+
+Each variant must be meaningfully different from the others in camera, lighting, and composition."""
+
+        self.set_progress(50, "Generating 3 shot variants...")
+
+        system_suffix = f"""Generate exactly 3 variants.
+
+Output format: JSON object with a single key "variants" containing an array of exactly 3 shot objects.
+
+Example:
+{{
+  "variants": [
+    {{
+      "shot_type": "Wide",
+      "camera_language": "Low angle tracking shot from street level, rain hitting lens",
+      "lighting_language": "Neon backlight with rain-diffused street lamps",
+      "emotion": "Isolated, observed",
+      "action": "Protagonist walks slowly through puddles, collar up",
+      "characters_present": ["KAI"],
+      "visual_motifs": ["reflections", "neon", "rain"],
+      "motion_opportunities": ["rain falling", "slow walk"],
+      "environmental_motion": ["neon flicker", "steam rising"],
+      "audio_notes": ["steady rain", "distant traffic hum"],
+      "continuity_notes": "Opens the scene, establishes location",
+      "cinematic_notes": "Slow zoom in as character approaches camera"
+    }}
+  ]
+}}"""
+
+        result = self._call_llm(prompt, system_suffix=system_suffix)
+
+        self.set_progress(80, "Processing variants...")
+
+        variants = []
+        if result.get("success") and result.get("data"):
+            data = result["data"]
+            if isinstance(data, dict):
+                variants = data.get("variants", [data])
+            elif isinstance(data, list):
+                variants = data[:3]
+            # Assign variant_ids
+            for i, v in enumerate(variants):
+                v["variant_id"] = f"VAR_{scene_id}_{shot_number}_{i+1}"
+                v["parent_shot"] = f"{scene_id}_Shot_{shot_number}"
+                v["variant_number"] = i + 1
+
+            if len(variants) < 3:
+                self.set_progress(85, "Not enough variants, retrying...")
+                result = self._call_llm(
+                    prompt + f"\n\nPREVIOUS ERROR: Only generated {len(variants)} variants. Generate exactly 3.",
+                    system_suffix=system_suffix
+                )
+                if result.get("success") and result.get("data"):
+                    data = result["data"]
+                    if isinstance(data, dict):
+                        variants2 = data.get("variants", [data])
+                    elif isinstance(data, list):
+                        variants2 = data[:3]
+                    for i, v in enumerate(variants2):
+                        v["variant_id"] = f"VAR_{scene_id}_{shot_number}_{i+1}"
+                        v["parent_shot"] = f"{scene_id}_Shot_{shot_number}"
+                        v["variant_number"] = i + 1
+                    if len(variants2) >= 3:
+                        variants = variants2
+
+        self.set_progress(100, "Shot variants ready!")
+        return {"success": True, "variants": variants[:3]}
+
+    def generate_scene_shots(self, params: Dict) -> Dict:
+        """Generate shot nodes for a single scene using the master prompt structure."""
+        self._reset_progress()
+        self.set_progress(10, "Preparing scene shot generation...")
+
+        scene_id = params.get("scene_id", "SC_001")
+        scene_title = params.get("scene_title", "")
+        location_id = params.get("location_id", "")
+        characters_present = params.get("characters_present", [])
+        emotional_tone = params.get("emotional_tone", "")
+        synopsis = params.get("synopsis", "")
+        time_of_day = params.get("time_of_day", "Day")
+        shot_count = int(params.get("shot_count", 1))
+        dialogue_enabled = params.get("dialogue_enabled", True)
+
+        self.set_progress(20, f"Generating {shot_count} shot nodes for {scene_id}...")
+
+        prompt = f"""You are a CINEMATIC SHOT DESIGN ENGINE. Generate exactly {shot_count} cinematic shot nodes for a single scene.
+
+SCENE CONTEXT:
+- Scene ID: {scene_id}
+- Scene Title: {scene_title}
+- Location: {location_id}
+- Characters Present: {', '.join(characters_present) if isinstance(characters_present, list) else str(characters_present)}
+- Emotional Tone: {emotional_tone}
+- Time of Day: {time_of_day}
+- Synopsis: {synopsis}
+- Dialogue Enabled: {str(dialogue_enabled)}
+
+GENERATION RULES:
+- Generate EXACTLY {shot_count} shot nodes
+- Each shot must be visually distinct from the others
+- Shot types must vary (Wide, Medium, Close-Up, OTS, Tracking, Low Angle, POV, Insert, Establishing, etc.)
+- Each shot must have a unique cinematic intent
+- Shots should tell a visual story that matches the emotional tone
+
+Each shot node must have EXACTLY these fields:
+- shot_id (string, e.g. "{scene_id}_SHOT_1")
+- shot_number (number, starting from 1)
+- shot_type (string)
+- camera_language (string, camera position, movement, angle, lens)
+- lighting_language (string, lighting setup, mood, color)
+- emotion (string, emotional quality of the shot)
+- characters_present (array of strings, character names/IDs in this shot)
+- dialogue (array of objects with speaker and text; empty array if dialogue_enabled is false)
+- action (string, physical action in the shot)
+- visual_motifs (array of strings)
+- motion_opportunities (array of strings)
+- environmental_motion (array of strings)
+- audio_notes (array of strings)
+- continuity_notes (string)
+- cinematic_notes (string)
+- storyboard_status (string, always "pending")
+
+IMPORTANT: Total shots MUST be exactly {shot_count}."""
+
+        system_suffix = f"""Output ONLY a JSON object with a single key "shots" containing an array of exactly {shot_count} shot objects.
+
+Example:
+{{
+  "shots": [
+    {{
+      "shot_id": "{scene_id}_SHOT_1",
+      "shot_number": 1,
+      "shot_type": "Wide Establishing Shot",
+      "camera_language": "Static wide frame from low angle, rain streaking across lens",
+      "lighting_language": "Neon backlight with rain-diffused street lamps, high contrast",
+      "emotion": "Isolated, foreboding",
+      "characters_present": ["{characters_present[0] if isinstance(characters_present, list) and characters_present else 'PROTAGONIST'}"],
+      "dialogue": [],
+      "action": "The protagonist stands alone at the edge of the street, rain cascading off their coat",
+      "visual_motifs": ["neon reflections", "rain", "isolation"],
+      "motion_opportunities": ["slow rain fall", "character breathing visible"],
+      "environmental_motion": ["flickering neon sign", "steam rising from grate"],
+      "audio_notes": ["steady rain", "distant traffic hum", "occasional thunder"],
+      "continuity_notes": "Opens the scene, establishes location and mood",
+      "cinematic_notes": "Slow push-in as character takes first step forward",
+      "storyboard_status": "pending"
+    }}
+  ]
+}}"""
+
+        result = self._call_llm(prompt, system_suffix=system_suffix)
+
+        self.set_progress(80, "Processing shot nodes...")
+
+        shots = []
+        if result.get("success") and result.get("data"):
+            data = result["data"]
+            if isinstance(data, dict):
+                shots = data.get("shots", [])
+            elif isinstance(data, list):
+                shots = data
+
+            # Validate shot count
+            if len(shots) != shot_count:
+                self.set_progress(85, f"Shot count mismatch ({len(shots)} vs {shot_count}), retrying...")
+                correction = f"PREVIOUS ERROR: Generated {len(shots)} shots instead of exactly {shot_count}. Regenerate with EXACTLY {shot_count} shots."
+                result = self._call_llm(
+                    prompt + "\n\n" + correction,
+                    system_suffix=system_suffix
+                )
+                if result.get("success") and result.get("data"):
+                    data = result["data"]
+                    if isinstance(data, dict):
+                        shots = data.get("shots", [])
+                    elif isinstance(data, list):
+                        shots = data
+
+            # Ensure shot_id and shot_number consistency
+            for i, sh in enumerate(shots):
+                if not sh.get("shot_id"):
+                    sh["shot_id"] = f"{scene_id}_SHOT_{i+1}"
+                if not sh.get("shot_number"):
+                    sh["shot_number"] = i + 1
+                if not sh.get("storyboard_status"):
+                    sh["storyboard_status"] = "pending"
+
+        self.set_progress(100, "Scene shots generated!")
+        return {"success": True, "shots": shots}
 
     def reset(self):
         """Reset the orchestrator memory."""

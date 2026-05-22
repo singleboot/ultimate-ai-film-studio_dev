@@ -177,13 +177,15 @@ The user defines production scale constraints:
 
 - maximum_characters
 - maximum_locations
+- maximum_scenes
 - maximum_total_shots
 
-These represent the maximum cinematic production scope.
+These represent the exact cinematic production scope.
+
+The AI MUST use EXACTLY the user-defined counts.
 
 The AI must intelligently determine:
 
-- total number of scenes
 - number of shots per scene
 - cinematic pacing
 - narrative segmentation
@@ -200,6 +202,7 @@ based on:
 IMPORTANT:
 
 - Total shots MUST NOT exceed maximum_total_shots
+- Scenes MUST be EXACTLY maximum_scenes
 - Characters MUST NOT exceed maximum_characters
 - Locations MUST NOT exceed maximum_locations
 

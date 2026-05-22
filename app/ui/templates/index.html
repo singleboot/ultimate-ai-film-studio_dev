@@ -1693,6 +1693,23 @@
         </div>
     </div>
 
+    <!-- Placeholder Shot Expand Modal -->
+    <div class="modal-overlay" id="placeholder-shot-modal">
+        <div class="modal" style="max-width:700px;max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h2 style="color:var(--accent-primary);margin:0;font-size:1rem;">⛶ <span id="ps-shot-label">Shot</span></h2>
+                <button class="btn btn-secondary" onclick="closePlaceholderShotModal()" style="padding:4px 10px;font-size:0.75rem;">✕</button>
+            </div>
+            <div id="ps-scene-context" style="font-size:0.8rem;line-height:1.6;margin-bottom:12px;padding:10px;background:var(--bg-tertiary);border-radius:6px;max-height:200px;overflow-y:auto;"></div>
+            <div class="form-group">
+                <label class="form-label">Edit suggestion <span style="color:var(--text-secondary);font-size:0.7rem;">(optional — leave blank to vary seed)</span></label>
+                <textarea class="form-textarea" id="ps-change-input" rows="3" placeholder="e.g. Make it a low-angle shot, change lighting to neon noir..."></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="generatePlaceholderShotVariants()" style="padding:6px 14px;font-size:0.8rem;">🚀 Generate 3 Shot Variants</button>
+            <div id="ps-results" style="margin-top:15px;"></div>
+        </div>
+    </div>
+
     <footer class="status-bar">
         <span id="status-text">Ready</span>
         <span class="status-services">
@@ -3528,15 +3545,11 @@
         }
 
         let _siShotId = null; // currently open shot inspector shot_id
-        let _collapsedScenes = {}; // scene_id → true/false
-
-        function toggleSceneCollapse(sceneId) {
-            _collapsedScenes[sceneId] = !_collapsedScenes[sceneId];
-            const grid = document.getElementById('shot-grid-' + sceneId);
-            const icon = document.getElementById('collapse-icon-' + sceneId);
-            if (grid) grid.style.display = _collapsedScenes[sceneId] ? 'none' : 'grid';
-            if (icon) icon.textContent = _collapsedScenes[sceneId] ? '▶' : '▼';
-        }
+        let _shotVariantShotId = null; // shot_id being varied
+        let _shotVariantResults = []; // array of 3 variant objects
+        let _psSceneIdx = -1; // scene index for placeholder shot modal
+        let _psShotNum = -1; // shot number within scene for placeholder modal
+        let _psResults = []; // array of 3 variant objects from placeholder modal
 
         function renderScreenplay() {
             const container = document.getElementById('screenplay-container');
@@ -3583,81 +3596,111 @@
             document.getElementById('proceed-to-asset-studio-btn').style.display = 'inline-block';
             document.getElementById('proceed-to-asset-studio-btn-bottom').style.display = 'inline-block';
 
-            let html = '<div style="display:flex;flex-direction:column;gap:10px;">';
+            let html = '<div style="display:flex;flex-direction:column;gap:8px;">';
 
             sp.scenes.forEach((s, i) => {
                 const chars = (s.characters_present || []).join(', ') || 'None';
                 const shotCount = hasShotNodes ? (s.shots ? s.shots.length : 0) : (s.estimated_shots || 1);
-                const collapsible = _collapsedScenes[s.scene_id] || false;
+                const timeOfDay = s.time_of_day || (s.emotional_tone && s.emotional_tone.toLowerCase().includes('night') ? 'Night' : 'Day');
 
-                // Scene header (always visible, clickable)
+                // Horizontal scene row: scene card (left) + shot cards (right)
+                html += `<div style="display:flex;gap:10px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color);padding:10px;">`;
+
+                // === LEFT: Scene Info Card (~280px) ===
                 html += `
-                    <div style="background:var(--bg-secondary);border-radius:8px;overflow:hidden;border:1px solid var(--border-color);">
-                        <div onclick="toggleSceneCollapse('${s.scene_id}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;cursor:pointer;background:var(--bg-tertiary);">
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <span id="collapse-icon-${s.scene_id}" style="font-size:0.7rem;color:var(--text-secondary);">${collapsible ? '▶' : '▼'}</span>
-                                <strong style="color:var(--accent-primary);font-size:0.85rem;">${s.scene_id || '#' + (s.scene_number || i+1)}</strong>
-                                <span style="color:var(--text-primary);font-size:0.85rem;">${escapeHtml(s.scene_title || '')}</span>
-                                <span style="font-size:0.7rem;color:var(--text-secondary);">📍 ${s.location_id || 'Unknown'}</span>
-                            </div>
-                            <div style="display:flex;align-items:center;gap:8px;font-size:0.7rem;color:var(--text-secondary);">
-                                <span>👥 ${chars}</span>
-                                <span>🎭 ${s.emotional_tone || '—'}</span>
-                                <span style="background:var(--bg-secondary);padding:2px 6px;border-radius:3px;">${shotCount} shot${shotCount !== 1 ? 's' : ''}</span>
-                            </div>
+                    <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:6px;">
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <strong style="color:var(--accent-primary);font-size:0.8rem;">${s.scene_id || '#' + (s.scene_number || i+1)}</strong>
+                            <span style="color:var(--text-primary);font-size:0.75rem;font-weight:600;">${escapeHtml(s.scene_title || '')}</span>
                         </div>
-                        <div style="font-size:0.78rem;color:var(--text-primary);padding:4px 12px;background:var(--bg-secondary);">
+                        <div style="font-size:0.7rem;color:var(--text-secondary);line-height:1.6;">
+                            <div>📍 ${s.location_id || 'Unknown'}</div>
+                            <div>👥 ${chars}</div>
+                            <div>🎭 ${s.emotional_tone || '—'}</div>
+                            <div>🌅 ${timeOfDay}</div>
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text-primary);line-height:1.4;max-height:80px;overflow-y:auto;background:var(--bg-tertiary);border-radius:4px;padding:4px 6px;">
                             ${escapeHtml((s.synopsis || '').substring(0, 200))}
-                        </div>`;
-
-                // Dialogue snippet
-                if (s.dialogue && s.dialogue.length) {
-                    html += `<div style="font-size:0.7rem;color:var(--text-secondary);padding:2px 12px 6px;background:var(--bg-secondary);">
-                        🎙️ ${s.dialogue.slice(0, 2).map(d => `<em>${escapeHtml(d.speaker || '')}: ${escapeHtml((d.text || '').substring(0, 50))}</em>`).join(' | ')}
-                        ${s.dialogue.length > 2 ? ` <span style="color:var(--accent-primary);">+${s.dialogue.length - 2} more</span>` : ''}
+                        </div>
+                        <div style="font-size:0.65rem;color:var(--text-secondary);background:var(--bg-primary);padding:2px 6px;border-radius:3px;text-align:center;">
+                            ${shotCount} shot${shotCount !== 1 ? 's' : ''}
+                        </div>
+                        ${!hasShotNodes || !s.shots || !s.shots.length ? `<button class="btn btn-secondary" onclick="generateSceneShots(${i})" id="gen-scene-shots-${i}" style="padding:3px 8px;font-size:0.65rem;">🎬 Generate Shots</button>` : ''}
                     </div>`;
-                }
 
-                // Shot grid
+                // === RIGHT: Shot Cards (flex-wrap) ===
+                html += `<div style="flex:1;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;">`;
+
                 if (hasShotNodes && s.shots && s.shots.length) {
-                    html += `<div id="shot-grid-${s.scene_id}" style="display:${collapsible ? 'none' : 'grid'};grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;padding:8px 12px 12px;">`;
                     s.shots.forEach(sh => {
                         const status = sh.storyboard_status || 'pending';
                         const statusColor = status === 'approved' ? '#4caf50' : (status === 'enriched' || status === 'regenerated' ? '#ff9800' : '#555');
                         const hasImage = sh.image_generated || false;
-                        const locked = false; // will be fetched from backend
+                        const locked = false;
+                        // Infer time-of-day icon from lighting_language
+                        const lighting = (sh.lighting_language || '').toLowerCase();
+                        const todIcon = (lighting.includes('night') || lighting.includes('dark') || lighting.includes('moon') || lighting.includes('shadow')) ? '🌙' : '☀️';
+                        const camSnippet = (sh.camera_language || '').substring(0, 30);
+                        const litSnippet = (sh.lighting_language || '').substring(0, 25);
+                        const emotion = sh.emotion || '';
                         html += `
-                            <div style="background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);">
-                                <!-- Top: ID + Type + Badge -->
-                                <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:var(--bg-primary);">
-                                    <span style="font-size:0.65rem;color:var(--accent-primary);font-weight:600;">${sh.shot_id || 'SHOT_?'}</span>
-                                    <span style="font-size:0.6rem;color:var(--text-secondary);">${sh.shot_type || ''}</span>
-                                    <span style="font-size:0.55rem;padding:1px 4px;border-radius:2px;background:${statusColor};color:#fff;">${status}</span>
+                            <div style="width:165px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);">
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);">
+                                    <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${sh.shot_id || 'SHOT_?'}</span>
+                                    <span style="font-size:0.55rem;color:var(--text-secondary);">${sh.shot_type || ''} ${todIcon}</span>
+                                    <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${statusColor};color:#fff;">${status}</span>
                                 </div>
-                                <!-- Center: Image / Placeholder -->
-                                <div style="aspect-ratio:16/9;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:var(--text-secondary);">
-                                    ${hasImage ? '<span>🖼️ Generated</span>' : '<span>No preview</span>'}
+                                <div style="aspect-ratio:16/9;background:var(--bg-secondary);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:0.55rem;color:var(--text-secondary);padding:2px;text-align:center;">
+                                    ${hasImage ? '<span>🖼️</span>' : ''}
+                                    <div>📷 ${camSnippet}${camSnippet.length >= 30 ? '...' : ''}</div>
+                                    <div>💡 ${litSnippet}${litSnippet.length >= 25 ? '...' : ''}</div>
+                                    <div>🎭 ${emotion.substring(0, 20)}</div>
                                 </div>
-                                <!-- Bottom: Actions -->
-                                <div style="display:flex;gap:2px;padding:4px 6px;flex-wrap:wrap;">
-                                    <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">⛶</button>
-                                    <button class="btn btn-primary" onclick="siGenerateImage('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">🎨</button>
-                                    <button class="btn btn-secondary" onclick="siShowVariantInput('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">✏️</button>
-                                    <button class="btn btn-secondary" onclick="shotRegenerate('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">🔄</button>
-                                    <button class="btn btn-secondary" onclick="shotToggleLock('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">${locked ? '🔓' : '🔒'}</button>
-                                    <button class="btn btn-secondary" onclick="shotApprove('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">✅</button>
+                                <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                                    <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;">⛶</button>
+                                    <button class="btn btn-primary" onclick="siGenerateImage('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;">🎨</button>
+                                    <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}');setTimeout(()=>siShowVariantInput('${sh.shot_id}'),300)" style="padding:2px 4px;font-size:0.5rem;">✏️</button>
+                                    <button class="btn btn-secondary" onclick="shotRegenerate('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;">🔄</button>
+                                    <button class="btn btn-secondary" onclick="shotToggleLock('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;">${locked ? '🔓' : '🔒'}</button>
+                                    <button class="btn btn-secondary" onclick="shotApprove('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;">✅</button>
                                 </div>
                             </div>`;
                     });
-                    html += `</div>`;
+                } else {
+                    // Placeholder cards for estimated_shots
+                    const placeholderCount = s.estimated_shots || 1;
+                    const locSnippet = (s.location_id || '??').substring(0, 18);
+                    for (let pi = 0; pi < placeholderCount; pi++) {
+                        const shotNum = s.scene_number ? s.scene_number + '.' + (pi+1) : (s.scene_id ? s.scene_id.replace('SC_','') + '_' + (pi+1) : (i+1) + '-' + (pi+1));
+                        const lightingHint = (s.emotional_tone || '').toLowerCase();
+                        const todIcon = (lightingHint.includes('night') || lightingHint.includes('dark')) ? '🌙' : '☀️';
+                        html += `
+                            <div style="width:165px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px dashed var(--border-color);opacity:0.7;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);">
+                                    <span style="font-size:0.6rem;color:var(--text-secondary);font-weight:600;">SHOT_${shotNum}</span>
+                                    <span style="font-size:0.55rem;color:var(--text-secondary);">— ${todIcon}</span>
+                                    <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:#555;color:#fff;">pending</span>
+                                </div>
+                                <div style="aspect-ratio:16/9;background:var(--bg-secondary);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:0.55rem;color:var(--text-secondary);padding:4px;text-align:center;gap:2px;">
+                                    <div style="font-size:0.6rem;color:var(--text-secondary);">🎬 Not generated</div>
+                                    <div>👥 ${chars.substring(0, 20)}</div>
+                                    <div>📍 ${locSnippet}</div>
+                                    <div>🎭 ${(s.emotional_tone || '—').substring(0, 15)}</div>
+                                </div>
+                                <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                                    <button class="btn btn-secondary" onclick="openPlaceholderShotModal(${i}, ${pi})" style="padding:2px 4px;font-size:0.5rem;">⛶</button>
+                                    <span style="font-size:0.5rem;color:var(--text-secondary);padding:2px 4px;">pending</span>
+                                </div>
+                            </div>`;
+                    }
                 }
 
-                html += `</div>`;
+                html += `</div>`; // end right
+                html += `</div>`; // end scene row
             });
 
             html += '</div>';
             container.innerHTML = html;
-            // Update status counts after render
             _updateShotSummaryCounts();
         }
 
@@ -3767,12 +3810,10 @@
                 // Show variants
                 const variants = data.variants || [];
                 if (variants.length) {
+                    _shotVariantResults = variants;
+                    _shotVariantShotId = shotId;
                     const gallery = document.getElementById('si-variant-gallery');
-                    gallery.innerHTML = variants.map((v, i) => `
-                        <div style="background:var(--bg-primary);border-radius:4px;padding:4px 8px;font-size:0.65rem;border:1px solid var(--border-color);">
-                            <strong>${v.variant_id}</strong> — ${v.shot_type || ''}
-                        </div>
-                    `).join('');
+                    renderShotVariantCards(gallery, variants);
                 }
 
                 // Update lock button
@@ -3825,30 +3866,28 @@
             document.getElementById('si-variant-instruction').focus();
         }
 
-        async function siSubmitVariant() {
+        async function siSubmitVariant(shotId) {
+            const id = shotId || _siShotId;
             const instruction = document.getElementById('si-variant-instruction').value.trim();
-            if (!instruction || !_siShotId) return;
+            if (!instruction || !id) return;
+            const gallery = document.getElementById('si-variant-gallery');
+            gallery.innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">⏳ Generating 3 variants...</span>';
             try {
                 const res = await fetch('/api/orchestrator/shot-variant', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ shot_id: _siShotId, user_instruction: instruction }),
+                    body: JSON.stringify({ shot_id: id, user_instruction: instruction }),
                 });
                 const data = await res.json();
                 if (data.success && data.variants) {
-                    const gallery = document.getElementById('si-variant-gallery');
-                    gallery.innerHTML = data.variants.map((v, i) => `
-                        <div style="background:var(--bg-primary);border-radius:4px;padding:6px 10px;font-size:0.7rem;border:1px solid var(--accent-primary);">
-                            <strong>${v.variant_id || 'Variant ' + (i+1)}</strong><br>
-                            ${v.shot_type || ''}<br>
-                            <span style="color:var(--text-secondary);">${(v.camera_language || '').substring(0, 40)}</span>
-                        </div>
-                    `).join('');
-                    notify('Variants', `3 variants generated for ${_siShotId}`, '✏️');
+                    _shotVariantResults = data.variants;
+                    _shotVariantShotId = id;
+                    renderShotVariantCards(gallery, data.variants);
+                    notify('Variants', `3 variants generated for ${id}`, '✏️');
                 } else {
-                    notify('Failed', data.error || 'Variant generation failed', '❌');
+                    gallery.innerHTML = '<span style="font-size:0.7rem;color:#f87171;">Failed: ' + (data.error || 'Generation failed') + '</span>';
                 }
             } catch(e) {
-                notify('Error', e.message, '❌');
+                document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:#f87171;">Error: ' + e.message + '</span>';
             }
             document.getElementById('si-variant-input-area').style.display = 'none';
         }
@@ -3957,6 +3996,259 @@
 
         function siCreateVariant() {
             siShowVariantInput(_siShotId);
+        }
+
+        function renderShotVariantCards(containerEl, variants) {
+            let html = '<div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:8px;">3 variants generated</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+            variants.forEach((v, i) => {
+                const lighting = (v.lighting_language || '').toLowerCase();
+                const todIcon = (lighting.includes('night') || lighting.includes('dark') || lighting.includes('moon') || lighting.includes('shadow')) ? '🌙' : '☀️';
+                html += `
+                    <div style="flex:1;min-width:180px;max-width:220px;border:1px solid var(--border-color);border-radius:6px;padding:8px;background:var(--bg-primary);">
+                        <div style="font-weight:600;font-size:0.7rem;color:var(--accent-primary);margin-bottom:4px;">Variant ${i+1}: ${v.shot_type || ''} ${todIcon}</div>
+                        <div style="font-size:0.65rem;color:var(--text-secondary);line-height:1.5;">
+                            <div>📷 ${(v.camera_language || '—').substring(0, 50)}</div>
+                            <div>💡 ${(v.lighting_language || '—').substring(0, 50)}</div>
+                            <div>🎭 ${v.emotion || '—'}</div>
+                            ${v.action ? `<div>🎬 ${v.action.substring(0, 60)}</div>` : ''}
+                        </div>
+                        <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="siKeepVariant(${i})" style="padding:3px 8px;font-size:0.6rem;">✓ Keep</button>
+                            <button class="btn btn-secondary" onclick="siEditVariantAgain(${i})" style="padding:3px 8px;font-size:0.6rem;">✏️ Edit</button>
+                            <button class="btn btn-secondary" onclick="siCancelVariants()" style="padding:3px 8px;font-size:0.6rem;">Cancel</button>
+                        </div>
+                    </div>`;
+            });
+            html += '</div>';
+            containerEl.innerHTML = html;
+        }
+
+        // Inspector variant actions
+        function siKeepVariant(idx) {
+            if (!_shotVariantResults[idx] || !_shotVariantShotId) return;
+            const variant = _shotVariantResults[idx];
+            if (screenplayData && screenplayData.scenes) {
+                for (const s of screenplayData.scenes) {
+                    if (s.shots) {
+                        for (let i = 0; i < s.shots.length; i++) {
+                            if (s.shots[i].shot_id === _shotVariantShotId) {
+                                Object.assign(s.shots[i], variant);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            renderScreenplay();
+            openShotInspector(_shotVariantShotId);
+            scheduleSaveState();
+            notify('Kept', `Variant applied to ${_shotVariantShotId}`, '✓');
+        }
+
+        function siEditVariantAgain(idx) {
+            if (!_shotVariantResults[idx]) return;
+            const v = _shotVariantResults[idx];
+            const textarea = document.getElementById('si-variant-instruction');
+            const prevText = textarea.value;
+            textarea.value = prevText + `\n[Refining variant: ${v.shot_type || ''}] Please adjust: `;
+            document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">No variants yet</span>';
+            document.getElementById('si-variant-input-area').style.display = 'block';
+            textarea.focus();
+        }
+
+        function siCancelVariants() {
+            document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">No variants yet</span>';
+            _shotVariantResults = [];
+        }
+
+        // === PLACEHOLDER SHOT EXPAND MODAL ===
+
+        function openPlaceholderShotModal(sceneIdx, shotNum) {
+            _psSceneIdx = sceneIdx;
+            _psShotNum = shotNum;
+            _psResults = [];
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s) return;
+            const totalShots = s.estimated_shots || 1;
+            const chars = (s.characters_present || []).join(', ') || 'None';
+            document.getElementById('ps-shot-label').textContent = `${s.scene_id || 'SC_'+(sceneIdx+1)} Shot #${shotNum+1} of ${totalShots}`;
+            document.getElementById('ps-scene-context').innerHTML =
+                `<strong>${escapeHtml(s.scene_title || '')}</strong><br>` +
+                `<span style="color:var(--text-secondary);">📍 ${s.location_id || 'Unknown'} · 👥 ${chars} · 🎭 ${s.emotional_tone || '—'}</span><br>` +
+                `<span style="font-size:0.75rem;">${escapeHtml((s.synopsis || '').substring(0, 350))}</span>`;
+            document.getElementById('ps-change-input').value = '';
+            document.getElementById('ps-results').innerHTML = '';
+            document.getElementById('placeholder-shot-modal').style.display = 'flex';
+        }
+
+        function closePlaceholderShotModal() {
+            document.getElementById('placeholder-shot-modal').style.display = 'none';
+            _psSceneIdx = -1;
+            _psShotNum = -1;
+            _psResults = [];
+        }
+
+        async function generatePlaceholderShotVariants() {
+            const s = screenplayData.scenes[_psSceneIdx];
+            if (!s) return;
+            const userChange = document.getElementById('ps-change-input').value.trim();
+            const resultsEl = document.getElementById('ps-results');
+            const btn = document.querySelector('#placeholder-shot-modal .btn-primary');
+            btn.disabled = true;
+            btn.textContent = '⏳ Generating...';
+            resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">⏳ Generating 3 shot variants...</div>';
+            try {
+                const res = await fetch('/api/orchestrator/generate-shot-from-scene', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        scene_id: s.scene_id || '',
+                        scene_title: s.scene_title || '',
+                        location_id: s.location_id || '',
+                        characters_present: s.characters_present || [],
+                        emotional_tone: s.emotional_tone || '',
+                        synopsis: s.synopsis || '',
+                        shot_number: _psShotNum + 1,
+                        user_instruction: userChange
+                    }),
+                });
+                const data = await res.json();
+                if (data.success && data.variants && data.variants.length > 0) {
+                    _psResults = data.variants;
+                    renderPlaceholderVariantCards(resultsEl, data.variants);
+                } else {
+                    resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + (data.error || 'Generation failed') + '</div>';
+                }
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + e.message + '</div>';
+            }
+            btn.disabled = false;
+            btn.textContent = '🚀 Generate 3 Shot Variants';
+        }
+
+        function renderPlaceholderVariantCards(containerEl, variants) {
+            let html = '<div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:8px;">3 shot variants generated</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+            variants.forEach((v, i) => {
+                const lighting = (v.lighting_language || '').toLowerCase();
+                const todIcon = (lighting.includes('night') || lighting.includes('dark') || lighting.includes('moon') || lighting.includes('shadow')) ? '🌙' : '☀️';
+                html += `
+                    <div style="flex:1;min-width:180px;max-width:220px;border:1px solid var(--border-color);border-radius:6px;padding:8px;background:var(--bg-primary);">
+                        <div style="font-weight:600;font-size:0.7rem;color:var(--accent-primary);margin-bottom:4px;">Variant ${i+1}: ${v.shot_type || ''} ${todIcon}</div>
+                        <div style="font-size:0.65rem;color:var(--text-secondary);line-height:1.5;">
+                            <div>📷 ${(v.camera_language || '—').substring(0, 60)}</div>
+                            <div>💡 ${(v.lighting_language || '—').substring(0, 60)}</div>
+                            <div>🎭 ${v.emotion || '—'}</div>
+                            ${v.action ? `<div>🎬 ${v.action.substring(0, 60)}</div>` : ''}
+                        </div>
+                        <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="keepPlaceholderShotVariant(${i})" style="padding:3px 8px;font-size:0.6rem;">✓ Keep</button>
+                            <button class="btn btn-secondary" onclick="editPlaceholderShotVariantAgain(${i})" style="padding:3px 8px;font-size:0.6rem;">✏️ Edit</button>
+                            <button class="btn btn-secondary" onclick="cancelPlaceholderShotVariants()" style="padding:3px 8px;font-size:0.6rem;">Cancel</button>
+                        </div>
+                    </div>`;
+            });
+            html += '</div>';
+            containerEl.innerHTML = html;
+        }
+
+        function keepPlaceholderShotVariant(idx) {
+            if (!_psResults[idx] || _psSceneIdx < 0) return;
+            const s = screenplayData.scenes[_psSceneIdx];
+            if (!s) return;
+            const variant = _psResults[idx];
+            // Create shot node from variant and add to scene
+            if (!s.shots) s.shots = [];
+            const shotId = s.scene_id ? s.scene_id + '_Shot_' + (_psShotNum + 1) : 'SHOT_' + (_psSceneIdx + 1) + '_' + (_psShotNum + 1);
+            const shotNode = {
+                shot_id: shotId,
+                shot_number: _psShotNum + 1,
+                shot_type: variant.shot_type || 'Medium',
+                camera_language: variant.camera_language || '',
+                lighting_language: variant.lighting_language || '',
+                emotion: variant.emotion || '',
+                characters_present: variant.characters_present || s.characters_present || [],
+                dialogue: variant.dialogue || [],
+                action: variant.action || '',
+                visual_motifs: variant.visual_motifs || [],
+                motion_opportunities: variant.motion_opportunities || [],
+                environmental_motion: variant.environmental_motion || [],
+                audio_notes: variant.audio_notes || [],
+                continuity_notes: variant.continuity_notes || '',
+                cinematic_notes: variant.cinematic_notes || '',
+                storyboard_status: 'pending',
+                image_generated: false,
+            };
+            // Find the right position for this shot
+            const existingIdx = s.shots.findIndex(sh => sh.shot_number === _psShotNum + 1);
+            if (existingIdx >= 0) {
+                s.shots[existingIdx] = shotNode;
+            } else {
+                s.shots.push(shotNode);
+                s.shots.sort((a, b) => (a.shot_number || 0) - (b.shot_number || 0));
+            }
+            renderScreenplay();
+            closePlaceholderShotModal();
+            scheduleSaveState();
+            notify('Kept', `Shot ${shotId} created from variant`, '✓');
+        }
+
+        function editPlaceholderShotVariantAgain(idx) {
+            if (!_psResults[idx]) return;
+            const v = _psResults[idx];
+            const textarea = document.getElementById('ps-change-input');
+            const prevText = textarea.value;
+            textarea.value = prevText + `\n[Refining: ${v.shot_type || ''}] Please adjust further: `;
+            document.getElementById('ps-results').innerHTML = '';
+            textarea.focus();
+        }
+
+        function cancelPlaceholderShotVariants() {
+            document.getElementById('ps-results').innerHTML = '';
+            document.getElementById('ps-change-input').value = '';
+            document.getElementById('ps-change-input').focus();
+        }
+
+        async function generateSceneShots(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s) return;
+            const btn = document.getElementById('gen-scene-shots-' + sceneIdx);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            try {
+                const res = await fetch('/api/orchestrator/generate-scene-shots', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        scene_id: s.scene_id || '',
+                        scene_title: s.scene_title || '',
+                        location_id: s.location_id || '',
+                        characters_present: s.characters_present || [],
+                        emotional_tone: s.emotional_tone || '',
+                        synopsis: s.synopsis || '',
+                        time_of_day: s.time_of_day || '',
+                        shot_count: s.estimated_shots || 1,
+                        dialogue_enabled: screenplayData.dialogue_enabled !== false,
+                    }),
+                });
+                const data = await res.json();
+                if (data.success && data.shots && data.shots.length > 0) {
+                    if (!s.shots) s.shots = [];
+                    // Assign shot_id prefix if needed
+                    const prefix = s.scene_id ? s.scene_id + '_' : 'SHOT_';
+                    data.shots.forEach((sh, idx) => {
+                        if (!sh.shot_id) sh.shot_id = prefix + (idx + 1);
+                        if (!sh.shot_number) sh.shot_number = idx + 1;
+                    });
+                    s.shots = data.shots;
+                    renderScreenplay();
+                    notify('Shots Generated', `${data.shots.length} shots created for ${s.scene_id}`, '🎬');
+                } else {
+                    notify('Failed', data.error || 'Shot generation failed', '❌');
+                    if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate Shots'; }
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+                if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate Shots'; }
+            }
         }
 
         function proceedToScenesFromScreenplay() {

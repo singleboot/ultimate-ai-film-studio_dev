@@ -545,6 +545,22 @@ async def generate_shot_image(data: dict):
         return {"success": False, "error": "Orchestrator not available"}
     return orchestrator.generate_shot_image(data)
 
+@app.post("/api/orchestrator/generate-shot-from-scene")
+async def generate_shot_from_scene(data: dict):
+    """Generate 3 shot variants from scene context (no existing shot needed)."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_shot_from_scene(data)
+    return result
+
+@app.post("/api/orchestrator/generate-scene-shots")
+async def generate_scene_shots(data: dict):
+    """Generate shot nodes for a single scene."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_scene_shots(data)
+    return result
+
 # === Image / Video Generation Provider Management ===
 
 @app.get("/api/image/providers")
