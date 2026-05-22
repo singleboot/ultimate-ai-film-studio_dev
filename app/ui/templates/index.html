@@ -759,10 +759,11 @@
             </div>
 
             <div id="screenplay-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <span style="font-weight:600;" id="screenplay-progress-title">Generating screenplay...</span>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <span style="font-weight:600;" id="screenplay-progress-title">Generating...</span>
                     <span style="color:var(--accent-primary);font-weight:700;" id="screenplay-progress-pct">0%</span>
                 </div>
+                <div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:6px;min-height:1em;" id="screenplay-progress-sub"></div>
                 <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
                     <div id="screenplay-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
                 </div>
@@ -3483,6 +3484,51 @@
         startStatusPolling();
 
         // === SCREENPLAY MODULE ===
+        // === BACKEND PROGRESS POLLING ===
+        let _progressTimer = null;
+
+        function startProgressPolling() {
+            const pb = document.getElementById('screenplay-progress');
+            const bar = document.getElementById('screenplay-progress-bar');
+            const pct = document.getElementById('screenplay-progress-pct');
+            const title = document.getElementById('screenplay-progress-title');
+            const sub = document.getElementById('screenplay-progress-sub');
+            if (!pb) return;
+            pb.style.display = 'block';
+            if (_progressTimer) clearInterval(_progressTimer);
+            _progressTimer = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/orchestrator/progress');
+                    const d = await res.json();
+                    if (d && d.pct !== undefined) {
+                        bar.style.width = d.pct + '%';
+                        pct.textContent = d.pct + '%';
+                        if (d.title) title.textContent = d.title;
+                        sub.textContent = d.sub || '';
+                    }
+                } catch(e) {}
+            }, 300);
+        }
+
+        function stopProgressPolling(success, msg) {
+            if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+            const pb = document.getElementById('screenplay-progress');
+            const bar = document.getElementById('screenplay-progress-bar');
+            const pct = document.getElementById('screenplay-progress-pct');
+            const title = document.getElementById('screenplay-progress-title');
+            const sub = document.getElementById('screenplay-progress-sub');
+            if (!pb) return;
+            bar.style.width = '100%';
+            pct.textContent = '100%';
+            title.textContent = success ? ('✅ ' + (msg || 'Complete!')) : ('❌ ' + (msg || 'Failed'));
+            sub.textContent = '';
+            if (success) {
+                setTimeout(() => { pb.style.display = 'none'; }, 2000);
+            } else {
+                setTimeout(() => { pb.style.display = 'none'; }, 4000);
+            }
+        }
+
         async function generateScreenplay() {
             if (!topicIdeas.length) {
                 notify('No Ideas', 'Generate story ideas first on the Ideas page');
@@ -3492,13 +3538,9 @@
                 notify('No Idea Selected', 'Click "Select" on an idea first');
                 return;
             }
-            const pb = document.getElementById('screenplay-progress');
-            pb.style.display = 'block';
-            document.getElementById('screenplay-progress-title').textContent = 'Generating screenplay from selected idea...';
-            document.getElementById('screenplay-progress-bar').style.width = '20%';
-            document.getElementById('screenplay-progress-pct').textContent = '20%';
 
-            // Build params from current project settings
+            startProgressPolling();
+
             const chars = parseInt(document.getElementById('sel-characters').value) || 3;
             const locs = parseInt(document.getElementById('sel-locations').value) || 3;
             const scenesCt = parseInt(document.getElementById('sel-scenes').value) || 10;
@@ -3518,25 +3560,21 @@
                 });
                 const data = await res.json();
 
-                document.getElementById('screenplay-progress-bar').style.width = '90%';
-                document.getElementById('screenplay-progress-pct').textContent = '90%';
-
                 if (data.success && data.screenplay) {
                     screenplayData = data.screenplay;
                     renderScreenplay();
                     scheduleSaveState();
-                    document.getElementById('screenplay-progress-title').textContent = '✅ Screenplay generated!';
                     document.getElementById('proceed-to-asset-studio-btn').style.display = 'inline-block';
+                    stopProgressPolling(true, 'Screenplay generated!');
                 } else {
+                    stopProgressPolling(false, data.error || 'Generation failed');
                     notify('Screenplay Failed', data.error || 'Generation failed. Check LLM connection.');
+                    return;
                 }
             } catch(e) {
+                stopProgressPolling(false, e.message);
                 notify('Error', e.message);
             }
-
-            document.getElementById('screenplay-progress-bar').style.width = '100%';
-            document.getElementById('screenplay-progress-pct').textContent = '100%';
-            setTimeout(() => { pb.style.display = 'none'; }, 1500);
         }
 
         let _siShotId = null; // currently open shot inspector shot_id
@@ -4208,6 +4246,7 @@
             if (!s) return;
             const btn = document.getElementById('gen-scene-shots-' + sceneIdx);
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            startProgressPolling();
             try {
                 const res = await fetch('/api/orchestrator/generate-scene-shots', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -4226,7 +4265,6 @@
                 const data = await res.json();
                 if (data.success && data.shots && data.shots.length > 0) {
                     if (!s.shots) s.shots = [];
-                    // Assign shot_id prefix if needed
                     const prefix = s.scene_id ? s.scene_id + '_' : 'SHOT_';
                     data.shots.forEach((sh, idx) => {
                         if (!sh.shot_id) sh.shot_id = prefix + (idx + 1);
@@ -4234,12 +4272,15 @@
                     });
                     s.shots = data.shots;
                     renderScreenplay();
+                    stopProgressPolling(true, `${data.shots.length} shots created`);
                     notify('Shots Generated', `${data.shots.length} shots created for ${s.scene_id}`, '🎬');
                 } else {
+                    stopProgressPolling(false, data.error || 'Shot generation failed');
                     notify('Failed', data.error || 'Shot generation failed', '❌');
                     if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate Shots'; }
                 }
             } catch(e) {
+                stopProgressPolling(false, e.message);
                 notify('Error', e.message, '❌');
                 if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate Shots'; }
             }
@@ -4249,10 +4290,11 @@
             if (!screenplayData || !screenplayData.scenes) return;
             const btn = document.getElementById('generate-all-shots-btn');
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating all shots...'; }
+            startProgressPolling();
             let total = 0, failed = 0;
             for (let i = 0; i < screenplayData.scenes.length; i++) {
                 const s = screenplayData.scenes[i];
-                if (s.shots && s.shots.length > 0) continue; // skip already-generated
+                if (s.shots && s.shots.length > 0) continue;
                 try {
                     const res = await fetch('/api/orchestrator/generate-scene-shots', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -4287,6 +4329,7 @@
             }
             renderScreenplay();
             if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate All Shots'; }
+            stopProgressPolling(total > 0, total > 0 ? `${total} shots across scenes` : 'All failed');
             if (total > 0) notify('All Shots Generated', `${total} shots created across scenes${failed ? `, ${failed} failed` : ''}`, '🎬');
             else if (failed > 0) notify('Failed', 'All scenes failed to generate shots', '❌');
         }
