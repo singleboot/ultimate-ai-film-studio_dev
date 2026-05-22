@@ -530,7 +530,7 @@ def regenerate_shot(data: dict):
     return orchestrator.regenerate_shot(data)
 
 @app.post("/api/orchestrator/shot-approve")
-async def approve_shot(data: dict):
+def approve_shot(data: dict):
     """Mark a shot as approved for timeline."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}

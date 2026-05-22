@@ -4036,8 +4036,10 @@
                 if (data.success) {
                     notify('Approved', `${_siShotId} approved for timeline`, '✅');
                     const badge = document.getElementById('si-status-badge');
-                    badge.style.background = '#4caf50';
-                    badge.textContent = 'approved';
+                    if (badge) {
+                        badge.style.background = '#4caf50';
+                        badge.textContent = 'approved';
+                    }
                     // Update local data
                     if (screenplayData && screenplayData.scenes) {
                         for (const s of screenplayData.scenes) {
