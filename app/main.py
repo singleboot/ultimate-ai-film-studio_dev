@@ -169,7 +169,7 @@ async def test_provider(provider_id: str):
     return result
 
 @app.post("/api/generate")
-async def generate(request: GenerateRequest):
+def generate(request: GenerateRequest):
     """Generate content using LLM."""
     system_prompt = None
     if request.template_name and request.stage_name and request.variables:
@@ -177,23 +177,21 @@ async def generate(request: GenerateRequest):
             prompt = template_manager.render_prompt(
                 request.template_name,
                 request.stage_name,
-                request.variables
+                request.variables,
+                format="full"
             )
         except Exception as e:
-            prompt = request.prompt
-    else:
-        prompt = request.prompt
+            return {"success": False, "error": f"Prompt rendering failed: {str(e)}"}
+
+    if not llm_engine:
+        return {"success": False, "error": "LLM engine not available"}
 
     result = llm_engine.generate(
-        provider_id=request.provider,
-        model=request.model,
-        prompt=prompt,
-        system_prompt=system_prompt,
-        host=request.host,
-        images=request.images,
-        api_key=request.api_key
+        provider_id=request.provider or request.app_provider or "ollama",
+        model=request.model or "llama3.1",
+        prompt=request.prompt or "",
+        system_prompt=system_prompt or request.system_prompt or "",
     )
-
     return result
 
 # === LLM Subprocess Management ===
@@ -358,7 +356,7 @@ async def get_orchestrator_progress():
     return orchestrator.get_progress()
 
 @app.post("/api/orchestrator/ideas")
-async def generate_ideas(data: dict):
+def generate_ideas(data: dict):
     """Stage 1: Generate 5 cinematic story ideas."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -366,7 +364,7 @@ async def generate_ideas(data: dict):
     return result
 
 @app.post("/api/orchestrator/screenplay")
-async def generate_screenplay(data: dict):
+def generate_screenplay(data: dict):
     """Stage 2: Generate master screenplay from selected idea."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -374,7 +372,7 @@ async def generate_screenplay(data: dict):
     return result
 
 @app.post("/api/orchestrator/regenerate-idea")
-async def regenerate_idea(data: dict):
+def regenerate_idea(data: dict):
     """Regenerate a single idea."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -382,7 +380,7 @@ async def regenerate_idea(data: dict):
     return result
 
 @app.post("/api/orchestrator/idea-variants")
-async def generate_idea_variants(data: dict):
+def generate_idea_variants(data: dict):
     """Generate 3 variants of an idea based on user change request."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -390,7 +388,7 @@ async def generate_idea_variants(data: dict):
     return result
 
 @app.post("/api/orchestrator/locations")
-async def generate_locations(data: dict = None):
+def generate_locations(data: dict = None):
     """Stage 3: Generate reusable location assets."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -398,7 +396,7 @@ async def generate_locations(data: dict = None):
     return result
 
 @app.post("/api/orchestrator/characters")
-async def generate_characters(data: dict = None):
+def generate_characters(data: dict = None):
     """Stage 4: Generate reusable character assets."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -406,7 +404,7 @@ async def generate_characters(data: dict = None):
     return result
 
 @app.post("/api/orchestrator/storyboard")
-async def generate_storyboard(data: dict = None):
+def generate_storyboard(data: dict = None):
     """Stage 5: Generate storyboard with shots."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -414,7 +412,7 @@ async def generate_storyboard(data: dict = None):
     return result
 
 @app.post("/api/orchestrator/video-prompts")
-async def generate_video_prompts(data: dict = None):
+def generate_video_prompts(data: dict = None):
     """Stage 6: Generate LTX 2.3 video prompts."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -455,7 +453,7 @@ async def reset_orchestrator():
 # === V2.0: Shot Variant, Lock, Approval, Turnaround, Asset Studio Routes ===
 
 @app.post("/api/orchestrator/shot-variant")
-async def create_shot_variant(data: dict):
+def create_shot_variant(data: dict):
     """Generate 3 non-destructive variants of a shot node."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -501,7 +499,7 @@ async def get_approvals():
     return orchestrator.get_approvals()
 
 @app.post("/api/orchestrator/generate-turnaround")
-async def generate_turnaround(data: dict):
+def generate_turnaround(data: dict):
     """Generate a turnaround sheet for an approved character."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -525,7 +523,7 @@ async def get_shot(shot_id: str):
     return orchestrator.get_shot(shot_id)
 
 @app.post("/api/orchestrator/shot-regenerate")
-async def regenerate_shot(data: dict):
+def regenerate_shot(data: dict):
     """Regenerate a single shot preserving continuity and locks."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -539,14 +537,14 @@ async def approve_shot(data: dict):
     return orchestrator.approve_shot(data)
 
 @app.post("/api/orchestrator/generate-shot-image")
-async def generate_shot_image(data: dict):
+def generate_shot_image(data: dict):
     """Generate storyboard image prompt for a shot."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     return orchestrator.generate_shot_image(data)
 
 @app.post("/api/orchestrator/generate-shot-from-scene")
-async def generate_shot_from_scene(data: dict):
+def generate_shot_from_scene(data: dict):
     """Generate 3 shot variants from scene context (no existing shot needed)."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -554,7 +552,7 @@ async def generate_shot_from_scene(data: dict):
     return result
 
 @app.post("/api/orchestrator/generate-scene-shots")
-async def generate_scene_shots(data: dict):
+def generate_scene_shots(data: dict):
     """Generate shot nodes for a single scene."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
@@ -582,7 +580,7 @@ async def test_image_provider(data: dict):
     )
 
 @app.post("/api/image/generate")
-async def generate_image_endpoint(data: dict):
+def generate_image_endpoint(data: dict):
     """Generate an image using the selected provider."""
     if not image_engine:
         return {"success": False, "error": "Image engine not available"}
@@ -602,7 +600,7 @@ async def generate_image_endpoint(data: dict):
     )
 
 @app.post("/api/video/generate")
-async def generate_video_endpoint(data: dict):
+def generate_video_endpoint(data: dict):
     """Generate a video using the selected provider."""
     if not image_engine:
         return {"success": False, "error": "Image engine not available"}
@@ -656,7 +654,7 @@ async def get_comfyui_checkpoints():
     return {"success": True, "checkpoints": checkpoints}
 
 @app.post("/api/comfyui/generate/image")
-async def generate_image(
+def generate_image(
     prompt: str,
     model: str,
     width: int = 1024,
