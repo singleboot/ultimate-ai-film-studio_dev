@@ -3,9 +3,9 @@ import os
 import subprocess
 import time
 import requests
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from pathlib import Path
 
 
 class LLMEngine:
@@ -17,15 +17,16 @@ class LLMEngine:
         self.current_provider = None
         self.current_model = None
         self.connection_status = {}
-        # Track subprocesses for local engines
         self._subprocesses: Dict[str, subprocess.Popen] = {}
         if settings_path:
             self._settings_path = Path(settings_path)
         else:
             self._settings_path = Path(__file__).parent.parent / "settings.json"
+        # App LLM models directory
+        self._models_dir = Path(__file__).parent.parent.parent / "models"
+        self._models_dir.mkdir(parents=True, exist_ok=True)
 
     def _load_config(self, config_path: str) -> Dict:
-        """Load LLM provider configuration."""
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
@@ -34,8 +35,6 @@ class LLMEngine:
             return {"providers": {}}
 
     def _get_api_key(self, provider_id: str, provider: Dict) -> Optional[str]:
-        """Get API key: settings.json first, then env var as fallback."""
-        # Check settings.json first
         try:
             if self._settings_path.exists():
                 with open(self._settings_path, 'r', encoding='utf-8') as f:
@@ -46,14 +45,12 @@ class LLMEngine:
                     return key
         except Exception:
             pass
-        # Fallback to env var
         env_var = provider.get("api_key_env", "")
         if env_var:
             return os.environ.get(env_var, "")
         return None
 
     def get_providers(self) -> List[Dict]:
-        """Get list of available LLM providers."""
         providers = []
         for key, provider in self.config.get("providers", {}).items():
             providers.append({
@@ -65,7 +62,6 @@ class LLMEngine:
         return providers
 
     def get_models(self, provider_id: str) -> List[str]:
-        """Get available models for a provider."""
         provider = self.config.get("providers", {}).get(provider_id)
         if not provider:
             return []
@@ -84,11 +80,16 @@ class LLMEngine:
             return self._get_claude_models()
         elif provider_id == "gemini":
             return self._get_gemini_models()
+        elif provider_id == "opencode_zen":
+            return self._get_opencode_zen_models(provider)
+        elif provider_id == "nvidia_nim":
+            return self._get_nvidia_nim_models(provider)
+        elif provider_id == "app_llm":
+            return self._get_app_llm_models()
 
         return [provider.get("default_model", "")]
 
     def _get_ollama_models(self, provider: Dict) -> List[str]:
-        """Get models from local Ollama instance."""
         try:
             host = provider.get("host", "http://localhost:11434")
             response = requests.get(f"{host}/api/tags", timeout=5)
@@ -100,7 +101,6 @@ class LLMEngine:
         return [provider.get("default_model", "llama3.1")]
 
     def _get_lmstudio_models(self, provider: Dict) -> List[str]:
-        """Get models from LM Studio."""
         try:
             host = provider.get("host", "http://localhost:1234")
             response = requests.get(f"{host}/v1/models", timeout=5)
@@ -112,7 +112,6 @@ class LLMEngine:
         return [provider.get("default_model", "llama-3.1-8b")]
 
     def _get_llamacpp_models(self, provider: Dict) -> List[str]:
-        """Get models from llama.cpp server."""
         try:
             host = provider.get("host", "http://localhost:8080")
             response = requests.get(f"{host}/v1/models", timeout=5)
@@ -124,7 +123,6 @@ class LLMEngine:
         return [provider.get("default_model", "models/mistral-7b.gguf")]
 
     def _get_openai_models(self, provider: Dict) -> List[str]:
-        """Get models from OpenAI API."""
         api_key = self._get_api_key("openai", provider)
         if api_key:
             try:
@@ -133,7 +131,6 @@ class LLMEngine:
                 if resp.status_code == 200:
                     data = resp.json()
                     models = [m["id"] for m in data.get("data", []) if not m["id"].startswith("ft:")]
-                    # Prioritize chat models
                     chat_models = [m for m in models if any(x in m for x in ["gpt-4o", "gpt-4", "gpt-3.5", "o1", "o3"])]
                     return chat_models[:20] if chat_models else models[:20]
             except Exception:
@@ -141,7 +138,6 @@ class LLMEngine:
         return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
 
     def _get_claude_models(self) -> List[str]:
-        """Get available Claude models."""
         return [
             "claude-sonnet-4-20250514",
             "claude-3-5-sonnet-20241022",
@@ -151,7 +147,6 @@ class LLMEngine:
         ]
 
     def _get_openrouter_models(self) -> List[str]:
-        """Get popular models from OpenRouter."""
         return [
             "anthropic/claude-3.5-sonnet",
             "anthropic/claude-3-opus",
@@ -162,15 +157,204 @@ class LLMEngine:
         ]
 
     def _get_gemini_models(self) -> List[str]:
-        """Get available Gemini models."""
         return [
             "gemini-2.0-flash",
             "gemini-1.5-pro",
             "gemini-1.5-flash"
         ]
 
+    def _get_opencode_zen_models(self, provider: Dict) -> List[str]:
+        host = provider.get("host", "https://opencode.ai/zen/v1")
+        api_key = self._get_api_key("opencode_zen", provider)
+        try:
+            headers = {}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            resp = requests.get(f"{host}/models", headers=headers, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    return [m.get("id", m.get("name", "")) for m in data if m.get("id") or m.get("name")]
+                return list(data.keys()) if isinstance(data, dict) else []
+        except Exception:
+            pass
+        return ["deepseek-v4-flash-free", "gpt-5.2-codex", "claude-sonnet-4-6", "gemini-3-pro"]
+
+    def _get_nvidia_nim_models(self, provider: Dict) -> List[str]:
+        host = provider.get("host", "https://integrate.api.nvidia.com/v1")
+        api_key = self._get_api_key("nvidia_nim", provider)
+        try:
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+            resp = requests.get(f"{host}/models", headers=headers, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = []
+                for m in data.get("data", []):
+                    mid = m.get("id", "")
+                    if mid:
+                        models.append(mid)
+                return models[:30] if models else []
+        except Exception:
+            pass
+        return ["meta/llama-3.1-70b-instruct", "mistralai/mistral-7b-instruct-v0.3"]
+
+    def _get_app_llm_models(self) -> List[str]:
+        """Scan local models/ folder for .gguf files."""
+        models = []
+        for f in self._models_dir.iterdir():
+            if f.suffix.lower() in (".gguf", ".gguf", ".bin"):
+                models.append(f.name)
+        return sorted(models)
+
+    # === Model Management ===
+
+    def get_installed_models(self) -> List[Dict]:
+        """List all models in the models/ folder with details."""
+        models = []
+        for f in self._models_dir.iterdir():
+            if f.suffix.lower() in (".gguf", ".gguf", ".bin", ".pt", ".pth", ".safetensors"):
+                size_gb = f.stat().st_size / (1024**3) if f.is_file() else 0
+                models.append({
+                    "name": f.name,
+                    "path": str(f),
+                    "size_bytes": f.stat().st_size,
+                    "size_gb": round(size_gb, 2),
+                    "modified": f.stat().st_mtime
+                })
+        return sorted(models, key=lambda x: x["name"])
+
+    def search_huggingface_models(self, query: str = "", size_filter: str = "",
+                                   quant_filter: str = "", limit: int = 30) -> List[Dict]:
+        """Search HuggingFace for GGUF models."""
+        try:
+            from huggingface_hub import HfApi
+            api = HfApi()
+            search_term = query or "gguf"
+            results = api.list_models(
+                search=search_term,
+                task="text-generation",
+                library=["gguf"],
+                sort="downloads",
+                direction=-1,
+                limit=limit * 2
+            )
+            models = []
+            for model in results:
+                if len(models) >= limit:
+                    break
+                try:
+                    files = api.list_repo_files(model.modelId)
+                    gguf_files = [f for f in files if f.endswith(".gguf")]
+                    if not gguf_files:
+                        continue
+                    for fname in gguf_files:
+                        try:
+                            meta = api.model_info(model.modelId, files_metadata=True)
+                            file_meta = None
+                            for sibling in meta.siblings:
+                                if sibling.rfilename == fname:
+                                    file_meta = sibling
+                                    break
+                            size = file_meta.size if file_meta and file_meta.size else 0
+                        except Exception:
+                            size = 0
+                        size_gb = round(size / (1024**3), 2) if size > 0 else 0
+                        quant = "Unknown"
+                        for q in ["Q2_K", "Q3_K", "Q4_K_M", "Q4_K", "Q5_K_M", "Q5_K", "Q6_K", "Q8_0", "F16"]:
+                            if q.lower() in fname.lower():
+                                quant = q
+                                break
+                        param_size = ""
+                        for s in ["70B", "40B", "34B", "30B", "13B", "8B", "7B", "3B", "1B"]:
+                            if s.lower().replace("b", "") in model.modelId.lower().replace("b", "") or s.lower() in fname.lower():
+                                param_size = s
+                                break
+                        if size_filter:
+                            fs = size_filter.replace("B", "")
+                            if param_size and fs:
+                                try:
+                                    psize = int(param_size.replace("B", ""))
+                                    fsize = int(fs)
+                                    if psize != fsize:
+                                        continue
+                                except ValueError:
+                                    pass
+                        if quant_filter and quant_filter not in quant:
+                            continue
+                        if query and query.lower() not in model.modelId.lower() and query.lower() not in fname.lower():
+                            continue
+                        models.append({
+                            "repo": model.modelId,
+                            "filename": fname,
+                            "size_bytes": size,
+                            "size_gb": size_gb,
+                            "quantization": quant,
+                            "parameter_size": param_size,
+                            "downloads": getattr(model, "downloads", 0) or 0
+                        })
+                except Exception:
+                    continue
+            return models[:limit]
+        except ImportError:
+            return [{"error": "huggingface-hub not installed. Run: pip install huggingface-hub"}]
+        except Exception as e:
+            return [{"error": str(e)}]
+
+    def download_model_from_hf(self, repo: str, filename: str) -> Dict:
+        """Download a GGUF model file from HuggingFace to models/ folder."""
+        try:
+            from huggingface_hub import hf_hub_download
+            dest_path = self._models_dir / filename
+            if dest_path.exists():
+                return {"success": True, "message": f"Already downloaded: {filename}", "path": str(dest_path)}
+            downloaded = hf_hub_download(
+                repo_id=repo,
+                filename=filename,
+                local_dir=str(self._models_dir),
+                local_dir_use_symlinks=False,
+                resume_download=True
+            )
+            return {"success": True, "message": f"Downloaded {filename}", "path": downloaded}
+        except ImportError:
+            return {"success": False, "error": "huggingface-hub not installed"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def copy_model_to_folder(self, source_path: str) -> Dict:
+        """Copy a model file from user-selected path into models/ folder."""
+        src = Path(source_path)
+        if not src.exists():
+            return {"success": False, "error": "Source file not found"}
+        if src.suffix.lower() not in (".gguf", ".bin", ".pt", ".pth", ".safetensors"):
+            return {"success": False, "error": "Unsupported model format. Use .gguf, .bin, .pt, .pth, or .safetensors"}
+        dest = self._models_dir / src.name
+        if dest.exists():
+            base = dest.stem
+            ext = dest.suffix
+            counter = 1
+            while dest.exists():
+                dest = self._models_dir / f"{base}_{counter}{ext}"
+                counter += 1
+        try:
+            shutil.copy2(str(src), str(dest))
+            return {"success": True, "message": f"Copied to {dest.name}", "path": str(dest)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def delete_model(self, filename: str) -> Dict:
+        """Delete a model file from models/ folder."""
+        f = self._models_dir / filename
+        if not f.exists():
+            return {"success": False, "error": "File not found"}
+        try:
+            f.unlink()
+            return {"success": True, "message": f"Deleted {filename}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # === Generation ===
+
     def test_connection(self, provider_id: str, host: str = None, api_key: str = None) -> Dict:
-        """Test connection to a provider."""
         provider = self.config.get("providers", {}).get(provider_id)
         if not provider:
             return {"success": False, "error": "Provider not found"}
@@ -185,7 +369,7 @@ class LLMEngine:
                 return self._test_ollama(provider)
             elif provider_id == "lm_studio":
                 return self._test_lmstudio(provider)
-            elif provider_id == "llama_cpp":
+            elif provider_id == "llama_cpp" or provider_id == "app_llm":
                 return self._test_llamacpp(provider)
         else:
             key = api_key or self._get_api_key(provider_id, provider)
@@ -196,7 +380,6 @@ class LLMEngine:
         return {"success": False, "error": "Connection test not available"}
 
     def _test_ollama(self, provider: Dict) -> Dict:
-        """Test Ollama connection."""
         try:
             host = provider.get("host", "http://localhost:11434")
             response = requests.get(f"{host}/api/tags", timeout=5)
@@ -207,7 +390,6 @@ class LLMEngine:
         return {"success": False, "error": "Connection failed"}
 
     def _test_lmstudio(self, provider: Dict) -> Dict:
-        """Test LM Studio connection."""
         try:
             host = provider.get("host", "http://localhost:1234")
             response = requests.get(f"{host}/v1/models", timeout=5)
@@ -218,19 +400,17 @@ class LLMEngine:
         return {"success": False, "error": "Connection failed"}
 
     def _test_llamacpp(self, provider: Dict) -> Dict:
-        """Test llama.cpp connection."""
         try:
             host = provider.get("host", "http://localhost:8080")
             response = requests.get(f"{host}/v1/models", timeout=5)
             if response.status_code == 200:
-                return {"success": True, "message": "Connected to llama.cpp"}
+                return {"success": True, "message": "Connected"}
         except Exception as e:
             return {"success": False, "error": str(e)}
         return {"success": False, "error": "Connection failed"}
 
     def generate(self, provider_id: str, model: str, prompt: str, system_prompt: str = None,
                  host: str = None, images: List[str] = None, api_key: str = None, **kwargs) -> Dict:
-        """Generate a response from the LLM."""
         provider = self.config.get("providers", {}).get(provider_id)
         if not provider:
             return {"success": False, "error": "Provider not found"}
@@ -238,26 +418,58 @@ class LLMEngine:
             provider = dict(provider)
             provider["host"] = host
 
-        if provider_id == "ollama":
-            return self._generate_ollama(provider, model, prompt, system_prompt, images=images, **kwargs)
-        elif provider_id == "lm_studio":
-            return self._generate_lmstudio(provider, model, prompt, system_prompt, images=images, **kwargs)
-        elif provider_id == "llama_cpp":
-            return self._generate_llamacpp(provider, model, prompt, system_prompt, images=images, api_key=api_key, **kwargs)
-        elif provider_id == "openai":
-            return self._generate_openai(provider, model, prompt, system_prompt, images=images, api_key=api_key, **kwargs)
-        elif provider_id == "claude":
-            return self._generate_claude(provider, model, prompt, system_prompt, images=images, api_key=api_key, **kwargs)
-        elif provider_id == "openrouter":
-            return self._generate_openrouter(provider, model, prompt, system_prompt, images=images, api_key=api_key, **kwargs)
-        elif provider_id == "gemini":
-            return self._generate_gemini(provider, model, prompt, system_prompt, images=images, api_key=api_key, **kwargs)
-
+        handlers = {
+            "ollama": self._generate_ollama,
+            "lm_studio": self._generate_lmstudio,
+            "llama_cpp": self._generate_llamacpp,
+            "openai": self._generate_openai,
+            "claude": self._generate_claude,
+            "openrouter": self._generate_openrouter,
+            "gemini": self._generate_gemini,
+            "opencode_zen": self._generate_openai_compat,
+            "nvidia_nim": self._generate_openai_compat,
+            "app_llm": self._generate_openai_compat,
+        }
+        handler = handlers.get(provider_id)
+        if handler:
+            return handler(provider, model, prompt, system_prompt, images=images, api_key=api_key, **kwargs)
         return {"success": False, "error": "Unsupported provider"}
+
+    def _generate_openai_compat(self, provider: Dict, model: str, prompt: str, system_prompt: str = None,
+                                 images: List[str] = None, api_key: str = None, **kwargs) -> Dict:
+        """Generic OpenAI-compatible generation for OpenCode Zen, NVIDIA NIM, and App LLM."""
+        key = api_key or self._get_api_key(provider.get("id", ""), provider)
+        host = provider.get("host", "")
+        try:
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            if images:
+                import base64
+                parts = [{"type": "text", "text": prompt}]
+                for img_b64 in images:
+                    parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}})
+                messages.append({"role": "user", "content": parts})
+            else:
+                messages.append({"role": "user", "content": prompt})
+
+            headers = {"Content-Type": "application/json"}
+            if key:
+                headers["Authorization"] = f"Bearer {key}"
+
+            payload = {"model": model, "messages": messages, "temperature": kwargs.get("temperature", 0.7)}
+            response = requests.post(f"{host}/chat/completions", json=payload, headers=headers, timeout=300)
+            if response.status_code == 200:
+                data = response.json()
+                return {"success": True, "response": data.get("choices", [{}])[0].get("message", {}).get("content", "")}
+            elif response.status_code == 401:
+                return {"success": False, "error": "Invalid API key"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Generation failed"}
 
     def _generate_ollama(self, provider: Dict, model: str, prompt: str, system_prompt: str = None,
                          images: List[str] = None, **kwargs) -> Dict:
-        """Generate using Ollama."""
         try:
             host = provider.get("host", "http://localhost:11434")
             messages = []
@@ -269,7 +481,7 @@ class LLMEngine:
             messages.append(user_content)
 
             payload = {"model": model, "messages": messages, "stream": False}
-            response = requests.post(f"{host}/api/chat", json=payload, timeout=120)
+            response = requests.post(f"{host}/api/chat", json=payload, timeout=300)
             if response.status_code == 200:
                 data = response.json()
                 return {"success": True, "response": data.get("message", {}).get("content", "")}
@@ -279,7 +491,6 @@ class LLMEngine:
 
     def _generate_lmstudio(self, provider: Dict, model: str, prompt: str, system_prompt: str = None,
                            **kwargs) -> Dict:
-        """Generate using LM Studio (OpenAI-compatible API)."""
         try:
             host = provider.get("host", "http://localhost:1234/v1")
             messages = []
@@ -288,7 +499,7 @@ class LLMEngine:
             messages.append({"role": "user", "content": prompt})
 
             payload = {"model": model, "messages": messages, "temperature": kwargs.get("temperature", 0.7)}
-            response = requests.post(f"{host}/chat/completions", json=payload, timeout=120)
+            response = requests.post(f"{host}/chat/completions", json=payload, timeout=300)
             if response.status_code == 200:
                 data = response.json()
                 return {"success": True, "response": data.get("choices", [{}])[0].get("message", {}).get("content", "")}
@@ -298,7 +509,6 @@ class LLMEngine:
 
     def _generate_llamacpp(self, provider: Dict, model: str, prompt: str, system_prompt: str = None,
                            images: List[str] = None, api_key: str = None, **kwargs) -> Dict:
-        """Generate using llama.cpp (OpenAI-compatible API)."""
         try:
             host = provider.get("host", "http://localhost:8080")
             messages = []
@@ -306,7 +516,6 @@ class LLMEngine:
                 messages.append({"role": "system", "content": system_prompt})
             user_content = {"role": "user", "content": prompt}
             if images:
-                # llama.cpp supports base64 images in content array
                 import base64
                 parts = [{"type": "text", "text": prompt}]
                 for img_b64 in images:
@@ -319,7 +528,7 @@ class LLMEngine:
                 headers["Authorization"] = f"Bearer {api_key}"
 
             payload = {"model": model, "messages": messages, "temperature": kwargs.get("temperature", 0.7)}
-            response = requests.post(f"{host}/v1/chat/completions", json=payload, headers=headers, timeout=120)
+            response = requests.post(f"{host}/v1/chat/completions", json=payload, headers=headers, timeout=300)
             if response.status_code == 200:
                 data = response.json()
                 return {"success": True, "response": data.get("choices", [{}])[0].get("message", {}).get("content", "")}
@@ -329,17 +538,14 @@ class LLMEngine:
 
     def _generate_openai(self, provider: Dict, model: str, prompt: str, system_prompt: str = None,
                          images: List[str] = None, api_key: str = None, **kwargs) -> Dict:
-        """Generate using OpenAI API."""
         key = api_key or self._get_api_key("openai", provider)
         if not key:
             return {"success": False, "error": "OpenAI API key required"}
-
         try:
             host = provider.get("host", "https://api.openai.com/v1")
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
-
             if images:
                 parts = [{"type": "text", "text": prompt}]
                 for img_b64 in images:
@@ -347,10 +553,9 @@ class LLMEngine:
                 messages.append({"role": "user", "content": parts})
             else:
                 messages.append({"role": "user", "content": prompt})
-
             headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
             payload = {"model": model, "messages": messages, "temperature": kwargs.get("temperature", 0.7)}
-            response = requests.post(f"{host}/chat/completions", json=payload, headers=headers, timeout=120)
+            response = requests.post(f"{host}/chat/completions", json=payload, headers=headers, timeout=300)
             if response.status_code == 200:
                 data = response.json()
                 return {"success": True, "response": data.get("choices", [{}])[0].get("message", {}).get("content", "")}
@@ -362,15 +567,11 @@ class LLMEngine:
 
     def _generate_claude(self, provider: Dict, model: str, prompt: str, system_prompt: str = None,
                          images: List[str] = None, api_key: str = None, **kwargs) -> Dict:
-        """Generate using Claude (Anthropic) API."""
         key = api_key or self._get_api_key("claude", provider)
         if not key:
             return {"success": False, "error": "Claude API key required"}
-
         try:
             host = provider.get("host", "https://api.anthropic.com/v1")
-
-            # Build content blocks
             content_blocks = []
             if images:
                 import base64
@@ -382,7 +583,6 @@ class LLMEngine:
                     })
             else:
                 content_blocks.append({"type": "text", "text": prompt})
-
             payload = {
                 "model": model,
                 "max_tokens": kwargs.get("max_tokens", 4096),
@@ -390,13 +590,12 @@ class LLMEngine:
             }
             if system_prompt:
                 payload["system"] = system_prompt
-
             headers = {
                 "x-api-key": key,
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json"
             }
-            response = requests.post(f"{host}/messages", json=payload, headers=headers, timeout=120)
+            response = requests.post(f"{host}/messages", json=payload, headers=headers, timeout=300)
             if response.status_code == 200:
                 data = response.json()
                 text = "".join(block.get("text", "") for block in data.get("content", []))
@@ -409,17 +608,14 @@ class LLMEngine:
 
     def _generate_openrouter(self, provider: Dict, model: str, prompt: str, system_prompt: str = None,
                              images: List[str] = None, api_key: str = None, **kwargs) -> Dict:
-        """Generate using OpenRouter."""
         key = api_key or self._get_api_key("openrouter", provider)
         if not key:
             return {"success": False, "error": "OpenRouter API key required"}
-
         try:
             host = provider.get("host", "https://openrouter.ai/api/v1")
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
-
             if images:
                 parts = [{"type": "text", "text": prompt}]
                 for img_b64 in images:
@@ -427,10 +623,9 @@ class LLMEngine:
                 messages.append({"role": "user", "content": parts})
             else:
                 messages.append({"role": "user", "content": prompt})
-
             headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
             payload = {"model": model, "messages": messages, "temperature": kwargs.get("temperature", 0.7)}
-            response = requests.post(f"{host}/chat/completions", json=payload, headers=headers, timeout=120)
+            response = requests.post(f"{host}/chat/completions", json=payload, headers=headers, timeout=300)
             if response.status_code == 200:
                 data = response.json()
                 return {"success": True, "response": data.get("choices", [{}])[0].get("message", {}).get("content", "")}
@@ -440,31 +635,24 @@ class LLMEngine:
 
     def _generate_gemini(self, provider: Dict, model: str, prompt: str, system_prompt: str = None,
                          images: List[str] = None, api_key: str = None, **kwargs) -> Dict:
-        """Generate using Gemini."""
         key = api_key or self._get_api_key("gemini", provider)
         if not key:
             return {"success": False, "error": "Gemini API key required"}
-
         try:
             host = provider.get("host", "https://generativelanguage.googleapis.com/v1beta")
             url = f"{host}/models/{model}:generateContent?key={key}"
-
             if images:
                 import base64
                 parts = [{"text": prompt}]
                 for img_b64 in images:
-                    parts.append({
-                        "inline_data": {"mime_type": "image/png", "data": img_b64}
-                    })
+                    parts.append({"inline_data": {"mime_type": "image/png", "data": img_b64}})
                 contents = [{"parts": parts}]
             else:
                 contents = [{"parts": [{"text": prompt}]}]
-
             if system_prompt:
                 contents.insert(0, {"parts": [{"text": system_prompt}]})
-
             payload = {"contents": contents}
-            response = requests.post(url, json=payload, timeout=120)
+            response = requests.post(url, json=payload, timeout=300)
             if response.status_code == 200:
                 data = response.json()
                 text = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
@@ -476,18 +664,14 @@ class LLMEngine:
     # === Subprocess Management for Local LLMs ===
 
     def detect_local_llm(self, provider_id: str) -> Dict:
-        """Detect if a local LLM binary is installed."""
         provider = self.config.get("providers", {}).get(provider_id)
         if not provider:
             return {"installed": False, "error": "Provider not found"}
-
         binary = provider.get("binary", "")
         if not binary:
             return {"installed": False, "error": "No binary configured"}
-
-        # Check common paths
         search_paths = [binary]
-        if os.name == 'nt':  # Windows
+        if os.name == 'nt':
             search_paths.extend([
                 os.path.expandvars(f"%USERPROFILE%\\AppData\\Local\\Programs\\{binary}.exe"),
                 os.path.expandvars(f"%LOCALAPPDATA%\\{binary}\\{binary}.exe"),
@@ -501,12 +685,9 @@ class LLMEngine:
                 f"/opt/{binary}/{binary}",
                 os.path.expanduser(f"~/{binary}/{binary}"),
             ])
-
         for path in search_paths:
             if os.path.isfile(path) or os.path.isfile(path + ".exe"):
                 return {"installed": True, "path": path if os.path.isfile(path) else path + ".exe"}
-
-        # Try `which` / `where` command
         try:
             if os.name == 'nt':
                 result = subprocess.run(["where", binary], capture_output=True, text=True, timeout=5)
@@ -516,54 +697,53 @@ class LLMEngine:
                 return {"installed": True, "path": result.stdout.strip().split("\n")[0]}
         except Exception:
             pass
-
         return {"installed": False, "error": f"{binary} not found in PATH"}
 
     def get_local_status(self, provider_id: str) -> Dict:
-        """Check if a local LLM is currently running."""
-        # Check if we have a tracked subprocess
         proc = self._subprocesses.get(provider_id)
         if proc and proc.poll() is None:
-            return {"running": True, "pid": proc.pid}
-
-        # Check by health endpoint
+            return {"running": True, "pid": proc.pid, "model_name": self._get_provider_model(provider_id)}
         provider = self.config.get("providers", {}).get(provider_id)
         if not provider:
-            return {"running": False}
-
+            return {"running": False, "model_name": ""}
         health = provider.get("health_endpoint", "")
         host = provider.get("host", "")
         if health and host:
             try:
                 resp = requests.get(f"{host}{health}", timeout=3)
                 if resp.status_code == 200:
-                    return {"running": True, "pid": None}
+                    return {"running": True, "pid": None, "model_name": self._get_provider_model(provider_id)}
             except Exception:
                 pass
+        return {"running": False, "model_name": ""}
 
-        return {"running": False}
+    def _get_provider_model(self, provider_id: str) -> str:
+        """Get the currently configured model name for a provider."""
+        try:
+            if self._settings_path.exists():
+                with open(self._settings_path, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                return settings.get("llm", {}).get("model", "") or provider_id
+        except Exception:
+            pass
+        return provider_id
 
     def launch_local_llm(self, provider_id: str, model_path: str = None) -> Dict:
-        """Launch a local LLM as a subprocess."""
-        # Check if already running
         status = self.get_local_status(provider_id)
         if status.get("running"):
             return {"success": True, "message": "Already running", "pid": status.get("pid")}
-
         provider = self.config.get("providers", {}).get(provider_id)
         if not provider:
             return {"success": False, "error": "Provider not found"}
-
         start_cmd = provider.get("start_cmd", [])
         if not start_cmd:
             return {"success": False, "error": "No start command configured"}
-
         cmd = list(start_cmd)
-
-        # For llama.cpp, append model path if provided
         if provider_id == "llama_cpp" and model_path:
             cmd.extend(["--model", model_path])
-
+        if provider_id == "app_llm" and model_path:
+            full_path = str(self._models_dir / model_path) if not os.path.isabs(model_path) else model_path
+            cmd.extend(["--model", full_path])
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -572,11 +752,9 @@ class LLMEngine:
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
             self._subprocesses[provider_id] = proc
-
-            # Wait for health check
             health = provider.get("health_endpoint", "")
             host = provider.get("host", "")
-            timeout = 30
+            timeout = 60
             start = time.time()
             while time.time() - start < timeout:
                 if health and host:
@@ -587,8 +765,6 @@ class LLMEngine:
                     except Exception:
                         pass
                 time.sleep(1)
-
-            # Started but health check timed out - still return success
             return {"success": True, "message": f"{provider.get('name')} starting", "pid": proc.pid}
         except FileNotFoundError:
             return {"success": False, "error": f"{start_cmd[0]} not found. Install it first."}
@@ -596,7 +772,6 @@ class LLMEngine:
             return {"success": False, "error": str(e)}
 
     def stop_local_llm(self, provider_id: str) -> Dict:
-        """Stop a local LLM subprocess."""
         proc = self._subprocesses.get(provider_id)
         if proc:
             try:
@@ -614,8 +789,6 @@ class LLMEngine:
                     return {"success": True, "message": "Force stopped"}
                 except Exception:
                     return {"success": False, "error": str(e)}
-
-        # Try to stop via provider-specific method
         provider = self.config.get("providers", {}).get(provider_id)
         if provider_id == "ollama":
             try:
@@ -623,11 +796,9 @@ class LLMEngine:
                 return {"success": True, "message": "Ollama stopped"}
             except Exception:
                 pass
-
         return {"success": True, "message": "Not running"}
 
     def cleanup_subprocesses(self):
-        """Stop all tracked subprocesses (call on app shutdown)."""
         for provider_id in list(self._subprocesses.keys()):
             self.stop_local_llm(provider_id)
 

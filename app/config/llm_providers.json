@@ -65,6 +65,36 @@
       "api_endpoint": "/models/:runChat",
       "requires_api_key": true,
       "api_key_env": "GEMINI_API_KEY"
+    },
+    "opencode_zen": {
+      "name": "OpenCode Zen",
+      "type": "cloud",
+      "host": "https://opencode.ai/zen/v1",
+      "default_model": "deepseek-v4-flash-free",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": true,
+      "api_key_env": "OPENCODE_ZEN_API_KEY",
+      "models_endpoint": "/models"
+    },
+    "nvidia_nim": {
+      "name": "NVIDIA NIM",
+      "type": "cloud",
+      "host": "https://integrate.api.nvidia.com/v1",
+      "default_model": "meta/llama-3.1-70b-instruct",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": true,
+      "api_key_env": "NVIDIA_API_KEY"
+    },
+    "app_llm": {
+      "name": "App LLM (Local - Project Model)",
+      "type": "local",
+      "host": "http://localhost:8081",
+      "default_model": "",
+      "api_endpoint": "/v1/chat/completions",
+      "requires_api_key": false,
+      "binary": "llama-server",
+      "start_cmd": ["llama-server", "--host", "0.0.0.0", "--port", "8081"],
+      "health_endpoint": "/v1/models"
     }
   }
 }

@@ -118,6 +118,11 @@
             background: var(--bg-secondary); border-top: 1px solid var(--border-color);
             padding: 8px 20px; display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-secondary); z-index: 500;
         }
+        .status-dot { font-size: 1.3rem; line-height: 1; vertical-align: middle; }
+        .status-dot.green { color: #4ade80; }
+        .status-dot.yellow { color: #facc15; }
+        .status-dot.red { color: #f87171; }
+        .status-services { display: flex; gap: 16px; align-items: center; }
         .empty-state { text-align: center; padding: 30px; color: var(--text-secondary); font-size: 0.9rem; }
 
         .settings-btn {
@@ -539,11 +544,11 @@
         <div class="container">
             <div class="workflow-nav">
                 <span class="workflow-step active" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('video-storyboard')">🎬 Video Storyboard</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
@@ -630,19 +635,23 @@
 
             <!-- Story Scale -->
             <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;margin-bottom:15px;">
-                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">📊 Story Scale</h3>
+                <h3 style="color:var(--accent-primary);font-size:0.95rem;margin-bottom:12px;">📊 Story Scale (exact counts)</h3>
                 <div class="input-row">
                     <div class="form-group" style="flex:1">
-                        <label class="form-label">Scenes</label>
+                        <label class="form-label">Scenes (exact)</label>
                         <input type="number" class="form-input" id="sel-scenes" value="10" min="1" max="500">
                     </div>
                     <div class="form-group" style="flex:1">
-                        <label class="form-label">Locations</label>
+                        <label class="form-label">Locations (exact)</label>
                         <input type="number" class="form-input" id="sel-locations" value="3" min="1" max="20">
                     </div>
                     <div class="form-group" style="flex:1">
-                        <label class="form-label">Characters</label>
+                        <label class="form-label">Characters (exact)</label>
                         <input type="number" class="form-input" id="sel-characters" value="3" min="1" max="20">
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label class="form-label">Total Shots (exact)</label>
+                        <input type="number" class="form-input" id="sel-total-shots" value="30" min="1" max="500">
                     </div>
                 </div>
             </div>
@@ -722,16 +731,104 @@
         </div>
     </div>
 
+    <!-- PAGE: Screenplay -->
+    <div class="page" id="page-screenplay">
+        <div class="container">
+            <div class="workflow-nav">
+                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('ideas')" style="padding:6px 14px;font-size:0.8rem;">← Back to Ideas</button>
+                <h2 style="color:var(--accent-primary);margin:0;">📜 Screenplay</h2>
+            </div>
+
+            <div id="screenplay-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-weight:600;" id="screenplay-progress-title">Generating screenplay...</span>
+                    <span style="color:var(--accent-primary);font-weight:700;" id="screenplay-progress-pct">0%</span>
+                </div>
+                <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
+                    <div id="screenplay-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
+                </div>
+            </div>
+
+            <div id="screenplay-container" style="margin-bottom:15px;">
+                <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">
+                    Select a story idea from the Ideas page, then generate the screenplay.
+                </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('ideas')" style="padding:8px 20px;">← Back to Ideas</button>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="generateScreenplay()" id="generate-screenplay-btn" style="padding:8px 20px;">📜 Generate Screenplay</button>
+                    <button class="btn btn-primary" onclick="proceedToLocations()" id="proceed-to-locations-btn" style="padding:8px 20px;display:none;">🏠 Continue to Locations →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAGE: Locations -->
+    <div class="page" id="page-locations">
+        <div class="container">
+            <div class="workflow-nav">
+                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('screenplay')" style="padding:6px 14px;font-size:0.8rem;">← Back to Screenplay</button>
+                <h2 style="color:var(--accent-primary);margin:0;">🏠 Locations</h2>
+            </div>
+
+            <div id="locations-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-weight:600;" id="locations-progress-title">Generating locations...</span>
+                    <span style="color:var(--accent-primary);font-weight:700;" id="locations-progress-pct">0%</span>
+                </div>
+                <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
+                    <div id="locations-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <div style="font-size:0.9rem;color:var(--text-secondary);">
+                    <span id="locations-count-label">3 locations</span> — generate locations for your story
+                </div>
+                <button class="btn btn-primary" type="button" onclick="generateLocations()" style="padding:8px 18px;">✨ Generate Locations</button>
+            </div>
+
+            <div id="locations-container" class="locations-grid"></div>
+
+            <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('screenplay')" style="padding:8px 20px;">← Back to Screenplay</button>
+                <button class="btn btn-primary" onclick="proceedToCharacters()" style="padding:8px 20px;">👤 Continue to Characters →</button>
+            </div>
+        </div>
+    </div>
+
     <!-- PAGE: Characters -->
     <div class="page" id="page-characters">
         <div class="container">
             <div class="workflow-nav">
                 <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('characters')">👤 Characters</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
-                <span class="workflow-step active" onclick="navigateToWorkflow('video-storyboard')">🎬 Video Storyboard</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
@@ -761,95 +858,7 @@
 
             <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
                 <button class="btn btn-secondary" onclick="navigateToWorkflow('locations')" style="padding:8px 20px;">← Back to Locations</button>
-                <button class="btn btn-primary" onclick="proceedToImagePrompts()" style="padding:8px 20px;">📋 Continue to Scene Board →</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- PAGE: Scenes -->
-    <div class="page" id="page-scenes">
-        <div class="container">
-            <div class="workflow-nav">
-                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
-                <span class="workflow-step active" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('video-storyboard')">🎬 Video Storyboard</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
-            </div>
-
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-                <button class="btn btn-secondary" onclick="navigateToWorkflow('ideas')" style="padding:6px 14px;font-size:0.8rem;">← Back to Ideas</button>
-                <h2 style="color:var(--accent-primary);margin:0;">🎬 Scenes</h2>
-            </div>
-
-            <div id="scenes-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <span style="font-weight:600;" id="scenes-progress-title">Generating scenes...</span>
-                    <span style="color:var(--accent-primary);font-weight:700;" id="scenes-progress-pct">0%</span>
-                </div>
-                <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
-                    <div id="scenes-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
-                </div>
-            </div>
-
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <div style="font-size:0.9rem;color:var(--text-secondary);">
-                    <span id="scenes-count-label">10 scenes</span> — generate scenes from your idea
-                </div>
-                <button class="btn btn-primary" type="button" onclick="generateScenes()" style="padding:8px 18px;">✨ Generate Scenes</button>
-            </div>
-
-            <div id="scenes-container" style="display:flex;flex-direction:column;gap:8px;margin-bottom:15px;"></div>
-
-            <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
-                <button class="btn btn-secondary" onclick="navigateToWorkflow('ideas')" style="padding:8px 20px;">← Back to Ideas</button>
-                <button class="btn btn-primary" onclick="proceedToLocations()" style="padding:8px 20px;">🏠 Continue to Locations →</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- PAGE: Locations -->
-    <div class="page" id="page-locations">
-        <div class="container">
-            <div class="workflow-nav">
-                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
-                <span class="workflow-step active" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('video-storyboard')">🎬 Video Storyboard</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
-            </div>
-
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-                <button class="btn btn-secondary" onclick="navigateToWorkflow('scenes')" style="padding:6px 14px;font-size:0.8rem;">← Back to Scenes</button>
-                <h2 style="color:var(--accent-primary);margin:0;">🏠 Locations</h2>
-            </div>
-
-            <div id="locations-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <span style="font-weight:600;" id="locations-progress-title">Generating locations...</span>
-                    <span style="color:var(--accent-primary);font-weight:700;" id="locations-progress-pct">0%</span>
-                </div>
-                <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
-                    <div id="locations-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
-                </div>
-            </div>
-
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <div style="font-size:0.9rem;color:var(--text-secondary);">
-                    <span id="locations-count-label">3 locations</span> — generate locations for your story
-                </div>
-                <button class="btn btn-primary" type="button" onclick="generateLocations()" style="padding:8px 18px;">✨ Generate Locations</button>
-            </div>
-
-            <div id="locations-container" class="locations-grid"></div>
-
-            <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
-                <button class="btn btn-secondary" onclick="navigateToWorkflow('scenes')" style="padding:8px 20px;">← Back to Scenes</button>
-                <button class="btn btn-primary" onclick="proceedToCharacters()" style="padding:8px 20px;">👤 Continue to Characters →</button>
+                <button class="btn btn-primary" onclick="proceedToImagePrompts()" style="padding:8px 20px;">📋 Continue to Storyboard →</button>
             </div>
         </div>
     </div>
@@ -859,11 +868,11 @@
         <div class="container">
             <div class="workflow-nav">
                 <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
-                <span class="workflow-step active" onclick="navigateToWorkflow('storyboard')">📋 Scene Board</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('video-storyboard')">🎬 Video Storyboard</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
@@ -901,22 +910,22 @@
         </div>
     </div>
 
-    <!-- PAGE: Video Storyboard -->
-    <div class="page" id="page-video-storyboard">
+    <!-- PAGE: Video Prompts -->
+    <div class="page" id="page-video-prompts">
         <div class="container">
             <div class="workflow-nav">
                 <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('scenes')">🎬 Scenes</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
-                <span class="workflow-step active" onclick="navigateToWorkflow('video-storyboard')">🎬 Video Storyboard</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('videos')"> Videos</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
                 <button class="btn btn-secondary" onclick="navigateToWorkflow('storyboard')" style="padding:6px 14px;font-size:0.8rem;">← Back to Storyboard</button>
-                <h2 style="color:var(--accent-primary);margin:0;">🎬 Video Storyboard</h2>
+                <h2 style="color:var(--accent-primary);margin:0;">🎞️ Video Prompts</h2>
             </div>
 
             <div id="vidprompts-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
@@ -946,6 +955,10 @@
                 <button class="btn btn-primary" onclick="navigateToWorkflow('videos')" style="padding:8px 20px;">🎥 Continue to Videos →</button>
             </div>
         </div>
+    </div>
+
+    <!-- PAGE: Videos -->
+    <div class="page" id="page-videos">
     </div>
 
     <!-- New Project Modal -->
@@ -1011,9 +1024,12 @@
                                     <option value="ollama">Ollama (Local)</option>
                                     <option value="lm_studio">LM Studio (Local)</option>
                                     <option value="llama_cpp">llama.cpp (Local)</option>
+                                    <option value="app_llm">App LLM (Local - Project Model)</option>
                                     <option value="openai">OpenAI</option>
                                     <option value="claude">Claude (Anthropic)</option>
                                     <option value="openrouter">OpenRouter</option>
+                                    <option value="opencode_zen">OpenCode Zen</option>
+                                    <option value="nvidia_nim">NVIDIA NIM</option>
                                     <option value="gemini">Gemini</option>
                                 </select>
                             </div>
@@ -1040,6 +1056,49 @@
                                         <input type="text" class="form-input" id="llm-models-path" placeholder="e.g. C:\Users\you\models" style="flex:1;">
                                         <button class="btn btn-secondary" onclick="document.getElementById('llm-models-path').value=prompt('Enter full path to your models folder:','C:\\');loadLLMModels();" style="padding:4px 10px;font-size:0.75rem;">📂 Browse</button>
                                         <button class="btn btn-secondary" onclick="showModelDownloadOptions()" style="padding:4px 10px;font-size:0.75rem;">⬇ Download</button>
+                                    </div>
+                                </div>
+                                <div id="llm-app-model-browser" style="display:none;">
+                                    <div style="border:1px solid var(--border-color);border-radius:8px;padding:12px;margin-bottom:12px;background:var(--bg-secondary);">
+                                        <div style="display:flex;gap:8px;margin-bottom:10px;">
+                                            <input type="text" class="form-input" id="llm-model-search" placeholder="Search HuggingFace for GGUF models..." style="flex:1;font-size:0.85rem;">
+                                            <button class="btn btn-secondary" onclick="searchLLMModels()" style="padding:4px 12px;font-size:0.75rem;">🔍 Search</button>
+                                        </div>
+                                        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+                                            <select class="form-select" id="llm-model-size-filter" style="width:auto;font-size:0.75rem;padding:4px 8px;" onchange="searchLLMModels()">
+                                                <option value="">Size: Any</option>
+                                                <option value="1B">1B</option>
+                                                <option value="3B">3B</option>
+                                                <option value="7B">7B</option>
+                                                <option value="8B">8B</option>
+                                                <option value="13B">13B</option>
+                                                <option value="30B">30B</option>
+                                                <option value="70B">70B</option>
+                                            </select>
+                                            <select class="form-select" id="llm-model-quant-filter" style="width:auto;font-size:0.75rem;padding:4px 8px;" onchange="searchLLMModels()">
+                                                <option value="">Quant: Any</option>
+                                                <option value="Q2_K">Q2_K</option>
+                                                <option value="Q3_K">Q3_K</option>
+                                                <option value="Q4_K_M">Q4_K_M</option>
+                                                <option value="Q5_K_M">Q5_K_M</option>
+                                                <option value="Q6_K">Q6_K</option>
+                                                <option value="Q8_0">Q8_0</option>
+                                                <option value="F16">F16</option>
+                                            </select>
+                                        </div>
+                                        <div id="llm-model-search-results" style="max-height:200px;overflow-y:auto;font-size:0.8rem;">
+                                            <div style="color:var(--text-secondary);padding:8px;text-align:center;">Search for models to download</div>
+                                        </div>
+                                    </div>
+                                    <div style="border:1px solid var(--border-color);border-radius:8px;padding:12px;margin-bottom:12px;background:var(--bg-secondary);">
+                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                            <label class="form-label" style="margin:0;font-size:0.8rem;">📁 Installed Models (models/)</label>
+                                            <button class="btn btn-secondary" onclick="copyModelToFolder()" style="padding:3px 8px;font-size:0.7rem;">📂 Copy from Folder</button>
+                                        </div>
+                                        <div id="llm-installed-models" style="max-height:150px;overflow-y:auto;font-size:0.8rem;">
+                                            <div style="color:var(--text-secondary);padding:8px;text-align:center;">Loading...</div>
+                                        </div>
+                                        <input type="file" id="llm-file-picker" accept=".gguf,.bin,.pt,.pth,.safetensors" style="display:none" onchange="handleModelFilePick(event)">
                                     </div>
                                 </div>
                                 <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
@@ -1078,42 +1137,104 @@
                                 <label class="form-label">Engine</label>
                                 <select class="form-select" id="image-provider" onchange="onImageProviderChange()">
                                     <option value="comfyui">ComfyUI (Local)</option>
+                                    <option value="comfyui_cloud">ComfyUI Cloud</option>
                                     <option value="openai_dalle">OpenAI DALL-E</option>
                                     <option value="google_imagen">Google Imagen</option>
                                     <option value="stability">Stability AI</option>
                                     <option value="runway">Runway ML</option>
                                     <option value="fal">FAL.ai</option>
                                     <option value="kei">Kei AI</option>
+                                    <option value="openrouter">OpenRouter (Image/Video)</option>
+                                    <option value="replicate">Replicate</option>
+                                    <option value="together">Together AI</option>
+                                    <option value="deepinfra">DeepInfra</option>
+                                    <option value="ideogram">Ideogram</option>
                                     <option value="custom">Custom API</option>
                                 </select>
                             </div>
                             <!-- ComfyUI Local Fields -->
                             <div id="img-local-fields">
-                                <div class="form-group">
-                                    <label class="form-label">Server URL</label>
-                                    <div style="display:flex;gap:8px;">
-                                        <input type="text" class="form-input" id="comfyui-url" value="http://localhost:8188" style="flex:1">
-                                        <button class="btn btn-secondary" onclick="testImageProvider(this)">Test</button>
+                                <div id="comfyui-local-controls">
+                                    <div class="form-group">
+                                        <label class="form-label">Server URL</label>
+                                        <div style="display:flex;gap:8px;">
+                                            <input type="text" class="form-input" id="comfyui-url" value="http://localhost:8188" style="flex:1">
+                                            <button class="btn btn-secondary" onclick="testImageProvider(this)">Test</button>
+                                        </div>
+                                        <span id="image-test-result" style="font-size:0.85rem;"></span>
                                     </div>
-                                    <span id="image-test-result" style="font-size:0.85rem;"></span>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Installation Path (for auto-start)</label>
-                                    <div style="display:flex;gap:8px;">
-                                        <input type="text" class="form-input" id="comfyui-path" placeholder="e.g. C:\ComfyUI" style="flex:1">
-                                        <button class="btn btn-secondary" onclick="detectComfyUIPath(this)" style="padding:4px 10px;font-size:0.75rem;">🔍 Detect</button>
+                                    <div class="form-group">
+                                        <label class="form-label">Installation Path (for auto-start)</label>
+                                        <div style="display:flex;gap:8px;">
+                                            <input type="text" class="form-input" id="comfyui-path" placeholder="e.g. C:\ComfyUI" style="flex:1">
+                                            <button class="btn btn-secondary" onclick="detectComfyUIPath(this)" style="padding:4px 10px;font-size:0.75rem;">🔍 Detect</button>
+                                            <button class="btn btn-secondary" onclick="installComfyUI()" id="comfyui-install-btn" style="padding:4px 10px;font-size:0.75rem;">⬇ Install</button>
+                                        </div>
+                                    </div>
+                                    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
+                                        <span id="comfyui-status" style="font-size:0.8rem;color:var(--text-secondary);">⏳ Checking...</span>
+                                        <button class="btn btn-secondary" id="comfyui-start-btn" onclick="toggleComfyUI()" style="padding:4px 12px;font-size:0.75rem;display:none;">▶ Start</button>
+                                        <button class="btn btn-secondary" id="comfyui-stop-btn" onclick="toggleComfyUI()" style="padding:4px 12px;font-size:0.75rem;display:none;">⏹ Stop</button>
+                                        <button class="btn btn-secondary" onclick="checkComfyUIStatus()" style="padding:4px 8px;font-size:0.7rem;">↻</button>
+                                    </div>
+                                    <div id="comfyui-error" style="font-size:0.75rem;color:#f87171;margin-bottom:4px;"></div>
+                                    <label class="chk-label" style="font-size:0.8rem;margin-bottom:8px;">
+                                        <input type="checkbox" id="comfyui-auto-start"> Auto-start on app launch
+                                    </label>
+                                    <div style="border-top:1px solid var(--border-color);padding-top:12px;margin-top:8px;margin-bottom:12px;">
+                                        <label class="form-label" style="font-size:0.8rem;margin-bottom:6px;">📦 Models Folder</label>
+                                        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+                                            <label class="chk-label" style="font-size:0.75rem;padding:4px 10px;">
+                                                <input type="radio" name="comfyui-models-mode" value="bundled" checked onchange="onComfyUIModelsModeChange()"> Use bundled
+                                            </label>
+                                            <label class="chk-label" style="font-size:0.75rem;padding:4px 10px;">
+                                                <input type="radio" name="comfyui-models-mode" value="external" onchange="onComfyUIModelsModeChange()"> Use external
+                                            </label>
+                                        </div>
+                                        <div id="comfyui-external-path-group" style="display:none;">
+                                            <div style="display:flex;gap:6px;">
+                                                <input type="text" class="form-input" id="comfyui-external-path" placeholder="e.g. C:\MyModels\ComfyUI\models" style="flex:1;font-size:0.8rem;">
+                                                <button class="btn btn-secondary" onclick="setComfyUIExternalPath()" style="padding:3px 8px;font-size:0.7rem;">Apply</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="border-top:1px solid var(--border-color);padding-top:12px;margin-top:8px;margin-bottom:12px;">
+                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                            <label class="form-label" style="margin:0;font-size:0.8rem;">⬇ Model Downloader</label>
+                                        </div>
+                                        <div style="display:flex;gap:6px;margin-bottom:6px;">
+                                            <select class="form-select" id="comfyui-model-type-filter" style="font-size:0.75rem;padding:4px 8px;width:auto;" onchange="searchComfyUIModels()">
+                                                <option value="checkpoints">Checkpoints</option>
+                                                <option value="diffusion_models">Diffusion Models</option>
+                                                <option value="loras">LoRAs</option>
+                                                <option value="vae">VAE</option>
+                                                <option value="text_encoders">Text Encoders</option>
+                                                <option value="controlnet">ControlNet</option>
+                                                <option value="upscale_models">Upscale Models</option>
+                                                <option value="unet">UNet</option>
+                                            </select>
+                                            <input type="text" class="form-input" id="comfyui-model-search" placeholder="Search HuggingFace..." style="flex:1;font-size:0.8rem;">
+                                            <button class="btn btn-secondary" onclick="searchComfyUIModels()" style="padding:3px 8px;font-size:0.7rem;">🔍</button>
+                                        </div>
+                                        <div id="comfyui-model-results" style="max-height:180px;overflow-y:auto;font-size:0.8rem;">
+                                            <div style="color:var(--text-secondary);padding:8px;text-align:center;">Search for ComfyUI models above</div>
+                                        </div>
                                     </div>
                                 </div>
-                                <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
-                                    <span id="comfyui-status" style="font-size:0.8rem;color:var(--text-secondary);">⏳ Checking...</span>
-                                    <button class="btn btn-secondary" id="comfyui-start-btn" onclick="toggleComfyUI()" style="padding:4px 12px;font-size:0.75rem;display:none;">▶ Start</button>
-                                    <button class="btn btn-secondary" id="comfyui-stop-btn" onclick="toggleComfyUI()" style="padding:4px 12px;font-size:0.75rem;display:none;">⏹ Stop</button>
-                                    <button class="btn btn-secondary" onclick="checkComfyUIStatus()" style="padding:4px 8px;font-size:0.7rem;">↻</button>
+                                <div id="comfyui-cloud-controls" style="display:none;">
+                                    <div class="form-group">
+                                        <label class="form-label">Cloud API URL</label>
+                                        <input type="text" class="form-input" id="comfyui-cloud-url" value="https://comfy.io/api" placeholder="https://your-comfy-cloud.com/api">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">API Key</label>
+                                        <input type="password" class="form-input" id="comfyui-cloud-apikey" placeholder="ComfyUI Cloud API key">
+                                    </div>
+                                    <div style="display:flex;gap:8px;align-items:center;">
+                                        <button class="btn btn-secondary" onclick="testImageProvider(this)">Test Connection</button>
+                                        <span id="image-test-result3" style="font-size:0.85rem;"></span>
+                                    </div>
                                 </div>
-                                <div id="comfyui-error" style="font-size:0.75rem;color:#f87171;margin-bottom:4px;"></div>
-                                <label class="chk-label" style="font-size:0.8rem;margin-bottom:8px;">
-                                    <input type="checkbox" id="comfyui-auto-start"> Auto-start on app launch
-                                </label>
                                 <div style="border-top:1px solid var(--border-color);padding-top:12px;margin-top:8px;">
                                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                                         <label class="form-label" style="margin:0;font-size:0.8rem;">📂 Saved Workflows</label>
@@ -1146,9 +1267,15 @@
                             </div>
                             <!-- Cloud API Fields -->
                             <div id="img-cloud-fields" style="display:none;">
-                                <div class="form-group">
+                                <div class="form-group" id="img-apikey-group">
                                     <label class="form-label">API Key</label>
                                     <input type="password" class="form-input" id="img-apikey" placeholder="Enter API key">
+                                </div>
+                                <div class="form-group" id="img-shared-key-note" style="display:none;">
+                                    <label class="form-label">API Key</label>
+                                    <div style="padding:6px 10px;background:var(--bg-tertiary);border-radius:6px;font-size:0.85rem;color:var(--text-secondary);">
+                                        Uses <strong>LLM API Key</strong> (shared)
+                                    </div>
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">Model</label>
@@ -1255,43 +1382,25 @@
         </div>
     </div>
 
-    <!-- Model Download Modal -->
+    <!-- Model Download Modal (legacy - use search UI instead) -->
     <div class="modal-overlay" id="model-download-modal">
-        <div class="modal" style="max-width:600px;">
+        <div class="modal">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-                <h2 style="color:var(--accent-primary);margin:0;">⬇ Download LLM Models</h2>
+                <h2 style="color:var(--accent-primary);margin:0;font-size:1.1rem;">⬇ Download Model from URL</h2>
                 <button class="btn btn-secondary" onclick="document.getElementById('model-download-modal').style.display='none'" style="padding:6px 12px;font-size:0.8rem;">✕</button>
             </div>
-            <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;">
-                Download GGUF models into your models folder. Choose a source below:
+            <div class="form-group">
+                <label class="form-label">HuggingFace Repository URL</label>
+                <input type="text" class="form-input" id="hf-download-url" placeholder="https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3-GGUF">
             </div>
-            <div style="display:flex;flex-direction:column;gap:10px;">
-                <div style="background:var(--bg-tertiary);padding:12px;border-radius:8px;cursor:pointer;border:1px solid var(--border-color);" onclick="window.open('https://huggingface.co/models?search=gguf','_blank')">
-                    <div style="font-weight:600;color:var(--text-primary);">🤗 HuggingFace</div>
-                    <div style="font-size:0.8rem;color:var(--text-secondary);">Search thousands of GGUF models from the community</div>
-                </div>
-                <div style="background:var(--bg-tertiary);padding:12px;border-radius:8px;cursor:pointer;border:1px solid var(--border-color);" onclick="window.open('https://huggingface.co/bartowski?search_models=GGUF','_blank')">
-                    <div style="font-weight:600;color:var(--text-primary);">📦 bartowski Models</div>
-                    <div style="font-size:0.8rem;color:var(--text-secondary);">Popular GGUF quantizations by bartowski</div>
-                </div>
-                <div style="background:var(--bg-tertiary);padding:12px;border-radius:8px;cursor:pointer;border:1px solid var(--border-color);" onclick="window.open('https://huggingface.co/lmstudio-community?search_models=GGUF','_blank')">
-                    <div style="font-weight:600;color:var(--text-primary);">🏢 LM Studio Community</div>
-                    <div style="font-size:0.8rem;color:var(--text-secondary);">GGUF models from the LM Studio community on HuggingFace</div>
-                </div>
-                <div style="background:var(--bg-tertiary);padding:12px;border-radius:8px;cursor:pointer;border:1px solid var(--border-color);" onclick="window.open('https://huggingface.co/TheBloke?search_models=GGUF','_blank')">
-                    <div style="font-weight:600;color:var(--text-primary);">🧑‍💻 TheBloke Models</div>
-                    <div style="font-size:0.8rem;color:var(--text-secondary);">Classic GGUF conversions by TheBloke</div>
-                </div>
+            <div class="form-group">
+                <label class="form-label">Or use the search browser in Settings → App LLM</label>
             </div>
-            <div style="margin-top:15px;padding:10px;background:var(--bg-tertiary);border-radius:8px;">
-                <label class="form-label" style="font-size:0.8rem;">📥 Download from HuggingFace (paste model URL)</label>
-                <div style="display:flex;gap:8px;margin-top:6px;">
-                    <input type="text" class="form-input" id="hf-download-url" placeholder="e.g. https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF" style="flex:1;">
-                    <button class="btn btn-primary" onclick="downloadFromHF()" style="padding:6px 14px;font-size:0.8rem;">Download</button>
-                </div>
-                <div id="hf-download-status" style="font-size:0.8rem;margin-top:6px;"></div>
+            <div>
+                <span id="hf-download-status" style="font-size:0.85rem;"></span>
             </div>
-            <div class="modal-actions" style="margin-top:15px;">
+            <div class="modal-actions">
+                <button class="btn btn-primary" onclick="downloadFromHF()" style="flex:1">Start Download</button>
                 <button class="btn btn-primary" onclick="document.getElementById('model-download-modal').style.display='none'" style="flex:1">Done</button>
             </div>
         </div>
@@ -1404,6 +1513,46 @@
         </div>
     </div>
 
+    <!-- Expand / Full-Screen Idea Modal -->
+    <div class="modal-overlay" id="expand-modal">
+        <div class="modal" style="max-width:95vw;width:95vw;height:95vh;overflow-y:auto;border-radius:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;position:sticky;top:0;background:var(--bg-primary);padding:8px 0;z-index:10;">
+                <h2 style="color:var(--accent-primary);margin:0;font-size:1.1rem;">📖 Idea <span id="expand-idea-num"></span></h2>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" id="expand-regenerate-btn" onclick="regenerateExpandedIdea()" style="padding:6px 14px;font-size:0.8rem;">🔄 Regenerate This Idea</button>
+                    <button class="btn btn-secondary" onclick="closeExpandModal()" style="padding:6px 12px;font-size:0.8rem;">✕ Cancel</button>
+                </div>
+            </div>
+            <div id="expand-idea-content" style="font-size:0.9rem;line-height:1.6;margin-bottom:20px;"></div>
+            <div id="expand-variant-section" style="border-top:1px solid var(--border-color);padding-top:16px;">
+                <h3 style="color:var(--accent-primary);font-size:1rem;margin-bottom:10px;">✏️ Generate Variants</h3>
+                <div class="form-group">
+                    <label class="form-label">What would you like to change?</label>
+                    <textarea class="form-textarea" id="variant-change-input" rows="3" placeholder="e.g. Make it a comedy, change the setting to space, make the protagonist a detective..."></textarea>
+                </div>
+                <button class="btn btn-primary" id="variant-generate-btn" onclick="generateVariants()" style="padding:8px 18px;">🚀 Generate Variants</button>
+                <div id="variant-results-inline" style="margin-top:15px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Variant Modal (pop-up standalone) -->
+    <div class="modal-overlay" id="variant-modal">
+        <div class="modal" style="max-width:800px;max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h2 style="color:var(--accent-primary);margin:0;font-size:1rem;">✏️ Generate Variants for Idea <span id="variant-idea-num"></span></h2>
+                <button class="btn btn-secondary" onclick="closeVariantModal()" style="padding:4px 10px;font-size:0.75rem;">✕</button>
+            </div>
+            <div id="variant-current-idea" style="font-size:0.85rem;line-height:1.5;margin-bottom:12px;padding:10px;background:var(--bg-tertiary);border-radius:6px;max-height:200px;overflow-y:auto;"></div>
+            <div class="form-group">
+                <label class="form-label">What would you like to change?</label>
+                <textarea class="form-textarea" id="variant-change-input-popup" rows="3" placeholder="e.g. Make it a comedy, change the setting to space..."></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="generateVariantsPopup()" style="padding:6px 14px;font-size:0.8rem;">🚀 Generate Variants</button>
+            <div id="variant-results-popup" style="margin-top:15px;"></div>
+        </div>
+    </div>
+
     <!-- Notification -->
     <div class="notification-overlay" id="notification">
         <div class="notification">
@@ -1442,7 +1591,11 @@
 
     <footer class="status-bar">
         <span id="status-text">Ready</span>
-        <span id="status-llm">LLM: Checking...</span>
+        <span class="status-services">
+            <span>LLM: <span class="status-dot" id="llm-dot">●</span> <span id="llm-model-name">—</span></span>
+            <span>|</span>
+            <span>ComfyUI: <span class="status-dot" id="comfyui-dot">●</span> <span id="comfyui-status-text">—</span></span>
+        </span>
     </footer>
 
     <script>
@@ -1462,13 +1615,13 @@
 
         // === PAGE NAVIGATION ===
         function navigateToWorkflow(step) {
-            const built = { ideas: 1, scenes: 1, locations: 1, characters: 1, storyboard: 1, 'video-storyboard': 1 };
+            const built = { ideas: 1, screenplay: 1, locations: 1, characters: 1, storyboard: 1, 'video-prompts': 1, videos: 1 };
             if (built[step]) {
+                if (step === 'screenplay') renderScreenplay();
                 if (step === 'characters') renderCharacterCards();
-                if (step === 'scenes') renderScenes();
                 if (step === 'locations') renderLocations();
                 if (step === 'storyboard') renderStoryboard();
-                if (step === 'video-storyboard') renderVideoStoryboard();
+                if (step === 'video-prompts') renderVideoStoryboard();
                 showPage(step);
             } else {
                 notify('Coming Soon', 'This module is not built yet', '🚧');
@@ -1509,9 +1662,11 @@
         function collectProjectState() {
             return {
                 topicIdeas,
+                selectedIdeaIndex,
                 selectedGenres,
                 selectedVisualStyle,
                 selectedFilmAesthetic,
+                screenplayData: screenplayData,
                 charData: charData.map(c => ({ name: c.name, description: c.description, imagePrompt: c.imagePrompt, savedImage: c.savedImage })),
                 locationData: locationData.map(l => ({ name: l.name, type: l.type, details: l.details, imagePrompt: l.imagePrompt, savedImage: l.savedImage })),
                 sceneData: sceneData.slice(),
@@ -1530,6 +1685,8 @@
         function restoreProjectState(state) {
             if (!state) return;
             topicIdeas = state.topicIdeas || [];
+            selectedIdeaIndex = state.selectedIdeaIndex !== undefined ? state.selectedIdeaIndex : (topicIdeas.length > 0 ? 0 : -1);
+            screenplayData = state.screenplayData || null;
             selectedGenres = state.selectedGenres || [];
             selectedVisualStyle = state.selectedVisualStyle || null;
             selectedFilmAesthetic = state.selectedFilmAesthetic || null;
@@ -1561,6 +1718,8 @@
                 if (selC && s.characters) selC.value = s.characters;
                 if (selL && s.locations) selL.value = s.locations;
                 if (selS && s.scenes) selS.value = s.scenes;
+                const selTS = document.getElementById('sel-total-shots');
+                if (selTS && s.totalShots) selTS.value = s.totalShots;
                 // Restore aspect ratio & resolution
                 if (s.aspectRatio) selectAspectRatio(s.aspectRatio);
                 if (s.imgResolution) document.getElementById('sel-img-resolution').value = s.imgResolution;
@@ -1613,12 +1772,15 @@
                     renderAssets();
                     renderCharacterCards();
                     renderLocations();
-                    renderScenes();
                     renderStoryboard();
                     renderVideoStoryboard();
                     // Refresh ideas page display
                     if (topicIdeas.length && typeof renderIdeas === 'function') {
                         renderIdeas();
+                    }
+                    // Refresh screenplay display
+                    if (screenplayData && typeof renderScreenplay === 'function') {
+                        renderScreenplay();
                     }
                 }
             } catch(e) {
@@ -1765,34 +1927,49 @@
 
         function onLLMProviderChange() {
             const provider = document.getElementById('llm-provider').value;
-            const isLocal = ['ollama', 'lm_studio', 'llama_cpp'].includes(provider);
+            const isLocal = ['ollama', 'lm_studio', 'llama_cpp', 'app_llm'].includes(provider);
+            const isAppLLM = provider === 'app_llm';
             document.getElementById('llm-local-fields').style.display = isLocal ? 'block' : 'none';
             document.getElementById('llm-cloud-fields').style.display = isLocal ? 'none' : 'block';
-            document.getElementById('llm-models-path-group').style.display = provider === 'llama_cpp' ? 'block' : 'none';
+            document.getElementById('llm-models-path-group').style.display = (provider === 'llama_cpp' || isAppLLM) ? 'block' : 'none';
+            document.getElementById('llm-app-model-browser').style.display = isAppLLM ? 'block' : 'none';
             if (provider === 'ollama') {
                 document.getElementById('llm-host').value = 'http://localhost:11434';
             } else if (provider === 'lm_studio') {
                 document.getElementById('llm-host').value = 'http://localhost:1234/v1';
             } else if (provider === 'llama_cpp') {
                 document.getElementById('llm-host').value = 'http://localhost:8080';
+            } else if (provider === 'app_llm') {
+                document.getElementById('llm-host').value = 'http://localhost:8081';
             }
             if (isLocal) {
                 checkLocalLLMStatus(provider);
             }
             loadLLMModels();
+            if (isAppLLM) {
+                loadInstalledModels();
+            }
         }
 
         function getLLMModelSelect() {
-            const isLocal = ['ollama', 'lm_studio', 'llama_cpp'].includes(document.getElementById('llm-provider').value);
+            const isLocal = ['ollama', 'lm_studio', 'llama_cpp', 'app_llm'].includes(document.getElementById('llm-provider').value);
             return document.getElementById(isLocal ? 'llm-model' : 'llm-model-cloud');
         }
 
         function onImageProviderChange() {
             const provider = document.getElementById('image-provider').value;
-            const isComfyUI = provider === 'comfyui';
+            const isComfyUI = provider === 'comfyui' || provider === 'comfyui_cloud';
+            const isComfyUILocal = provider === 'comfyui';
+            const sharesLLMKey = provider === 'openrouter';
             document.getElementById('img-local-fields').style.display = isComfyUI ? 'block' : 'none';
             document.getElementById('img-cloud-fields').style.display = isComfyUI ? 'none' : 'block';
             document.getElementById('img-custom-host').style.display = provider === 'custom' ? 'block' : 'none';
+            document.getElementById('comfyui-local-controls').style.display = isComfyUILocal ? 'block' : 'none';
+            document.getElementById('comfyui-cloud-controls').style.display = provider === 'comfyui_cloud' ? 'block' : 'none';
+            const apiKeyGroup = document.getElementById('img-apikey-group');
+            const sharedKeyNote = document.getElementById('img-shared-key-note');
+            if (apiKeyGroup) apiKeyGroup.style.display = sharesLLMKey ? 'none' : 'block';
+            if (sharedKeyNote) sharedKeyNote.style.display = sharesLLMKey ? 'block' : 'none';
             if (isComfyUI) {
                 checkComfyUIStatus();
             }
@@ -1919,9 +2096,13 @@
                 const modelSel = getLLMModelSelect();
                 const modelPath = modelSel.value;
                 const body = {provider};
-                if (provider === 'llama_cpp' && modelPath) {
-                    const modelsPath = document.getElementById('llm-models-path').value;
-                    body.model_path = modelsPath ? modelsPath.replace(/\\/g,'/') + '/' + modelPath.replace(/\\/g,'/') : modelPath;
+                if (modelPath) {
+                    if (provider === 'llama_cpp') {
+                        const modelsPath = document.getElementById('llm-models-path').value;
+                        body.model_path = modelsPath ? modelsPath.replace(/\\/g,'/') + '/' + modelPath.replace(/\\/g,'/') : modelPath;
+                    } else if (provider === 'app_llm') {
+                        body.model_path = modelPath;
+                    }
                 }
                 await fetch('/api/llm/start', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1946,6 +2127,236 @@
                 });
             }
             setTimeout(() => checkComfyUIStatus(), 5000);
+        }
+
+        async function installComfyUI() {
+            const btn = document.getElementById('comfyui-install-btn');
+            btn.textContent = '⏳ Installing...';
+            try {
+                const res = await fetch('/api/comfyui/install', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    btn.textContent = '✅ Installed';
+                    if (data.path) document.getElementById('comfyui-path').value = data.path;
+                } else {
+                    btn.textContent = '✗ Failed';
+                    notify('Install Error', data.error || 'Installation failed');
+                }
+            } catch(e) {
+                btn.textContent = '✗ Error';
+            }
+            setTimeout(() => { btn.textContent = '⬇ Install'; }, 3000);
+        }
+
+        // === App LLM Model Browser ===
+
+        async function searchLLMModels() {
+            const query = document.getElementById('llm-model-search').value.trim();
+            const size = document.getElementById('llm-model-size-filter').value;
+            const quant = document.getElementById('llm-model-quant-filter').value;
+            const resultsEl = document.getElementById('llm-model-search-results');
+            resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:var(--text-secondary);">🔍 Searching...</div>';
+            try {
+                let url = '/api/llm/search-models?limit=25';
+                if (query) url += '&q=' + encodeURIComponent(query);
+                if (size) url += '&size=' + encodeURIComponent(size);
+                if (quant) url += '&quant=' + encodeURIComponent(quant);
+                const res = await fetch(url);
+                const data = await res.json();
+                const results = data.results || [];
+                if (results.length === 0 || results[0].error) {
+                    resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:var(--text-secondary);">No results found' + (results[0]?.error ? ': ' + results[0].error : '') + '</div>';
+                    return;
+                }
+                let html = '<div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">' + results.length + ' model(s) found</div>';
+                results.forEach(m => {
+                    const label = m.repo + '/' + m.filename;
+                    const sizeStr = m.size_gb > 0 ? m.size_gb + 'GB' : '?';
+                    const quantStr = m.quantization || '';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border-color);gap:6px;">';
+                    html += '<div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + label + '">';
+                    html += '<span style="font-weight:600;">' + (m.filename.length > 40 ? m.filename.substring(0,40)+'...' : m.filename) + '</span>';
+                    html += '<span style="margin-left:6px;color:var(--text-secondary);font-size:0.7rem;">' + quantStr + ' ' + sizeStr + '</span>';
+                    html += '</div>';
+                    html += '<button class="btn btn-primary" onclick="downloadLLMModel(\'' + m.repo + '\',\'' + m.filename + '\',this)" style="padding:2px 8px;font-size:0.7rem;">⬇</button>';
+                    html += '</div>';
+                });
+                resultsEl.innerHTML = html;
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:#f87171;">Search failed: ' + e.message + '</div>';
+            }
+        }
+
+        async function downloadLLMModel(repo, filename, btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            try {
+                const res = await fetch('/api/llm/download-model-hf', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({repo, filename})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    btn.textContent = '✅';
+                    loadInstalledModels();
+                } else {
+                    btn.textContent = '✗';
+                    notify('Download Error', data.error || 'Failed');
+                }
+            } catch(e) {
+                btn.textContent = '✗';
+            }
+            setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '⬇'; } }, 3000);
+        }
+
+        async function loadInstalledModels() {
+            const el = document.getElementById('llm-installed-models');
+            if (!el) return;
+            try {
+                const res = await fetch('/api/llm/installed-models');
+                const data = await res.json();
+                const models = data.models || [];
+                if (models.length === 0) {
+                    el.innerHTML = '<div style="color:var(--text-secondary);padding:8px;text-align:center;">No models installed. Search and download above, or copy from a folder.</div>';
+                    return;
+                }
+                let html = '';
+                models.forEach(m => {
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid var(--border-color);">';
+                    html += '<div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem;" title="' + m.name + '">';
+                    html += m.name + ' <span style="color:var(--text-secondary);">' + m.size_gb + 'GB</span>';
+                    html += '</div>';
+                    html += '<button class="btn btn-secondary" onclick="deleteModel(\'' + m.name + '\',this)" style="padding:1px 6px;font-size:0.65rem;color:var(--accent-danger);">🗑</button>';
+                    html += '</div>';
+                });
+                el.innerHTML = html;
+            } catch(e) {
+                el.innerHTML = '<div style="color:var(--text-secondary);padding:8px;text-align:center;">Error loading models</div>';
+            }
+        }
+
+        async function deleteModel(filename, btn) {
+            if (!confirm('Delete ' + filename + '?')) return;
+            btn.textContent = '⏳';
+            try {
+                const res = await fetch('/api/llm/models/' + encodeURIComponent(filename), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    loadInstalledModels();
+                } else {
+                    notify('Error', data.error || 'Delete failed');
+                }
+            } catch(e) {
+                notify('Error', 'Delete failed');
+            }
+        }
+
+        function copyModelToFolder() {
+            document.getElementById('llm-file-picker').click();
+        }
+
+        async function handleModelFilePick(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const path = file.path || file.name;
+            try {
+                const res = await fetch('/api/llm/copy-model', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({source: path})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    loadInstalledModels();
+                    loadLLMModels();
+                } else {
+                    notify('Copy Error', data.error || 'Failed');
+                }
+            } catch(e) {
+                notify('Error', 'Copy failed');
+            }
+            event.target.value = '';
+        }
+
+        // === ComfyUI Model Management ===
+
+        async function searchComfyUIModels() {
+            const query = document.getElementById('comfyui-model-search').value.trim();
+            const modelType = document.getElementById('comfyui-model-type-filter').value;
+            const resultsEl = document.getElementById('comfyui-model-results');
+            resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:var(--text-secondary);">🔍 Searching...</div>';
+            try {
+                let url = '/api/comfyui/search-models?limit=20&model_type=' + encodeURIComponent(modelType);
+                if (query) url += '&q=' + encodeURIComponent(query);
+                const res = await fetch(url);
+                const data = await res.json();
+                const results = data.results || [];
+                if (results.length === 0 || results[0].error) {
+                    resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:var(--text-secondary);">No results found' + (results[0]?.error ? ': ' + results[0].error : '') + '</div>';
+                    return;
+                }
+                let html = '<div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">' + results.length + ' file(s) found</div>';
+                results.forEach(m => {
+                    const sizeStr = m.size_gb > 0 ? m.size_gb + 'GB' : '?';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid var(--border-color);gap:6px;">';
+                    html += '<div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem;" title="' + m.filename + '">' + m.filename + ' <span style="color:var(--text-secondary);">' + sizeStr + '</span></div>';
+                    html += '<button class="btn btn-primary" onclick="downloadComfyUIModel(\'' + m.repo + '\',\'' + m.filename + '\',\'' + modelType + '\',this)" style="padding:1px 6px;font-size:0.65rem;">⬇</button>';
+                    html += '</div>';
+                });
+                resultsEl.innerHTML = html;
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:#f87171;">Search failed</div>';
+            }
+        }
+
+        async function downloadComfyUIModel(repo, filename, modelType, btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            try {
+                const res = await fetch('/api/comfyui/download-model', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({repo, filename, model_type: modelType})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    btn.textContent = '✅';
+                } else {
+                    btn.textContent = '✗';
+                    notify('Download Error', data.error || 'Failed');
+                }
+            } catch(e) {
+                btn.textContent = '✗';
+            }
+            setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '⬇'; } }, 3000);
+        }
+
+        async function onComfyUIModelsModeChange() {
+            const isExternal = document.querySelector('input[name="comfyui-models-mode"]:checked')?.value === 'external';
+            document.getElementById('comfyui-external-path-group').style.display = isExternal ? 'block' : 'none';
+            if (!isExternal) {
+                await fetch('/api/comfyui/external-path', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: ''})
+                });
+            }
+        }
+
+        async function setComfyUIExternalPath() {
+            const path = document.getElementById('comfyui-external-path').value.trim();
+            if (!path) { notify('Error', 'Please enter a valid path'); return; }
+            try {
+                const res = await fetch('/api/comfyui/external-path', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Success', 'External models path set');
+                } else {
+                    notify('Error', data.error || 'Failed');
+                }
+            } catch(e) {
+                notify('Error', 'Failed to set external path');
+            }
         }
 
         async function loadLLMModels() {
@@ -2008,6 +2419,14 @@
                     safeSetValue('comfyui-url', s.comfyui.url || 'http://localhost:8188');
                     safeSetChecked('comfyui-auto-start', s.comfyui.auto_start);
                     safeSetValue('comfyui-path', s.comfyui.path);
+                    safeSetValue('comfyui-cloud-url', s.comfyui.cloud_url || '');
+                    safeSetValue('comfyui-cloud-apikey', s.comfyui.cloud_api_key || '');
+                    safeSetValue('comfyui-external-path', s.comfyui.external_models_path || '');
+                    if (s.comfyui.external_models_path) {
+                        const radio = document.querySelector('input[name="comfyui-models-mode"][value="external"]');
+                        if (radio) radio.checked = true;
+                        onComfyUIModelsModeChange();
+                    }
                 }
                 if (s.image_gen) {
                     safeSetValue('image-provider', s.image_gen.provider || 'comfyui');
@@ -2038,6 +2457,7 @@
 
         async function saveSettings() {
             const modelSelect = getLLMModelSelect();
+            const externalPathEl = document.getElementById('comfyui-external-path');
             const settings = {
                 llm: {
                     provider: document.getElementById('llm-provider').value,
@@ -2057,7 +2477,10 @@
                 comfyui: {
                     url: document.getElementById('comfyui-url').value,
                     path: document.getElementById('comfyui-path').value,
-                    auto_start: document.getElementById('comfyui-auto-start').checked
+                    auto_start: document.getElementById('comfyui-auto-start').checked,
+                    cloud_url: document.getElementById('comfyui-cloud-url')?.value || '',
+                    cloud_api_key: document.getElementById('comfyui-cloud-apikey')?.value || '',
+                    external_models_path: externalPathEl?.value || ''
                 },
                 workflows: {
                     t2i: document.getElementById('wf-t2i').value,
@@ -2207,6 +2630,7 @@
 
         // === TOPIC IDEAS ===
         let topicIdeas = [];
+        let selectedIdeaIndex = -1;
 
         function getLLMConfig() {
             const sel = getLLMModelSelect();
@@ -2386,11 +2810,30 @@
             document.getElementById('ideas-progress').style.display = 'none';
         }
 
-        async function generateFromLLM(prompt, images) {
+        let _masterSystemPrompt = null;
+
+        async function loadMasterSystemPrompt() {
+            try {
+                const res = await fetch('/api/orchestrator/skill');
+                const data = await res.json();
+                if (data.success) {
+                    _masterSystemPrompt = data.skill;
+                }
+            } catch(e) {
+                console.log('Could not load master system prompt');
+            }
+        }
+
+        async function generateFromLLM(prompt, images, systemSuffix) {
             const cfg = getLLMConfig();
             const host = document.getElementById('llm-host').value;
             const apiKey = document.getElementById('llm-apikey').value;
+            let systemPrompt = _masterSystemPrompt || '';
+            if (systemSuffix) {
+                systemPrompt = systemPrompt ? systemPrompt + '\n\n' + systemSuffix : systemSuffix;
+            }
             const body = { provider: cfg.provider, model: cfg.model, prompt: prompt };
+            if (systemPrompt) body.system_prompt = systemPrompt;
             if (host) body.host = host;
             if (apiKey) body.api_key = apiKey;
             if (images && images.length) body.images = images;
@@ -2500,173 +2943,556 @@
             const dialogueSetting = selectedDialogue === 'with' ? 'Include dialogue in the film' : 'No dialogue — purely visual storytelling';
             const dialogueNote = `**Dialogue:** ${dialogueSetting}`;
 
-            const llmStatuses = [
-                'Brewing cinematic nightmares...',
-                'Opening the forbidden hostel room...',
-                'Developing shadows frame by frame...',
-                'Summoning forgotten memories...',
-                'Searching abandoned corridors...',
-                'Rendering midnight paranoia...',
-                'Tuning the horror frequency...',
-                'Feeding the story darkness...',
-                'Dusting off cursed VHS tapes...',
-                'Animating silence into fear...',
-                'Lighting the scene with moonlight...',
-                'Stitching together nightmares...',
-                'Entering the static-filled timeline...',
-                'Processing uncanny emotions...',
-                'Decoding whispers from the walls...',
-                'Charging dramatic tension...',
-                'Awakening dormant legends...',
-                'Scanning for hidden entities...',
-                'Converting fear into cinema...',
-                'Building atmosphere particle by particle...',
-                'Loading emotional damage...',
-                'Translating nightmares into visuals...',
-                'Walking deeper into the fog...',
-                'Unlocking memory-driven horror...',
-                'Generating cinematic dread...',
-                'Synchronizing heartbeat with suspense...',
-                'Composing eerie visual poetry...',
-                'Bringing shadows into focus...',
-                'Searching the darkness for answers...',
-                'Reconstructing haunted memories...',
-                'Brewing plot twists in darkness...',
-                'Tracking movement in the hallway...',
-                'Rewinding cursed footage...',
-                'Rendering fear at 24 FPS...',
-                'Opening the attic slowly...',
-                'Waiting for the lights to flicker...',
-                'Stabilizing unstable reality...',
-                'Enhancing dramatic silence...',
-                'Summoning the next scene...',
-                'Processing analog horror energy...',
-                'Listening to footsteps upstairs...',
-                'Building a world you shouldn\'t enter...',
-                'Preparing emotionally unsafe content...',
-                'Entering cinematic dream logic...',
-                'Translating fear into pixels...',
-                'Pulling stories from the void...',
-                'Detecting paranormal activity...',
-                'Opening one more locked door...',
-                'Rebuilding lost memories from static...',
-                'Injecting tension into every frame...',
-                'Developing retro horror aesthetics...',
-                'The corridor is getting longer...',
-                'Simulating a bad feeling...',
-                'Making the air feel heavier...',
-                'Searching for the thing behind you...',
-                'Bringing forgotten folklore alive...',
-                'Calibrating suspense levels...',
-                'Turning nostalgia into terror...',
-                'The signal is getting weaker...',
-                'Cleaning dust off ancient memories...',
-                'Somebody is already inside...',
-                'Generating scenes not safe after midnight...',
-                'Preparing visual goosebumps...',
-                'The silence is almost ready...',
-                'Cinematic fear loading...',
-                'One flashlight battery remaining...',
-                'Converting whispers into dialogue...',
-                'Building the perfect cliffhanger...',
-                'Someone knocked from inside...',
-                'The tape started playing itself...',
-                'Rendering emotionally haunted visuals...',
-                'The hallway lights just blinked...',
-                'Searching old memories for trauma...',
-                'Enhancing shadows for realism...',
-                'Loading cursed storytelling engine...',
-                'Creating scenes your audience won\'t forget...',
-                'Digging through abandoned timelines...',
-                'Tension levels reaching unsafe limits...',
-                'Synchronizing rain with sadness...',
-                'Checking under the bed...',
-                'Generating your next obsession...',
-                'Reconstructing forbidden stories...',
-                'Adjusting fog density...',
-                'Extracting fear from silence...',
-                'Simulating supernatural presence...',
-                'Polishing cinematic darkness...',
-                'Replaying the last scream...',
-                'Finding the perfect jump scare...',
-                'Opening files marked DO NOT WATCH...',
-                'Making nostalgia terrifying again...',
-                'Preparing scene transition into chaos...',
-                'Reality buffering...',
-                'Rebuilding memories from static noise...',
-                'Shadows are still processing...',
-                'Horror engine warming up...',
-                'Please don\'t turn around...',
-                'Finalizing nightmare sequence...',
-                'Loading something unsettling...',
-                'Entering the last known location...',
-                'Connecting to the haunted frequency...',
-                'Visualizing impossible memories...',
-                'Generating scenes from the other side...'
-            ];
-            let si; // interval refs
-            setProgress(50, '🧠 Generating ideas...', llmStatuses[Math.floor(Math.random() * llmStatuses.length)]);
-            const statusInterval = setInterval(() => {
-                document.getElementById('progress-sub').textContent = llmStatuses[Math.floor(Math.random() * llmStatuses.length)];
-            }, 2500);
-
-            // Animate progress from 50 to 95 while LLM runs
-            let animPct = 50;
-            const animInterval = setInterval(() => {
-                if (ideasCancel) { clearInterval(animInterval); return; }
-                animPct = Math.min(95, animPct + (95 - animPct) * 0.06);
-                setProgress(Math.round(animPct));
-            }, 300);
+            let progressInterval = null;
+            setProgress(50, '🧠 Generating ideas...', 'Starting...');
 
             try {
-                const data = await generateFromLLM(
-                    `You are a professional film producer. Based on the following sources, create 5 compelling short film concepts.
+                const chars = parseInt(document.getElementById('sel-characters').value) || 3;
+                const locs = parseInt(document.getElementById('sel-locations').value) || 3;
+                const scenesCt = parseInt(document.getElementById('sel-scenes').value) || 10;
+                const totalShots = parseInt(document.getElementById('sel-total-shots').value) || 30;
+                const orchestatorParams = {
+                    genres: selectedGenres,
+                    visual_style: selectedVisualStyle,
+                    film_aesthetic: selectedFilmAesthetic,
+                    era: document.getElementById('era-year').value.trim() || '',
+                    custom_prompt: document.getElementById('custom-prompt').value.trim() || '',
+                    web_search_results: contextParts.find(p => p.includes('Web Trends')) || '',
+                    dialogue_enabled: selectedDialogue === 'with',
+                    aspect_ratio: selectedAspectRatio,
+                    character_count: chars,
+                    location_count: locs,
+                    scene_count: scenesCt,
+                    total_shot_count: totalShots,
+                    llm_provider: getLLMConfig().provider,
+                    llm_model: getLLMConfig().model
+                };
 
-    Sources:
-    ${context}
+                // Start progress polling
+                progressInterval = setInterval(async () => {
+                    try {
+                        const pRes = await fetch('/api/orchestrator/progress');
+                        const p = await pRes.json();
+                        if (!ideasCancel) {
+                            setProgress(p.pct, p.title, p.sub);
+                        }
+                        if (p.finished || p.error) {
+                            clearInterval(progressInterval);
+                            progressInterval = null;
+                            if (p.error && !ideasCancel) {
+                                hideProgress();
+                                notify('Error', p.error);
+                            }
+                        }
+                    } catch(e) {}
+                }, 500);
 
-    ${dialogueNote}
+                const res = await fetch('/api/orchestrator/ideas', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(orchestatorParams)
+                });
+                const data = await res.json();
 
-    For each concept include:
-    - **Title:** (memorable, emotional)
-    - **Logline:** (one sentence hook)
-    - **Setting:** (specific time and place)
-    - **Main Character:** (brief description)
-    - **Conflict:** (the central tension)
-    - **Visual Hook:** (one striking image from this film)
-
-    Make each concept feel cohesive and well-rounded.
-    Separate each concept with "---".
-    Do NOT include any introductory text, "Idea" labels, or extra formatting before or between concepts.`
-                );
-
-                clearInterval(animInterval);
-                clearInterval(statusInterval);
+                if (progressInterval) clearInterval(progressInterval);
                 if (ideasCancel) return;
                 hideProgress();
 
-                if (data.success) {
-                    topicIdeas = parseIdeas(data.response);
+                if (data.success && data.ideas) {
+                    const ideas = data.ideas;
+                    topicIdeas = [];
+                    selectedIdeaIndex = -1;
+                    ideas.forEach((idea) => {
+                        if (typeof idea === 'object') {
+                            topicIdeas.push(idea);
+                        } else {
+                            topicIdeas.push({title: 'Idea', short_synopsis: String(idea)});
+                        }
+                    });
                     renderIdeas();
                     scheduleSaveState();
                 } else {
-                    notify('Generation Failed', data.message || 'Check LLM connection in Settings');
+                    notify('Generation Failed', data.error || data.message || 'Check LLM connection in Settings');
                 }
             } catch(e) {
-                clearInterval(animInterval);
-                clearInterval(statusInterval);
+                if (progressInterval) clearInterval(progressInterval);
                 if (!ideasCancel) { hideProgress(); notify('Error', e.message); }
             }
         }
 
         function renderIdeas() {
             const container = document.getElementById('ideas-container');
-            container.innerHTML = topicIdeas.map((idea, i) => `
-                <div class="idea-card">
-                    <div class="idea-title">💡 Idea ${i+1}</div>
-                    <div class="idea-text">${idea}</div>
+            container.innerHTML = topicIdeas.map((idea, i) => {
+                const isSelected = selectedIdeaIndex === i;
+                const text = typeof idea === 'string' ? idea : formatIdeaForDisplay(idea);
+                return `
+                <div class="idea-card" style="${isSelected ? 'border-color:var(--accent-primary);border-width:2px;' : ''}">
+                    <div class="idea-title" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span>💡 Idea ${i+1}</span>
+                        ${isSelected ? '<span style="font-size:0.7rem;color:var(--accent-primary);font-weight:600;">✓ SELECTED</span>' : ''}
+                    </div>
+                    <div class="idea-text">${text}</div>
+                    <div style="display:flex;gap:6px;margin-top:10px;justify-content:space-between;">
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-primary" onclick="selectIdea(${i})" style="padding:4px 12px;font-size:0.75rem;">${isSelected ? '✓ Selected' : 'Select'}</button>
+                            <button class="btn btn-secondary" onclick="openVariantModal(${i})" style="padding:4px 12px;font-size:0.75rem;">✏️ Variant</button>
+                        </div>
+                        <button class="btn btn-secondary" onclick="openExpandModal(${i})" style="padding:4px 10px;font-size:0.75rem;">⛶ Expand</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function formatIdeaForDisplay(idea) {
+            if (typeof idea === 'string') return idea;
+            const parts = [];
+            if (idea.title) parts.push(`<b>Title:</b> ${idea.title}`);
+            if (idea.logline) parts.push(`<b>Logline:</b> ${idea.logline}`);
+            if (idea.genre_blend) parts.push(`<b>Genre:</b> ${idea.genre_blend}`);
+            if (idea.tone) parts.push(`<b>Tone:</b> ${idea.tone}`);
+            if (idea.emotional_hook) parts.push(`<b>Hook:</b> ${idea.emotional_hook}`);
+            if (idea.short_synopsis) parts.push(`<b>Synopsis:</b> ${idea.short_synopsis}`);
+            if (idea.cinematic_hook) parts.push(`<b>Cinematic Hook:</b> ${idea.cinematic_hook}`);
+            parts.push(`<span style="font-size:0.75rem;color:var(--text-secondary);">🎭 ${idea.character_count || '?'} chars · 🏠 ${idea.location_count || '?'} locs · 🎬 ${idea.estimated_scene_count || '?'} scenes · 🎥 ${idea.estimated_total_shots || '?'} shots</span>`);
+            return parts.join('<br>');
+        }
+
+        function selectIdea(idx) {
+            if (selectedIdeaIndex === idx) {
+                selectedIdeaIndex = -1;
+            } else {
+                selectedIdeaIndex = idx;
+            }
+            renderIdeas();
+            scheduleSaveState();
+        }
+
+        // === SERVICE STATUS POLLING ===
+        let _statusInterval = null;
+
+        function startStatusPolling() {
+            if (_statusInterval) clearInterval(_statusInterval);
+            pollServiceStatus();
+            _statusInterval = setInterval(pollServiceStatus, 5000);
+        }
+
+        async function pollServiceStatus() {
+            try {
+                const provider = document.getElementById('llm-provider')?.value || 'app_llm';
+                const llmRes = await fetch('/api/llm/status?provider=' + encodeURIComponent(provider));
+                const llmData = await llmRes.json();
+                updateStatusDot('llm-dot', llmData.running ? 'green' : 'red');
+                document.getElementById('llm-model-name').textContent = llmData.model_name || (llmData.running ? 'connected' : 'offline');
+            } catch(e) {
+                updateStatusDot('llm-dot', 'red');
+                document.getElementById('llm-model-name').textContent = 'error';
+            }
+            try {
+                const comfyRes = await fetch('/api/comfyui/status');
+                const comfyData = await comfyRes.json();
+                updateStatusDot('comfyui-dot', comfyData.running ? 'green' : 'red');
+                document.getElementById('comfyui-status-text').textContent = comfyData.running ? 'Connected' : 'Offline';
+            } catch(e) {
+                updateStatusDot('comfyui-dot', 'red');
+                document.getElementById('comfyui-status-text').textContent = 'error';
+            }
+        }
+
+        function updateStatusDot(id, color) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.className = 'status-dot ' + color;
+            }
+        }
+
+        // === EXPAND / VARIANT MODAL ===
+        let _expandIdeaIdx = -1;
+        let _variantResults = [];
+
+        function openExpandModal(idx) {
+            _expandIdeaIdx = idx;
+            const idea = topicIdeas[idx];
+            if (!idea) return;
+            const numEl = document.getElementById('expand-idea-num');
+            const contentEl = document.getElementById('expand-idea-content');
+            const refreshBtn = document.getElementById('expand-regenerate-btn');
+            const variantSection = document.getElementById('expand-variant-section');
+            if (numEl) numEl.textContent = '#' + (idx + 1);
+            if (contentEl) contentEl.innerHTML = formatIdeaForDisplayFull(idea);
+            if (variantSection) variantSection.style.display = 'block';
+            if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '🔄 Regenerate This Idea'; }
+            document.getElementById('variant-results-inline').innerHTML = '';
+            document.getElementById('variant-change-input').value = '';
+            document.getElementById('expand-modal').style.display = 'flex';
+        }
+
+        function closeExpandModal() {
+            document.getElementById('expand-modal').style.display = 'none';
+        }
+
+        function formatIdeaForDisplayFull(idea) {
+            if (typeof idea === 'string') return '<pre style="white-space:pre-wrap;font-size:0.85rem;">' + idea + '</pre>';
+            let html = '<div style="font-size:0.85rem;line-height:1.6;">';
+            const fields = [
+                ['🎬 Title', 'title'],
+                ['📝 Logline', 'logline'],
+                ['🎭 Genre Blend', 'genre_blend'],
+                ['🎨 Tone', 'tone'],
+                ['👁 Visual Identity', 'visual_identity'],
+                ['🎞 Film Aesthetic', 'film_aesthetic_interpretation'],
+                ['💔 Emotional Hook', 'emotional_hook'],
+                ['🎥 Cinematic Hook', 'cinematic_hook'],
+                ['🏁 Ending Style', 'ending_style'],
+                ['💬 Dialogue Density', 'dialogue_density'],
+                ['⚙ Production Complexity', 'production_complexity'],
+                ['📸 Thumbnail Moment', 'thumbnail_moment'],
+                ['📖 Synopsis', 'short_synopsis'],
+            ];
+            fields.forEach(([label, key]) => {
+                if (idea[key]) html += `<div style="margin-bottom:8px;"><strong>${label}:</strong><br>${idea[key]}</div>`;
+            });
+            // Counts
+            html += '<div style="margin-top:12px;padding:8px;background:var(--bg-tertiary);border-radius:6px;font-size:0.8rem;">';
+            html += `👥 ${idea.character_count || '?'} characters · 🏠 ${idea.location_count || '?'} locations · 🎬 ${idea.estimated_scene_count || '?'} scenes · 🎥 ${idea.estimated_total_shots || '?'} total shots`;
+            if (idea.main_characters && Array.isArray(idea.main_characters)) {
+                html += '<br><b>Main Characters:</b> ' + idea.main_characters.join(', ');
+            }
+            if (idea.main_locations && Array.isArray(idea.main_locations)) {
+                html += '<br><b>Main Locations:</b> ' + idea.main_locations.join(', ');
+            }
+            if (idea.shot_distribution_per_scene) {
+                html += '<br><b>Shot Distribution:</b><br>';
+                const dist = typeof idea.shot_distribution_per_scene === 'object' ? idea.shot_distribution_per_scene : {};
+                Object.entries(dist).forEach(([scene, shots]) => {
+                    html += `<span style="margin-right:8px;">${scene}: ${shots}</span>`;
+                });
+            }
+            html += '</div></div>';
+            return html;
+        }
+
+        async function regenerateExpandedIdea() {
+            const btn = document.getElementById('expand-regenerate-btn');
+            if (!btn) return;
+            btn.disabled = true;
+            btn.textContent = '⏳ Regenerating...';
+            try {
+                const chars = parseInt(document.getElementById('sel-characters').value) || 3;
+                const locs = parseInt(document.getElementById('sel-locations').value) || 3;
+                const scenesCt = parseInt(document.getElementById('sel-scenes').value) || 10;
+                const totalShots = parseInt(document.getElementById('sel-total-shots').value) || 30;
+                const res = await fetch('/api/orchestrator/regenerate-idea', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        genres: selectedGenres,
+                        visual_style: selectedVisualStyle,
+                        film_aesthetic: selectedFilmAesthetic,
+                        era: document.getElementById('era-year').value.trim() || '',
+                        custom_prompt: document.getElementById('custom-prompt').value.trim() || '',
+                        dialogue_enabled: selectedDialogue === 'with',
+                        aspect_ratio: selectedAspectRatio,
+                        character_count: chars,
+                        location_count: locs,
+                        scene_count: scenesCt,
+                        total_shot_count: totalShots
+                    })
+                });
+                const data = await res.json();
+                if (data.success && data.ideas && data.ideas.length > 0) {
+                    topicIdeas[_expandIdeaIdx] = data.ideas[0];
+                    renderIdeas();
+                    const contentEl = document.getElementById('expand-idea-content');
+                    if (contentEl) contentEl.innerHTML = formatIdeaForDisplayFull(data.ideas[0]);
+                    notify('Regenerated', 'Idea updated');
+                } else {
+                    notify('Error', data.error || 'Regeneration failed');
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+            btn.disabled = false;
+            btn.textContent = '🔄 Regenerate This Idea';
+        }
+
+        function openVariantModal(idx) {
+            _expandIdeaIdx = idx;
+            const idea = topicIdeas[idx];
+            if (!idea) return;
+            document.getElementById('variant-idea-num').textContent = '#' + (idx + 1);
+            document.getElementById('variant-current-idea').innerHTML = formatIdeaForDisplayFull(idea);
+            document.getElementById('variant-change-input').value = '';
+            document.getElementById('variant-results-inline').innerHTML = '';
+            document.getElementById('variant-generate-btn').style.display = 'block';
+            // Reset popup fields too
+            const popupInput = document.getElementById('variant-change-input-popup');
+            if (popupInput) popupInput.value = '';
+            const popupResults = document.getElementById('variant-results-popup');
+            if (popupResults) popupResults.innerHTML = '';
+            document.getElementById('variant-modal').style.display = 'flex';
+        }
+
+        function closeVariantModal() {
+            document.getElementById('variant-modal').style.display = 'none';
+        }
+
+        async function generateVariants() {
+            const idea = topicIdeas[_expandIdeaIdx];
+            if (!idea) return;
+            const userChange = document.getElementById('variant-change-input').value.trim();
+            if (!userChange) { notify('Input Required', 'Describe what you want to change'); return; }
+            const btn = document.getElementById('variant-generate-btn');
+            const resultsEl = document.getElementById('variant-results-inline');
+            btn.disabled = true;
+            btn.textContent = '⏳ Generating...';
+            resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">⏳ Generating variants...</div>';
+            try {
+                const res = await fetch('/api/orchestrator/idea-variants', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({idea, user_change: userChange})
+                });
+                const data = await res.json();
+                if (data.success && data.variants && data.variants.length > 0) {
+                    _variantResults = data.variants;
+                    renderVariants();
+                } else {
+                    resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + (data.error || 'Generation failed') + '</div>';
+                }
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + e.message + '</div>';
+            }
+            btn.disabled = false;
+            btn.textContent = '🚀 Generate Variants';
+        }
+
+        function renderVariants() {
+            const resultsEl = document.getElementById('variant-results-inline');
+            let html = '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:8px;">' + _variantResults.length + ' variant(s) generated</div>';
+            _variantResults.forEach((v, i) => {
+                const label = v.title || v.logline || 'Variant ' + (i + 1);
+                html += '<div style="border:1px solid var(--border-color);border-radius:8px;padding:12px;margin-bottom:10px;background:var(--bg-secondary);">';
+                html += '<div style="font-weight:600;font-size:0.85rem;margin-bottom:6px;">Variant ' + (i + 1) + ': ' + (v.title || '') + '</div>';
+                html += '<div style="font-size:0.8rem;margin-bottom:8px;max-height:120px;overflow-y:auto;">' + formatIdeaForDisplayFull(v) + '</div>';
+                html += '<div style="display:flex;gap:6px;">';
+                html += '<button class="btn btn-primary" onclick="selectVariant(' + i + ')" style="padding:3px 10px;font-size:0.7rem;">✓ Select Variant</button>';
+                html += '<button class="btn btn-secondary" onclick="editVariantAgain(' + i + ')" style="padding:3px 10px;font-size:0.7rem;">✏️ Edit Further</button>';
+                html += '<button class="btn btn-secondary" onclick="generateVariants()" style="padding:3px 10px;font-size:0.7rem;">🔄 Regenerate</button>';
+                html += '</div></div>';
+            });
+            resultsEl.innerHTML = html;
+        }
+
+        function selectVariant(idx) {
+            if (_expandIdeaIdx >= 0 && _variantResults[idx]) {
+                topicIdeas[_expandIdeaIdx] = _variantResults[idx];
+                renderIdeas();
+                // If in expand modal, update content
+                const contentEl = document.getElementById('expand-idea-content');
+                if (contentEl) contentEl.innerHTML = formatIdeaForDisplayFull(_variantResults[idx]);
+                closeVariantModal();
+                scheduleSaveState();
+                notify('Selected', 'Variant applied to Idea #' + (_expandIdeaIdx + 1));
+            }
+        }
+
+        function editVariantAgain(idx) {
+            if (_variantResults[idx]) {
+                const textarea = document.getElementById('variant-change-input');
+                const prevText = textarea.value;
+                const v = _variantResults[idx];
+                const summary = v.title || v.logline || 'Variant ' + (idx + 1);
+                textarea.value = prevText + '\n[Refining variant: ' + summary + '] Please adjust further: ';
+                textarea.focus();
+            }
+        }
+
+        async function generateVariantsPopup() {
+            const idea = topicIdeas[_expandIdeaIdx];
+            if (!idea) return;
+            const userChange = document.getElementById('variant-change-input-popup').value.trim();
+            if (!userChange) { notify('Input Required', 'Describe what you want to change'); return; }
+            const resultsEl = document.getElementById('variant-results-popup');
+            resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">⏳ Generating variants...</div>';
+            try {
+                const res = await fetch('/api/orchestrator/idea-variants', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({idea, user_change: userChange})
+                });
+                const data = await res.json();
+                if (data.success && data.variants && data.variants.length > 0) {
+                    _variantResults = data.variants;
+                    let html = '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:8px;">' + data.variants.length + ' variant(s) generated</div>';
+                    data.variants.forEach((v, i) => {
+                        html += '<div style="border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--bg-secondary);">';
+                        html += '<div style="font-size:0.8rem;max-height:100px;overflow-y:auto;">' + formatIdeaForDisplayFull(v) + '</div>';
+                        html += '<div style="display:flex;gap:6px;margin-top:6px;">';
+                        html += '<button class="btn btn-primary" onclick="selectVariantPopup(' + i + ')" style="padding:2px 8px;font-size:0.7rem;">✓ Select</button>';
+                        html += '<button class="btn btn-secondary" onclick="editVariantAgainPopup(' + i + ')" style="padding:2px 8px;font-size:0.7rem;">✏️ Edit</button>';
+                        html += '<button class="btn btn-secondary" onclick="generateVariantsPopup()" style="padding:2px 8px;font-size:0.7rem;">🔄 Regenerate</button>';
+                        html += '</div></div>';
+                    });
+                    resultsEl.innerHTML = html;
+                } else {
+                    resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + (data.error || 'Generation failed') + '</div>';
+                }
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + e.message + '</div>';
+            }
+        }
+
+        function selectVariantPopup(idx) {
+            if (_expandIdeaIdx >= 0 && _variantResults[idx]) {
+                topicIdeas[_expandIdeaIdx] = _variantResults[idx];
+                renderIdeas();
+                document.getElementById('variant-modal').style.display = 'none';
+                scheduleSaveState();
+                notify('Selected', 'Variant applied');
+            }
+        }
+
+        function editVariantAgainPopup(idx) {
+            if (_variantResults[idx]) {
+                const textarea = document.getElementById('variant-change-input-popup');
+                const v = _variantResults[idx];
+                textarea.value = (textarea.value || '') + '\n[Refining: ' + (v.title || 'variant ' + (idx+1)) + '] ';
+                textarea.focus();
+            }
+        }
+
+        // === STARTUP ===
+        startStatusPolling();
+
+        // === SCREENPLAY MODULE ===
+        async function generateScreenplay() {
+            if (!topicIdeas.length) {
+                notify('No Ideas', 'Generate story ideas first on the Ideas page');
+                return;
+            }
+            if (selectedIdeaIndex < 0) {
+                notify('No Idea Selected', 'Click "Select" on an idea first');
+                return;
+            }
+            const pb = document.getElementById('screenplay-progress');
+            pb.style.display = 'block';
+            document.getElementById('screenplay-progress-title').textContent = 'Generating screenplay from selected idea...';
+            document.getElementById('screenplay-progress-bar').style.width = '20%';
+            document.getElementById('screenplay-progress-pct').textContent = '20%';
+
+            // Build params from current project settings
+            const chars = parseInt(document.getElementById('sel-characters').value) || 3;
+            const locs = parseInt(document.getElementById('sel-locations').value) || 3;
+            const scenesCt = parseInt(document.getElementById('sel-scenes').value) || 10;
+            const totalShots = parseInt(document.getElementById('sel-total-shots').value) || 30;
+            const params = {
+                idea_index: selectedIdeaIndex,
+                character_count: chars,
+                location_count: locs,
+                scene_count: scenesCt,
+                total_shot_count: totalShots
+            };
+
+            try {
+                const res = await fetch('/api/orchestrator/screenplay', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(params)
+                });
+                const data = await res.json();
+
+                document.getElementById('screenplay-progress-bar').style.width = '90%';
+                document.getElementById('screenplay-progress-pct').textContent = '90%';
+
+                if (data.success && data.screenplay) {
+                    screenplayData = data.screenplay;
+                    renderScreenplay();
+                    scheduleSaveState();
+                    document.getElementById('screenplay-progress-title').textContent = '✅ Screenplay generated!';
+                    document.getElementById('proceed-to-locations-btn').style.display = 'inline-block';
+                } else {
+                    notify('Screenplay Failed', data.error || 'Generation failed. Check LLM connection.');
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+
+            document.getElementById('screenplay-progress-bar').style.width = '100%';
+            document.getElementById('screenplay-progress-pct').textContent = '100%';
+            setTimeout(() => { pb.style.display = 'none'; }, 1500);
+        }
+
+        function renderScreenplay() {
+            const container = document.getElementById('screenplay-container');
+            if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.length) {
+                container.innerHTML = '<div style="background:var(--bg-secondary);padding:20px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
+                return;
+            }
+
+            const sp = screenplayData;
+            let totalShots = sp.scenes.reduce((sum, s) => sum + (s.estimated_shots || 1), 0);
+            const charsSet = new Set();
+            sp.scenes.forEach(s => (s.characters_present || []).forEach(c => charsSet.add(c)));
+
+            let html = `
+                <div style="background:var(--bg-secondary);border-radius:8px;border:1px solid var(--accent-primary);padding:20px;margin-bottom:15px;">
+                    <h3 style="color:var(--accent-primary);font-size:1.2rem;margin-bottom:6px;">${escapeHtml(sp.title || 'Untitled')}</h3>
+                    <p style="color:var(--text-secondary);font-style:italic;margin-bottom:12px;">${escapeHtml(sp.logline || '')}</p>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-secondary);">
+                        <span>🎭 Tone: ${sp.tone || 'N/A'}</span>
+                        <span>🎬 Scenes: ${sp.scenes.length}</span>
+                        <span>📸 Total Shots: ${totalShots}</span>
+                        <span>👥 Characters: ${charsSet.size}</span>
+                        <span>💬 Dialogue: ${sp.dialogue_enabled ? 'Enabled' : 'Disabled (Visual Storytelling)'}</span>
+                    </div>
                 </div>
-            `).join('');
+                <div style="display:flex;flex-direction:column;gap:8px;">`;
+
+            sp.scenes.forEach((s, i) => {
+                const chars = (s.characters_present || []).join(', ') || 'None';
+                const dialogueHtml = s.dialogue && s.dialogue.length ? `
+                    <div style="margin-top:8px;padding:8px;background:var(--bg-tertiary);border-radius:6px;">
+                        <div style="font-size:0.8rem;color:var(--accent-primary);margin-bottom:4px;">🎙️ Dialogue:</div>
+                        ${s.dialogue.map(d => `<div style="font-size:0.8rem;padding:2px 0;"><strong>${escapeHtml(d.speaker || '')}:</strong> ${escapeHtml(d.text || '')}</div>`).join('')}
+                    </div>` : '<div style="margin-top:8px;font-size:0.75rem;color:var(--text-secondary);">🎬 Visual storytelling (no dialogue)</div>';
+
+                html += `
+                    <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;border-left:3px solid var(--accent-primary);">
+                        <div style="display:flex;justify-content:space-between;align-items:start;">
+                            <div>
+                                <strong style="color:var(--accent-primary);">#${s.scene_number || i+1}</strong>
+                                <span style="color:var(--text-primary);margin-left:8px;">${escapeHtml(s.scene_title || '')}</span>
+                            </div>
+                            <span style="font-size:0.75rem;color:var(--text-secondary);">${s.estimated_shots || 1} shot(s)</span>
+                        </div>
+                        <div style="font-size:0.85rem;color:var(--text-secondary);margin-top:4px;">
+                            📍 ${s.location_id || 'Unknown'} | 👥 ${chars} | 🎭 ${s.emotional_tone || 'N/A'}
+                        </div>
+                        <div style="font-size:0.85rem;color:var(--text-primary);margin-top:6px;">${escapeHtml(s.synopsis || '')}</div>
+                        ${dialogueHtml}
+                    </div>`;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function proceedToScenesFromScreenplay() {
+            if (!screenplayData) {
+                notify('Generate Screenplay', 'Please generate the screenplay first');
+                return;
+            }
+            const chars = parseInt(document.getElementById('sel-characters').value) || 3;
+            const locs = parseInt(document.getElementById('sel-locations').value) || 3;
+            const scenes = screenplayData.scenes ? screenplayData.scenes.length : parseInt(document.getElementById('sel-scenes').value) || 10;
+            const imgRes = document.getElementById('sel-img-resolution').value || '1024x576';
+            const vidRes = document.getElementById('sel-vid-resolution').value || '1280x720';
+            const totalShots = parseInt(document.getElementById('sel-total-shots').value) || 30;
+            currentProject.settings = {
+                style: selectedVisualStyle, aesthetic: selectedFilmAesthetic,
+                characters: chars, locations: locs, scenes: scenes, totalShots: totalShots,
+                aspectRatio: selectedAspectRatio,
+                imgResolution: imgRes, vidResolution: vidRes,
+                dialogue: selectedDialogue
+            };
+            scheduleSaveState();
+            navigateToWorkflow('locations');
+            setTimeout(() => generateLocations(), 300);
         }
 
         // === GENRE MANAGER MODAL ===
@@ -2966,28 +3792,6 @@
             }
         }
 
-        function proceedToScenes() {
-            const chars = parseInt(document.getElementById('sel-characters').value) || 3;
-            const locs = parseInt(document.getElementById('sel-locations').value) || 3;
-            const scenes = parseInt(document.getElementById('sel-scenes').value) || 10;
-            if (!selectedVisualStyle && !selectedFilmAesthetic && selectedGenres.length) {
-                selectedVisualStyle = selectedGenres.join(', ');
-                document.getElementById('selected-visual-style').textContent = '🎨 ' + selectedVisualStyle;
-            }
-            const imgRes = document.getElementById('sel-img-resolution').value || '1024x576';
-            const vidRes = document.getElementById('sel-vid-resolution').value || '1280x720';
-            currentProject.settings = {
-                style: selectedVisualStyle, aesthetic: selectedFilmAesthetic,
-                characters: chars, locations: locs, scenes: scenes,
-                aspectRatio: selectedAspectRatio,
-                imgResolution: imgRes, vidResolution: vidRes,
-                dialogue: selectedDialogue
-            };
-            scheduleSaveState();
-            navigateToWorkflow('scenes');
-            setTimeout(() => generateScenes(), 300);
-        }
-
         function proceedToLocations() {
             navigateToWorkflow('locations');
             setTimeout(() => generateLocations(), 300);
@@ -3002,11 +3806,9 @@
         }
 
         function proceedToVideoPrompts() {
-            navigateToWorkflow('video-storyboard');
+            navigateToWorkflow('video-prompts');
             if (!videoPromptData.length) setTimeout(() => generateVideoPrompts(), 300);
         }
-
-        function proceedToVideoStoryboard() { navigateToWorkflow('video-storyboard'); }
 
         function proceedToStoryboard() { navigateToWorkflow('storyboard'); }
 
@@ -3625,6 +4427,33 @@
             const pb = document.getElementById('characters-progress');
             pb.style.display = 'block';
             document.getElementById('char-progress-title').textContent = 'Generating characters...';
+            document.getElementById('char-progress-bar').style.width = '10%';
+            document.getElementById('char-progress-pct').textContent = '10%';
+
+            // Try orchestrator for screenplay-aware character generation
+            try {
+                const res = await fetch('/api/orchestrator/characters', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success && data.characters && data.characters.length) {
+                    charData = data.characters.map(ch => ({
+                        name: ch.character_name || ch.name || '',
+                        description: `${ch.role || ''}: ${ch.personality || ''} ${ch.emotional_traits || ''} ${ch.physical_appearance || ''} ${ch.clothing || ''}`.trim(),
+                        imagePrompt: ch.image_prompt || ''
+                    }));
+                    document.getElementById('char-progress-bar').style.width = '100%';
+                    document.getElementById('char-progress-pct').textContent = '100%';
+                    document.getElementById('char-progress-title').textContent = '✅ Characters from screenplay!';
+                    setTimeout(() => { pb.style.display = 'none'; }, 1000);
+                    renderCharacterCards();
+                    scheduleSaveState();
+                    return;
+                }
+            } catch(e) {
+                // Fall through to individual generation
+            }
 
             const context = buildCharacterContext();
 
@@ -3937,72 +4766,7 @@ Respond with raw JSON only, no markdown, no backticks.`;
             }
         }
 
-        // === SCENES MODULE ===
         let sceneData = [];
-
-        function renderScenes() {
-            const count = (currentProject?.settings?.scenes) || parseInt(document.getElementById('sel-scenes').value) || 10;
-            document.getElementById('scenes-count-label').textContent = count + ' scenes';
-            if (!sceneData.length) {
-                document.getElementById('scenes-container').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:20px;">Click "Generate Scenes" to create scenes from your selected idea.</div>';
-            } else {
-                document.getElementById('scenes-container').innerHTML = sceneData.map((s, i) =>
-                    `<div style="background:var(--bg-secondary);padding:12px;border-radius:8px;border-left:3px solid var(--accent-primary);font-size:0.9rem;">
-                        <strong style="color:var(--accent-primary);">#${i+1}</strong> ${s}
-                    </div>`
-                ).join('');
-            }
-        }
-
-        async function generateScenes() {
-            const count = (currentProject?.settings?.scenes) || parseInt(document.getElementById('sel-scenes').value) || 10;
-            const pb = document.getElementById('scenes-progress');
-            pb.style.display = 'block';
-
-            const context = buildModuleContext();
-
-            const prompt = `Generate exactly ${count} micro-scenes for a short film based on this concept:
-
-${context}
-
-Rules for each scene:
-- 1-2 lines max
-- Visual and specific
-- Include sensory detail (heat, dust, smell, sound)
-- Include micro-action (movement, opening, closing, adjusting)
-- Include emotional trigger (fear, excitement, bonding, tension)
-- Must be understandable WITHOUT dialogue
-
-Output ONLY the numbered scenes, one per line. No headings, no explanations.`;
-
-            try {
-                document.getElementById('scenes-progress-title').textContent = 'Generating scenes...';
-                document.getElementById('scenes-progress-bar').style.width = '30%';
-                document.getElementById('scenes-progress-pct').textContent = '30%';
-
-                const data = await generateFromLLM(prompt);
-
-                document.getElementById('scenes-progress-bar').style.width = '90%';
-                document.getElementById('scenes-progress-pct').textContent = '90%';
-
-                if (data.success) {
-                    sceneData = data.response.split('\n')
-                        .filter(l => l.trim() && /\d+[\.\)]/.test(l))
-                        .map(l => l.replace(/^\d+[\.\)]\s*/, '').trim())
-                        .slice(0, count);
-                    renderScenes();
-                    scheduleSaveState();
-                }
-
-                document.getElementById('scenes-progress-bar').style.width = '100%';
-                document.getElementById('scenes-progress-pct').textContent = '100%';
-                document.getElementById('scenes-progress-title').textContent = '✅ Done!';
-                setTimeout(() => { pb.style.display = 'none'; }, 1000);
-            } catch(e) {
-                pb.style.display = 'none';
-                notify('Error', 'Failed to generate scenes');
-            }
-        }
 
         // === LOCATIONS MODULE ===
         let locationData = [];
@@ -4063,6 +4827,35 @@ Output ONLY the numbered scenes, one per line. No headings, no explanations.`;
             const count = (currentProject?.settings?.locations) || parseInt(document.getElementById('sel-locations').value) || 3;
             const pb = document.getElementById('locations-progress');
             pb.style.display = 'block';
+            document.getElementById('locations-progress-title').textContent = 'Generating locations...';
+            document.getElementById('locations-progress-bar').style.width = '20%';
+            document.getElementById('locations-progress-pct').textContent = '20%';
+
+            // Try using orchestrator for continuity-aware location generation
+            try {
+                const res = await fetch('/api/orchestrator/locations', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success && data.locations && data.locations.length) {
+                    locationData = data.locations.map(loc => ({
+                        name: loc.location_name || loc.name || '',
+                        type: loc.environment_type || loc.type || '',
+                        details: `${loc.mood || ''} ${loc.lighting_style || ''} ${loc.cinematic_features || ''} ${loc.environmental_storytelling || ''}`.trim() || '',
+                        imagePrompt: loc.image_prompt || ''
+                    }));
+                    document.getElementById('locations-progress-bar').style.width = '100%';
+                    document.getElementById('locations-progress-pct').textContent = '100%';
+                    document.getElementById('locations-progress-title').textContent = '✅ Locations generated from screenplay!';
+                    setTimeout(() => { pb.style.display = 'none'; }, 1000);
+                    renderLocations();
+                    scheduleSaveState();
+                    return;
+                }
+            } catch(e) {
+                // Fall through to individual generation
+            }
 
             const context = buildModuleContext();
 
@@ -4106,10 +4899,10 @@ Raw JSON only, no markdown.`;
             document.getElementById('locations-progress-pct').textContent = '100%';
             document.getElementById('locations-progress-title').textContent = '✅ Done!';
             setTimeout(() => { pb.style.display = 'none'; }, 1000);
-            renderLocations();
-        }
+  renderLocations();
+  }
 
-        async function regenerateLocation(index) {
+async function regenerateLocation(index) {
             const btn = document.getElementById('reg-loc-btn-' + index);
             if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span>'; }
             const context = buildModuleContext();
@@ -4288,12 +5081,47 @@ Raw JSON only, no markdown.`;
         }
 
         async function generateImagePrompts() {
-            if (!sceneData.length) {
-                notify('No Scenes', 'Generate scenes first in the Scenes module.');
-                return;
-            }
             const pb = document.getElementById('imgprompts-progress');
             pb.style.display = 'block';
+            document.getElementById('imgprompts-progress-bar').style.width = '10%';
+            document.getElementById('imgprompts-progress-pct').textContent = '10%';
+            document.getElementById('imgprompts-progress-title').textContent = 'Generating storyboard...';
+
+            // Try orchestrator for continuity-aware storyboard generation
+            try {
+                const res = await fetch('/api/orchestrator/storyboard', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success && data.storyboard && data.storyboard.length) {
+                    imagePromptData = [];
+                    sceneImageData = [];
+                    data.storyboard.forEach(sb => {
+                        if (sb.shots && sb.shots.length) {
+                            sb.shots.forEach(shot => {
+                                imagePromptData.push(shot.image_prompt || '');
+                                sceneImageData.push({ prompt: shot.image_prompt || '', savedImage: null });
+                            });
+                        }
+                    });
+                    document.getElementById('imgprompts-progress-bar').style.width = '100%';
+                    document.getElementById('imgprompts-progress-pct').textContent = '100%';
+                    document.getElementById('imgprompts-progress-title').textContent = '✅ Storyboard generated!';
+                    setTimeout(() => { pb.style.display = 'none'; }, 1000);
+                    renderStoryboard();
+                    scheduleSaveState();
+                    return;
+                }
+            } catch(e) {
+                // Fall through to legacy generation
+            }
+
+            if (!sceneData.length) {
+                notify('No Scenes', 'Storyboard data not available for fallback generation.');
+                pb.style.display = 'none';
+                return;
+            }
 
             const context = buildModuleContext();
             const charsText = charData.filter(c => c.name).map(c => `${c.name}: ${c.description}`).join('\n');
@@ -4395,12 +5223,47 @@ The image prompt must include: exact location, time of day, character actions, o
         // === VIDEO PROMPTS MODULE ===
 
         async function generateVideoPrompts() {
-            if (!sceneData.length) {
-                notify('No Scenes', 'Generate scenes first in the Scenes module.');
-                return;
-            }
             const pb = document.getElementById('vidprompts-progress');
             pb.style.display = 'block';
+            document.getElementById('vidprompts-progress-bar').style.width = '10%';
+            document.getElementById('vidprompts-progress-pct').textContent = '10%';
+            document.getElementById('vidprompts-progress-title').textContent = 'Generating LTX 2.3 video prompts...';
+
+            // Try orchestrator for continuity-aware video prompt generation
+            try {
+                const res = await fetch('/api/orchestrator/video-prompts', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success && data.video_prompts && data.video_prompts.length) {
+                    videoPromptData = [];
+                    sceneVideoData = [];
+                    data.video_prompts.forEach(vp => {
+                        if (vp.shots && vp.shots.length) {
+                            vp.shots.forEach(shot => {
+                                videoPromptData.push(shot.ltx_prompt || '');
+                                sceneVideoData.push({ savedVideo: null, genFilename: null, genSubfolder: null });
+                            });
+                        }
+                    });
+                    document.getElementById('vidprompts-progress-bar').style.width = '100%';
+                    document.getElementById('vidprompts-progress-pct').textContent = '100%';
+                    document.getElementById('vidprompts-progress-title').textContent = '✅ LTX 2.3 prompts generated!';
+                    setTimeout(() => { pb.style.display = 'none'; }, 1000);
+                    renderVideoStoryboard();
+                    scheduleSaveState();
+                    return;
+                }
+            } catch(e) {
+                // Fall through
+            }
+
+            if (!sceneData.length) {
+                notify('No Scenes', 'Storyboard data not available for fallback generation.');
+                pb.style.display = 'none';
+                return;
+            }
 
             const context = buildModuleContext();
             const charsText = charData.filter(c => c.name).map(c => `${c.name}: ${c.description}`).join('\n');
@@ -4762,6 +5625,15 @@ The video prompt must describe: camera movement, character actions, timing, ligh
             if (selectedVisualStyle) parts.push('Visual Style: ' + selectedVisualStyle);
             if (selectedFilmAesthetic) parts.push('Film Aesthetic: ' + selectedFilmAesthetic);
             if (selectedGenres.length) parts.push('Genres: ' + selectedGenres.join(', '));
+            if (screenplayData && screenplayData.scenes) {
+                parts.push('\nScreenplay:');
+                screenplayData.scenes.forEach(s => {
+                    parts.push(`  Scene ${s.scene_number || ''}: ${s.scene_title || ''} @ ${s.location_id || ''}`);
+                    if (s.characters_present && s.characters_present.length) {
+                        parts.push(`    Characters: ${s.characters_present.join(', ')}`);
+                    }
+                });
+            }
             return parts.join('\n') || 'General short film';
         }
 
@@ -5016,6 +5888,7 @@ The video prompt must describe: camera movement, character actions, timing, ligh
         updateIdeaInputs();
         renderRecentProjects();
         loadGenreModalGrid();
+        loadMasterSystemPrompt();
         // Auto-connect LLM on start
         fetch('/api/settings').then(r => r.json()).then(s => {
             if (s.llm && s.llm.host && s.llm.model) {

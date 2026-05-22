@@ -16,6 +16,7 @@ try:
     from core.project_manager import ProjectManager
     from core.approval_workflow import ApprovalWorkflow
     from core.image_engine import ImageEngine
+    from core.orchestrator import CinematicOrchestrator, load_master_system_prompt
     HAS_LLM = True
 except ImportError:
     HAS_LLM = False
@@ -94,6 +95,7 @@ approval_workflow = ApprovalWorkflow() if HAS_LLM else None
 from core.comfyui_client import ComfyUIClient
 comfyui_client = ComfyUIClient()
 image_engine = ImageEngine(comfyui_client=comfyui_client, settings_path=str(SETTINGS_FILE)) if HAS_LLM else None
+orchestrator = CinematicOrchestrator(llm_engine=llm_engine) if HAS_LLM else None
 
 class GenerateRequest(BaseModel):
     provider: str
@@ -221,6 +223,234 @@ async def stop_local_llm(data: dict):
     if not llm_engine:
         return {"success": False, "error": "LLM engine not available"}
     return llm_engine.stop_local_llm(data.get("provider", ""))
+
+# === App LLM Model Management ===
+
+@app.get("/api/llm/installed-models")
+async def get_installed_models():
+    """List models in the models/ folder."""
+    if not llm_engine:
+        return {"models": []}
+    return {"models": llm_engine.get_installed_models()}
+
+@app.get("/api/llm/search-models")
+async def search_llm_models(q: str = "", size: str = "", quant: str = "", limit: int = 30):
+    """Search HuggingFace for GGUF models."""
+    if not llm_engine:
+        return {"results": [], "error": "LLM engine not available"}
+    results = llm_engine.search_huggingface_models(query=q, size_filter=size, quant_filter=quant, limit=limit)
+    return {"results": results}
+
+@app.post("/api/llm/download-model-hf")
+async def download_llm_model(data: dict):
+    """Download a GGUF model from HuggingFace."""
+    if not llm_engine:
+        return {"success": False, "error": "LLM engine not available"}
+    repo = data.get("repo", "")
+    filename = data.get("filename", "")
+    if not repo or not filename:
+        return {"success": False, "error": "repo and filename required"}
+    return llm_engine.download_model_from_hf(repo, filename)
+
+@app.post("/api/llm/copy-model")
+async def copy_llm_model(data: dict):
+    """Copy a model file from user path into models/ folder."""
+    if not llm_engine:
+        return {"success": False, "error": "LLM engine not available"}
+    source = data.get("source", "")
+    if not source:
+        return {"success": False, "error": "source path required"}
+    return llm_engine.copy_model_to_folder(source)
+
+@app.delete("/api/llm/models/{filename:path}")
+async def delete_llm_model(filename: str):
+    """Delete a model file from models/ folder."""
+    if not llm_engine:
+        return {"success": False, "error": "LLM engine not available"}
+    return llm_engine.delete_model(filename)
+
+# === ComfyUI Model Management ===
+
+@app.get("/api/comfyui/search-models")
+async def search_comfyui_models(q: str = "", model_type: str = "checkpoints", limit: int = 30):
+    """Search HuggingFace for ComfyUI-compatible models."""
+    if not comfyui_client:
+        return {"results": []}
+    results = comfyui_client.search_huggingface_models(query=q, model_type=model_type, limit=limit)
+    return {"results": results}
+
+@app.post("/api/comfyui/download-model")
+async def download_comfyui_model(data: dict):
+    """Download a model to ComfyUI models folder."""
+    if not comfyui_client:
+        return {"success": False, "error": "ComfyUI client not available"}
+    repo = data.get("repo", "")
+    filename = data.get("filename", "")
+    model_type = data.get("model_type", "checkpoints")
+    if not repo or not filename:
+        return {"success": False, "error": "repo and filename required"}
+    return comfyui_client.download_model(repo, filename, model_type)
+
+@app.get("/api/comfyui/installed-models")
+async def get_installed_comfyui_models(model_type: str = "checkpoints"):
+    """List installed models in ComfyUI models folder."""
+    if not comfyui_client:
+        return {"models": []}
+    return {"models": comfyui_client.get_installed_comfyui_models(model_type)}
+
+@app.get("/api/comfyui/model-types")
+async def get_comfyui_model_types():
+    """Get available ComfyUI model type categories."""
+    if not comfyui_client:
+        return {"types": {}}
+    types = {}
+    for key, info in comfyui_client.COMFYUI_MODEL_TYPES.items():
+        types[key] = info["folder"]
+    return {"types": types}
+
+@app.post("/api/comfyui/external-path")
+async def set_comfyui_external_path(data: dict):
+    """Set external ComfyUI models folder path."""
+    if not comfyui_client:
+        return {"success": False, "error": "ComfyUI client not available"}
+    path = data.get("path", "")
+    if not path:
+        return comfyui_client.clear_external_models_path()
+    return comfyui_client.set_external_models_path(path)
+
+@app.get("/api/comfyui/external-path")
+async def get_comfyui_external_path():
+    """Get current external ComfyUI models path."""
+    if not comfyui_client:
+        return {"path": None}
+    path = comfyui_client.get_external_models_path()
+    return {"path": path}
+
+@app.post("/api/comfyui/install")
+async def install_comfyui(data: dict = None):
+    """Install ComfyUI via git clone."""
+    if not comfyui_client:
+        return {"success": False, "error": "ComfyUI client not available"}
+    target = data.get("target") if data else None
+    return comfyui_client.install_comfyui(target_dir=target)
+
+@app.post("/api/comfyui/update")
+async def update_comfyui():
+    """Update ComfyUI via git pull."""
+    if not comfyui_client:
+        return {"success": False, "error": "ComfyUI client not available"}
+    return comfyui_client.update_comfyui()
+
+# === Cinematic Orchestrator Routes ===
+
+@app.get("/api/orchestrator/skill")
+async def get_orchestrator_skill():
+    """Get the master cinematic system prompt."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return {"success": True, "skill": orchestrator.get_master_system_prompt()}
+
+@app.get("/api/orchestrator/progress")
+async def get_orchestrator_progress():
+    """Get current generation progress."""
+    if not orchestrator:
+        return {"pct": 0, "title": "Not available", "sub": "", "finished": True, "error": ""}
+    return orchestrator.get_progress()
+
+@app.post("/api/orchestrator/ideas")
+async def generate_ideas(data: dict):
+    """Stage 1: Generate 5 cinematic story ideas."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_ideas(data)
+    return result
+
+@app.post("/api/orchestrator/screenplay")
+async def generate_screenplay(data: dict):
+    """Stage 2: Generate master screenplay from selected idea."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_screenplay(data)
+    return result
+
+@app.post("/api/orchestrator/regenerate-idea")
+async def regenerate_idea(data: dict):
+    """Regenerate a single idea."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.regenerate_single_idea(data)
+    return result
+
+@app.post("/api/orchestrator/idea-variants")
+async def generate_idea_variants(data: dict):
+    """Generate 3 variants of an idea based on user change request."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_idea_variants(data)
+    return result
+
+@app.post("/api/orchestrator/locations")
+async def generate_locations(data: dict = None):
+    """Stage 3: Generate reusable location assets."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_locations(data or {})
+    return result
+
+@app.post("/api/orchestrator/characters")
+async def generate_characters(data: dict = None):
+    """Stage 4: Generate reusable character assets."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_characters(data or {})
+    return result
+
+@app.post("/api/orchestrator/storyboard")
+async def generate_storyboard(data: dict = None):
+    """Stage 5: Generate storyboard with shots."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_storyboard(data or {})
+    return result
+
+@app.post("/api/orchestrator/video-prompts")
+async def generate_video_prompts(data: dict = None):
+    """Stage 6: Generate LTX 2.3 video prompts."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_video_prompts(data or {})
+    return result
+
+@app.get("/api/orchestrator/memory")
+async def get_orchestrator_memory():
+    """Get full orchestrator memory state."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return {"success": True, "memory": orchestrator.to_dict()}
+
+@app.post("/api/orchestrator/memory")
+async def set_orchestrator_memory(data: dict):
+    """Set full orchestrator memory state."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    memory_data = data.get("memory", {})
+    orchestrator.from_dict(memory_data)
+    return {"success": True}
+
+@app.get("/api/orchestrator/continuity-context")
+async def get_continuity_context():
+    """Get the current continuity context string."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return {"success": True, "context": orchestrator.get_continuity_context()}
+
+@app.post("/api/orchestrator/reset")
+async def reset_orchestrator():
+    """Reset orchestrator memory."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    orchestrator.reset()
+    return {"success": True}
 
 # === Image / Video Generation Provider Management ===
 
@@ -593,19 +823,29 @@ async def save_prompts(name: str, stage: str, content: str):
 
 @app.post("/api/projects/{name}/state")
 async def save_project_state(name: str, request: Request):
-    """Save full project state (charData, sceneData, etc.)."""
+    """Save full project state including orchestrator continuity memory."""
     body = await request.json()
     state = body.get("state", {})
     project_path = body.get("project_path")
+
+    # Sync orchestrator memory into state for persistence
+    if orchestrator:
+        state["_orchestrator_memory"] = orchestrator.to_dict()
+
     result = project_manager.save_project_state(name, state, project_path)
     return result
 
 @app.get("/api/projects/{name}/state")
 async def load_project_state(name: str, path: str = None):
-    """Load full project state from disk."""
+    """Load full project state from disk, restoring orchestrator continuity memory."""
     result = project_manager.load_project_state(name, path)
     if result is None:
         return {"success": False, "state": None}
+
+    # Restore orchestrator continuity memory from saved state
+    if orchestrator and result.get("_orchestrator_memory"):
+        orchestrator.from_dict(result["_orchestrator_memory"])
+
     return {"success": True, "state": result}
 
 @app.get("/api/projects/{name}/files/{stage}")

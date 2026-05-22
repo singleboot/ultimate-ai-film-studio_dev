@@ -838,6 +838,261 @@ class ComfyUIClient:
                     return {"success": False, "error": str(e)}
         return {"success": True, "message": "Not running"}
 
+    # === Model Path Management ===
+
+    def set_external_models_path(self, external_path: str) -> Dict:
+        """Set an external ComfyUI models folder via extra_model_paths.yaml."""
+        if not external_path or not os.path.isdir(external_path):
+            return {"success": False, "error": "Invalid external models path"}
+
+        base = Path(__file__).parent.parent
+        extra_yaml = base / "extra_model_paths.yaml"
+
+        comfy_path = self._comfyui_path or base.parent / "comfyui"
+        # Create the YAML config to redirect model paths
+        yaml_content = f"""# ComfyUI extra model paths - managed by Ultimate AI Film Studio
+{comfy_path}:
+    base_path: {comfy_path}
+
+    checkpoints: {external_path}/checkpoints/
+    configs: {external_path}/configs/
+    loras: {external_path}/loras/
+    loras_1: {external_path}/loras/
+    upscale_models: {external_path}/upscale_models/
+    clip_vision: {external_path}/clip_vision/
+    clip: {external_path}/clip/
+    text_encoders: {external_path}/text_encoders/
+    diffusion_models: {external_path}/diffusion_models/
+    vae: {external_path}/vae/
+    controlnet: {external_path}/controlnet/
+    gligen: {external_path}/gligen/
+    hypernetworks: {external_path}/hypernetworks/
+    style_models: {external_path}/style_models/
+    embeddings: {external_path}/embeddings/
+    unet: {external_path}/unet/
+    ipadapter: {external_path}/ipadapter/
+    photomaker: {external_path}/photomaker/
+    ultralytics: {external_path}/ultralytics/
+    sams: {external_path}/sams/
+    llm: {external_path}/llm/
+"""
+        try:
+            extra_yaml.write_text(yaml_content, encoding='utf-8')
+            self._external_models_path = external_path
+            return {"success": True, "message": f"External models path set to {external_path}", "path": external_path}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_external_models_path(self) -> Optional[str]:
+        """Get the current external models path from settings or extra_model_paths.yaml."""
+        if hasattr(self, '_external_models_path') and self._external_models_path:
+            return self._external_models_path
+        base = Path(__file__).parent.parent
+        extra_yaml = base / "extra_model_paths.yaml"
+        if extra_yaml.exists():
+            try:
+                content = extra_yaml.read_text(encoding='utf-8')
+                for line in content.split('\n'):
+                    if 'base_path:' in line:
+                        parts = line.split(':')
+                        if len(parts) > 1:
+                            path = parts[1].strip()
+                            if os.path.isdir(path):
+                                return path
+            except Exception:
+                pass
+        return None
+
+    def clear_external_models_path(self) -> Dict:
+        """Remove the extra_model_paths.yaml file."""
+        base = Path(__file__).parent.parent
+        extra_yaml = base / "extra_model_paths.yaml"
+        if extra_yaml.exists():
+            try:
+                extra_yaml.unlink()
+                self._external_models_path = None
+                return {"success": True, "message": "External model path cleared"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        return {"success": True, "message": "No external path configured"}
+
+    # === Model Downloader ===
+
+    COMFYUI_MODEL_TYPES = {
+        "checkpoints": {"folder": "checkpoints", "extensions": [".safetensors", ".ckpt", ".pt"]},
+        "diffusion_models": {"folder": "diffusion_models", "extensions": [".safetensors", ".ckpt", ".pt"]},
+        "loras": {"folder": "loras", "extensions": [".safetensors", ".ckpt"]},
+        "vae": {"folder": "vae", "extensions": [".safetensors", ".pt"]},
+        "text_encoders": {"folder": "text_encoders", "extensions": [".safetensors", ".pt"]},
+        "clip": {"folder": "clip", "extensions": [".safetensors", ".pt"]},
+        "clip_vision": {"folder": "clip_vision", "extensions": [".safetensors", ".pt"]},
+        "controlnet": {"folder": "controlnet", "extensions": [".safetensors", ".pt", ".pth"]},
+        "upscale_models": {"folder": "upscale_models", "extensions": [".safetensors", ".pt", ".pth"]},
+        "unet": {"folder": "unet", "extensions": [".safetensors", ".pt"]},
+        "ipadapter": {"folder": "ipadapter", "extensions": [".safetensors", ".pt"]},
+    }
+
+    def search_huggingface_models(self, query: str = "", model_type: str = "checkpoints",
+                                   category: str = "", limit: int = 30) -> List[Dict]:
+        """Search HuggingFace for ComfyUI-compatible models."""
+        try:
+            from huggingface_hub import HfApi
+            api = HfApi()
+            search_term = query or model_type
+            results = api.list_models(
+                search=search_term,
+                sort="downloads",
+                direction=-1,
+                limit=limit * 2
+            )
+            models = []
+            seen_repos = set()
+            for model in results:
+                if len(models) >= limit:
+                    break
+                repo_id = model.modelId
+                if repo_id in seen_repos:
+                    continue
+                seen_repos.add(repo_id)
+                try:
+                    files = api.list_repo_files(repo_id)
+                except Exception:
+                    continue
+                type_info = self.COMFYUI_MODEL_TYPES.get(model_type, self.COMFYUI_MODEL_TYPES["checkpoints"])
+                extensions = type_info["extensions"]
+                matching_files = [f for f in files if any(f.endswith(ext) for ext in extensions)]
+                for fname in matching_files:
+                    if len(models) >= limit:
+                        break
+                    size = 0
+                    try:
+                        meta = api.model_info(repo_id, files_metadata=True)
+                        for sibling in meta.siblings:
+                            if sibling.rfilename == fname and sibling.size:
+                                size = sibling.size
+                                break
+                    except Exception:
+                        pass
+                    size_gb = round(size / (1024**3), 2) if size > 0 else 0
+                    models.append({
+                        "repo": repo_id,
+                        "filename": fname,
+                        "size_bytes": size,
+                        "size_gb": size_gb,
+                        "model_type": model_type,
+                        "downloads": getattr(model, "downloads", 0) or 0
+                    })
+            return models
+        except ImportError:
+            return [{"error": "huggingface-hub not installed"}]
+        except Exception as e:
+            return [{"error": str(e)}]
+
+    def download_model(self, repo: str, filename: str, model_type: str = "checkpoints") -> Dict:
+        """Download a model file from HuggingFace to the correct ComfyUI folder."""
+        try:
+            from huggingface_hub import hf_hub_download
+
+            type_info = self.COMFYUI_MODEL_TYPES.get(model_type, self.COMFYUI_MODEL_TYPES["checkpoints"])
+            target_folder = type_info["folder"]
+
+            comfy_path = self._comfyui_path
+            if not comfy_path:
+                detect = self.detect_comfyui()
+                if detect.get("installed"):
+                    comfy_path = detect["path"]
+                else:
+                    return {"success": False, "error": "ComfyUI path not found"}
+
+            dest_dir = Path(comfy_path) / "models" / target_folder
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = dest_dir / filename
+
+            if dest_path.exists():
+                return {"success": True, "message": f"Already downloaded: {filename}", "path": str(dest_path)}
+
+            downloaded = hf_hub_download(
+                repo_id=repo,
+                filename=filename,
+                local_dir=str(dest_dir),
+                local_dir_use_symlinks=False,
+                resume_download=True
+            )
+            return {"success": True, "message": f"Downloaded {filename} to {target_folder}", "path": downloaded}
+        except ImportError:
+            return {"success": False, "error": "huggingface-hub not installed"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_installed_comfyui_models(self, model_type: str = "checkpoints") -> List[Dict]:
+        """List installed models in a ComfyUI models subfolder."""
+        comfy_path = self._comfyui_path
+        if not comfy_path:
+            detect = self.detect_comfyui()
+            if detect.get("installed"):
+                comfy_path = detect["path"]
+            else:
+                return []
+        type_info = self.COMFYUI_MODEL_TYPES.get(model_type, self.COMFYUI_MODEL_TYPES["checkpoints"])
+        target_folder = type_info["folder"]
+        extensions = type_info["extensions"]
+        model_dir = Path(comfy_path) / "models" / target_folder
+        if not model_dir.exists():
+            return []
+        models = []
+        for f in model_dir.rglob("*"):
+            if f.suffix.lower() in extensions:
+                size_gb = f.stat().st_size / (1024**3) if f.is_file() else 0
+                models.append({
+                    "name": f.name,
+                    "path": str(f),
+                    "relative_path": str(f.relative_to(model_dir)),
+                    "size_bytes": f.stat().st_size,
+                    "size_gb": round(size_gb, 2),
+                    "model_type": model_type
+                })
+        return sorted(models, key=lambda x: x["name"])
+
+    def install_comfyui(self, target_dir: str = None) -> Dict:
+        """Clone ComfyUI from GitHub into the project directory."""
+        if target_dir is None:
+            target_dir = str(Path(__file__).parent.parent.parent / "comfyui")
+        if os.path.isdir(os.path.join(target_dir, "main.py")):
+            return {"success": True, "message": f"ComfyUI already installed at {target_dir}", "path": target_dir}
+        try:
+            result = subprocess.run(
+                ["git", "clone", "https://github.com/comfyanonymous/ComfyUI.git", target_dir],
+                capture_output=True, text=True, timeout=300
+            )
+            if result.returncode == 0:
+                return {"success": True, "message": "ComfyUI installed successfully", "path": target_dir}
+            return {"success": False, "error": result.stderr[:200]}
+        except FileNotFoundError:
+            return {"success": False, "error": "Git not found. Install Git first."}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def update_comfyui(self) -> Dict:
+        """Pull latest changes for ComfyUI."""
+        comfy_path = self._comfyui_path
+        if not comfy_path:
+            detect = self.detect_comfyui()
+            if detect.get("installed"):
+                comfy_path = detect["path"]
+            else:
+                return {"success": False, "error": "ComfyUI not found"}
+        try:
+            result = subprocess.run(
+                ["git", "pull"],
+                cwd=comfy_path,
+                capture_output=True, text=True, timeout=60
+            )
+            if result.returncode == 0:
+                return {"success": True, "message": result.stdout[:200]}
+            return {"success": False, "error": result.stderr[:200]}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def __del__(self):
         if self._proc:
             try:
