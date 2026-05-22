@@ -1782,36 +1782,51 @@ Example:
         self.set_progress(80, "Processing variants...")
 
         variants = []
+        llm_error = None
         if result.get("success") and result.get("data"):
             data = result["data"]
             if isinstance(data, dict):
                 variants = data.get("variants", [data])
             elif isinstance(data, list):
                 variants = data[:3]
-            # Assign variant_ids
-            for i, v in enumerate(variants):
-                v["variant_id"] = f"VAR_{scene_id}_{shot_number}_{i+1}"
-                v["parent_shot"] = f"{scene_id}_Shot_{shot_number}"
-                v["variant_number"] = i + 1
+            if not variants:
+                llm_error = "LLM returned no variant data"
+            else:
+                # Assign variant_ids
+                for i, v in enumerate(variants):
+                    v["variant_id"] = f"VAR_{scene_id}_{shot_number}_{i+1}"
+                    v["parent_shot"] = f"{scene_id}_Shot_{shot_number}"
+                    v["variant_number"] = i + 1
 
-            if len(variants) < 3:
-                self.set_progress(85, "Not enough variants, retrying...")
-                result = self._call_llm(
-                    prompt + f"\n\nPREVIOUS ERROR: Only generated {len(variants)} variants. Generate exactly 3.",
-                    system_suffix=system_suffix
-                )
-                if result.get("success") and result.get("data"):
-                    data = result["data"]
-                    if isinstance(data, dict):
-                        variants2 = data.get("variants", [data])
-                    elif isinstance(data, list):
-                        variants2 = data[:3]
-                    for i, v in enumerate(variants2):
-                        v["variant_id"] = f"VAR_{scene_id}_{shot_number}_{i+1}"
-                        v["parent_shot"] = f"{scene_id}_Shot_{shot_number}"
-                        v["variant_number"] = i + 1
-                    if len(variants2) >= 3:
-                        variants = variants2
+                if len(variants) < 3:
+                    self.set_progress(85, "Not enough variants, retrying...")
+                    result = self._call_llm(
+                        prompt + f"\n\nPREVIOUS ERROR: Only generated {len(variants)} variants. Generate exactly 3.",
+                        system_suffix=system_suffix
+                    )
+                    if result.get("success") and result.get("data"):
+                        data = result["data"]
+                        if isinstance(data, dict):
+                            variants2 = data.get("variants", [data])
+                        elif isinstance(data, list):
+                            variants2 = data[:3]
+                        if variants2:
+                            for i, v in enumerate(variants2):
+                                v["variant_id"] = f"VAR_{scene_id}_{shot_number}_{i+1}"
+                                v["parent_shot"] = f"{scene_id}_Shot_{shot_number}"
+                                v["variant_number"] = i + 1
+                            if len(variants2) >= 3:
+                                variants = variants2
+                            else:
+                                llm_error = f"Retry generated {len(variants2)} variants, need 3"
+                        else:
+                            llm_error = "Retry also returned no data"
+        else:
+            llm_error = result.get("error", "LLM call failed")
+
+        if llm_error:
+            self.set_progress(0, "Failed", llm_error)
+            return {"success": False, "error": llm_error}
 
         self.set_progress(100, "Shot variants ready!")
         return {"success": True, "variants": variants[:3]}
@@ -1903,36 +1918,46 @@ Example:
         self.set_progress(80, "Processing shot nodes...")
 
         shots = []
+        llm_error = None
         if result.get("success") and result.get("data"):
             data = result["data"]
             if isinstance(data, dict):
                 shots = data.get("shots", [])
             elif isinstance(data, list):
                 shots = data
+            if not shots and result.get("raw"):
+                llm_error = "LLM returned no shot data"
+        else:
+            llm_error = result.get("error", "LLM call failed")
 
-            # Validate shot count
-            if len(shots) != shot_count:
-                self.set_progress(85, f"Shot count mismatch ({len(shots)} vs {shot_count}), retrying...")
-                correction = f"PREVIOUS ERROR: Generated {len(shots)} shots instead of exactly {shot_count}. Regenerate with EXACTLY {shot_count} shots."
-                result = self._call_llm(
-                    prompt + "\n\n" + correction,
-                    system_suffix=system_suffix
-                )
-                if result.get("success") and result.get("data"):
-                    data = result["data"]
-                    if isinstance(data, dict):
-                        shots = data.get("shots", [])
-                    elif isinstance(data, list):
-                        shots = data
+        if shots and len(shots) != shot_count:
+            self.set_progress(85, f"Shot count mismatch ({len(shots)} vs {shot_count}), retrying...")
+            correction = f"PREVIOUS ERROR: Generated {len(shots)} shots instead of exactly {shot_count}. Regenerate with EXACTLY {shot_count} shots."
+            result = self._call_llm(
+                prompt + "\n\n" + correction,
+                system_suffix=system_suffix
+            )
+            if result.get("success") and result.get("data"):
+                data = result["data"]
+                if isinstance(data, dict):
+                    shots = data.get("shots", [])
+                elif isinstance(data, list):
+                    shots = data
+                if not shots:
+                    llm_error = "Retry also returned no shot data"
 
-            # Ensure shot_id and shot_number consistency
-            for i, sh in enumerate(shots):
-                if not sh.get("shot_id"):
-                    sh["shot_id"] = f"{scene_id}_SHOT_{i+1}"
-                if not sh.get("shot_number"):
-                    sh["shot_number"] = i + 1
-                if not sh.get("storyboard_status"):
-                    sh["storyboard_status"] = "pending"
+        if llm_error:
+            self.set_progress(0, "Failed", llm_error)
+            return {"success": False, "error": llm_error}
+
+        # Ensure shot_id and shot_number consistency
+        for i, sh in enumerate(shots):
+            if not sh.get("shot_id"):
+                sh["shot_id"] = f"{scene_id}_SHOT_{i+1}"
+            if not sh.get("shot_number"):
+                sh["shot_number"] = i + 1
+            if not sh.get("storyboard_status"):
+                sh["storyboard_status"] = "pending"
 
         self.set_progress(100, "Scene shots generated!")
         return {"success": True, "shots": shots}
