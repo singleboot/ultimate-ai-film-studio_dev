@@ -1338,8 +1338,8 @@ LTX PROMPT RULES:
 
         shot_id = params.get("shot_id", "")
         user_instruction = params.get("user_instruction", "")
-        if not shot_id or not user_instruction.strip():
-            return {"success": False, "error": "shot_id and user_instruction required"}
+        if not shot_id:
+            return {"success": False, "error": "shot_id required"}
 
         pg = self.memory.project_graph
         shot = pg.get("shots", {}).get(shot_id)

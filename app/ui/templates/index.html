@@ -781,6 +781,7 @@
                 <div style="display:flex;gap:8px;">
                     <button class="btn btn-secondary" onclick="generateScreenplay()" id="generate-screenplay-btn" style="padding:4px 12px;font-size:0.75rem;">📜 Generate/Regenerate</button>
                     <button class="btn btn-secondary" onclick="generateAllShots()" id="generate-all-shots-btn" style="padding:4px 12px;font-size:0.75rem;">🎬 Generate All Shots</button>
+                    <button class="btn btn-secondary" onclick="approveAllShots()" id="approve-all-shots-btn" style="padding:4px 12px;font-size:0.75rem;">✅ Approve All</button>
                     <button class="btn btn-primary" onclick="proceedToAssetStudio()" id="proceed-to-asset-studio-btn" style="padding:4px 12px;font-size:0.75rem;display:none;">🎬 Continue to Asset Studio →</button>
                 </div>
             </div>
@@ -3583,6 +3584,7 @@
         let _psSceneIdx = -1; // scene index for placeholder shot modal
         let _psShotNum = -1; // shot number within scene for placeholder modal
         let _psResults = []; // array of 3 variant objects from placeholder modal
+        let _siLockState = {}; // current lock state for the open shot inspector
 
         function renderScreenplay() {
             try {
@@ -3850,8 +3852,8 @@
                 }
 
                 // Update lock button
-                const locks = data.locks || {};
-                const hasLocks = Object.values(locks).some(v => v === true);
+                _siLockState = data.locks || {};
+                const hasLocks = Object.values(_siLockState).some(v => v === true);
                 const lockBtn = document.getElementById('si-lock-btn');
                 lockBtn.textContent = hasLocks ? '🔓 Unlock' : '🔒 Lock';
             } catch(e) {
@@ -3901,10 +3903,11 @@
 
         async function siSubmitVariant(shotId) {
             const id = shotId || _siShotId;
-            const instruction = document.getElementById('si-variant-instruction').value.trim();
-            if (!instruction || !id) return;
+            if (!id) return;
+            const instruction = document.getElementById('si-variant-instruction').value.trim() || 'Generate 3 creative alternative versions';
             const gallery = document.getElementById('si-variant-gallery');
             gallery.innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">⏳ Generating 3 variants...</span>';
+            startProgressPolling();
             try {
                 const res = await fetch('/api/orchestrator/shot-variant', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -3912,14 +3915,17 @@
                 });
                 const data = await res.json();
                 if (data.success && data.variants) {
+                    stopProgressPolling(true, '3 variants ready');
                     _shotVariantResults = data.variants;
                     _shotVariantShotId = id;
                     renderShotVariantCards(gallery, data.variants);
                     notify('Variants', `3 variants generated for ${id}`, '✏️');
                 } else {
+                    stopProgressPolling(false, data.error || 'Generation failed');
                     gallery.innerHTML = '<span style="font-size:0.7rem;color:#f87171;">Failed: ' + (data.error || 'Generation failed') + '</span>';
                 }
             } catch(e) {
+                stopProgressPolling(false, e.message);
                 document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:#f87171;">Error: ' + e.message + '</span>';
             }
             document.getElementById('si-variant-input-area').style.display = 'none';
@@ -3927,6 +3933,7 @@
 
         async function siRegenerate() {
             if (!_siShotId) return;
+            startProgressPolling();
             try {
                 const res = await fetch('/api/orchestrator/shot-regenerate', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -3934,6 +3941,7 @@
                 });
                 const data = await res.json();
                 if (data.success) {
+                    stopProgressPolling(true, 'Shot regenerated');
                     notify('Regenerated', `${_siShotId} regenerated with continuity preserved`, '🔄');
                     // Update local screenplayData
                     if (screenplayData && screenplayData.scenes) {
@@ -3951,25 +3959,30 @@
                     openShotInspector(_siShotId);
                     renderScreenplay();
                 } else {
+                    stopProgressPolling(false, data.error || 'Regeneration failed');
                     notify('Failed', data.error || 'Regeneration failed', '❌');
                 }
             } catch(e) {
+                stopProgressPolling(false, e.message);
                 notify('Error', e.message, '❌');
             }
         }
 
         async function siToggleLock() {
             if (!_siShotId) return;
+            const currentlyLocked = Object.values(_siLockState).some(v => v === true);
+            const newLocked = !currentlyLocked;
             try {
                 const res = await fetch('/api/orchestrator/asset-lock', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ category: 'shots', item_id: _siShotId, field: 'composition', locked: true }),
+                    body: JSON.stringify({ category: 'shots', item_id: _siShotId, field: 'composition', locked: newLocked }),
                 });
                 const data = await res.json();
                 if (data.success) {
-                    notify('Locked', `${_siShotId} composition locked`, '🔒');
+                    _siLockState = { composition: newLocked };
                     const btn = document.getElementById('si-lock-btn');
-                    btn.textContent = '🔓 Unlock';
+                    btn.textContent = newLocked ? '🔓 Unlock' : '🔒 Lock';
+                    notify(newLocked ? 'Locked' : 'Unlocked', `${_siShotId} composition ${newLocked ? 'locked' : 'unlocked'}`, newLocked ? '🔒' : '🔓');
                 }
             } catch(e) {
                 notify('Error', e.message, '❌');
@@ -4290,11 +4303,23 @@
             if (!screenplayData || !screenplayData.scenes) return;
             const btn = document.getElementById('generate-all-shots-btn');
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating all shots...'; }
-            startProgressPolling();
-            let total = 0, failed = 0;
+            const pb = document.getElementById('screenplay-progress');
+            const bar = document.getElementById('screenplay-progress-bar');
+            const pct = document.getElementById('screenplay-progress-pct');
+            const titleEl = document.getElementById('screenplay-progress-title');
+            const subEl = document.getElementById('screenplay-progress-sub');
+            pb.style.display = 'block';
+
+            let total = 0, failed = 0, skipped = 0;
             for (let i = 0; i < screenplayData.scenes.length; i++) {
                 const s = screenplayData.scenes[i];
-                if (s.shots && s.shots.length > 0) continue;
+                if (s.shots && s.shots.length > 0) { skipped++; continue; }
+                // Show per-scene progress in the bar, start polling for backend progress
+                titleEl.textContent = `Scene ${i+1}/${screenplayData.scenes.length}: Generating ${s.scene_id || '#'+(i+1)}...`;
+                subEl.textContent = `Preparing...`;
+                pct.textContent = '0%';
+                bar.style.width = '0%';
+                startProgressPolling();
                 try {
                     const res = await fetch('/api/orchestrator/generate-scene-shots', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -4320,18 +4345,99 @@
                         });
                         s.shots = data.shots;
                         total += data.shots.length;
+                        renderScreenplay();
                     } else {
                         failed++;
+                        console.error(`Scene ${s.scene_id || i} shot generation failed:`, data.error);
                     }
                 } catch(e) {
                     failed++;
+                    console.error(`Scene ${s.scene_id || i} error:`, e);
+                }
+                if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate All Shots'; }
+            if (total === 0 && skipped > 0) {
+                bar.style.width = '100%';
+                pct.textContent = '100%';
+                titleEl.textContent = '✅ All scenes already have shots';
+                subEl.textContent = '';
+                notify('All Done', 'All scenes already have shots', '✓');
+                setTimeout(() => { pb.style.display = 'none'; }, 2000);
+            } else {
+                stopProgressPolling(total > 0, total > 0 ? `${total} shots across scenes` : 'All failed');
+                if (total > 0) notify('All Shots Generated', `${total} shots created across scenes${failed ? `, ${failed} failed` : ''}${skipped ? `, ${skipped} skipped` : ''}`, '🎬');
+                else if (failed > 0) notify('Failed', 'All scenes failed to generate shots', '❌');
+            }
+        }
+
+        async function approveAllShots() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            const btn = document.getElementById('approve-all-shots-btn');
+            if (btn) btn.disabled = true;
+            const pb = document.getElementById('screenplay-progress');
+            const bar = document.getElementById('screenplay-progress-bar');
+            const pct = document.getElementById('screenplay-progress-pct');
+            const titleEl = document.getElementById('screenplay-progress-title');
+            const subEl = document.getElementById('screenplay-progress-sub');
+            pb.style.display = 'block';
+
+            // Collect all shots
+            const allShots = [];
+            for (const s of screenplayData.scenes) {
+                if (s.shots) {
+                    for (const sh of s.shots) {
+                        if (sh.storyboard_status !== 'approved') {
+                            allShots.push({ scene: s, shot: sh });
+                        }
+                    }
                 }
             }
-            renderScreenplay();
-            if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate All Shots'; }
-            stopProgressPolling(total > 0, total > 0 ? `${total} shots across scenes` : 'All failed');
-            if (total > 0) notify('All Shots Generated', `${total} shots created across scenes${failed ? `, ${failed} failed` : ''}`, '🎬');
-            else if (failed > 0) notify('Failed', 'All scenes failed to generate shots', '❌');
+
+            if (allShots.length === 0) {
+                titleEl.textContent = '✅ All shots already approved';
+                pct.textContent = '100%';
+                bar.style.width = '100%';
+                notify('All Approved', 'No unapproved shots found', '✅');
+                setTimeout(() => { pb.style.display = 'none'; }, 1500);
+                if (btn) btn.disabled = false;
+                return;
+            }
+
+            let approved = 0, failed = 0;
+            for (let i = 0; i < allShots.length; i++) {
+                const { shot } = allShots[i];
+                titleEl.textContent = `Approving ${i+1}/${allShots.length}: ${shot.shot_id}...`;
+                pct.textContent = Math.round((i / allShots.length) * 100) + '%';
+                bar.style.width = Math.round((i / allShots.length) * 100) + '%';
+                try {
+                    const res = await fetch('/api/orchestrator/shot-approve', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ shot_id: shot.shot_id }),
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        shot.storyboard_status = 'approved';
+                        approved++;
+                    } else {
+                        failed++;
+                        console.error(`Approve ${shot.shot_id} failed:`, data.error);
+                    }
+                } catch(e) {
+                    failed++;
+                    console.error(`Approve ${shot.shot_id} error:`, e);
+                }
+                renderScreenplay();
+            }
+
+            bar.style.width = '100%';
+            pct.textContent = '100%';
+            titleEl.textContent = approved > 0 ? `✅ ${approved} shots approved` : '❌ All failed';
+            subEl.textContent = failed > 0 ? `${failed} failed` : '';
+            if (approved > 0) notify('Approved', `${approved} shots approved${failed ? `, ${failed} failed` : ''}`, '✅');
+            else notify('Failed', 'All approvals failed', '❌');
+            if (btn) btn.disabled = false;
+            setTimeout(() => { pb.style.display = 'none'; }, 2000);
         }
 
         function proceedToScenesFromScreenplay() {
