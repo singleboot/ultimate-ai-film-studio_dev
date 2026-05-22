@@ -452,6 +452,99 @@ async def reset_orchestrator():
     orchestrator.reset()
     return {"success": True}
 
+# === V2.0: Shot Variant, Lock, Approval, Turnaround, Asset Studio Routes ===
+
+@app.post("/api/orchestrator/shot-variant")
+async def create_shot_variant(data: dict):
+    """Generate 3 non-destructive variants of a shot node."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.create_shot_variant(data)
+    return result
+
+@app.post("/api/orchestrator/asset-lock")
+async def set_asset_lock(data: dict):
+    """Lock/unlock a character, location, or shot field."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.set_lock(data)
+    return result
+
+@app.get("/api/orchestrator/locks")
+async def get_locks():
+    """Get all continuity lock states."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.get_locks()
+
+@app.post("/api/orchestrator/approve-characters")
+async def approve_characters(data: dict = None):
+    """Approve characters, enabling storyboard generation."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.approve_characters(data or {})
+    return result
+
+@app.post("/api/orchestrator/approve-locations")
+async def approve_locations(data: dict = None):
+    """Approve locations, enabling storyboard generation."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.approve_locations(data or {})
+    return result
+
+@app.get("/api/orchestrator/approvals")
+async def get_approvals():
+    """Get current character/location approval state."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.get_approvals()
+
+@app.post("/api/orchestrator/generate-turnaround")
+async def generate_turnaround(data: dict):
+    """Generate a turnaround sheet for an approved character."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_turnaround(data)
+    return result
+
+@app.get("/api/orchestrator/asset-studio")
+async def get_asset_studio():
+    """Get full asset studio state (bibles, assets, approvals, locks)."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.get_asset_studio_state()
+
+# === V2.0: Shot-level endpoints ===
+
+@app.get("/api/orchestrator/shot/{shot_id}")
+async def get_shot(shot_id: str):
+    """Get enriched shot data including variants, locks, enrichment."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.get_shot(shot_id)
+
+@app.post("/api/orchestrator/shot-regenerate")
+async def regenerate_shot(data: dict):
+    """Regenerate a single shot preserving continuity and locks."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.regenerate_shot(data)
+
+@app.post("/api/orchestrator/shot-approve")
+async def approve_shot(data: dict):
+    """Mark a shot as approved for timeline."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.approve_shot(data)
+
+@app.post("/api/orchestrator/generate-shot-image")
+async def generate_shot_image(data: dict):
+    """Generate storyboard image prompt for a shot."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.generate_shot_image(data)
+
 # === Image / Video Generation Provider Management ===
 
 @app.get("/api/image/providers")

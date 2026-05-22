@@ -356,10 +356,17 @@
         .sidebar-resize-handle:hover, .sidebar-resize-handle.active {
             background: var(--accent-primary); opacity: 0.25;
         }
-        .characters-grid, .locations-grid {
+        .characters-grid, .locations-grid, .asset-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 12px;
+        }
+        .asset-card:hover {
+            border-color: var(--accent-primary) !important;
+            box-shadow: 0 0 12px rgba(100, 200, 255, 0.15);
+        }
+        .asset-tab {
+            min-height: 200px;
         }
         /* Small inline button spinner */
         .btn-spinner {
@@ -545,8 +552,7 @@
             <div class="workflow-nav">
                 <span class="workflow-step active" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('asset-studio')">🎬 Asset Studio</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
@@ -727,18 +733,21 @@
             <!-- Generated Ideas -->
             <div id="ideas-container" style="margin-top:20px;"></div>
 
-
+            <!-- Bottom Navigation -->
+            <div style="display:flex;gap:10px;margin-top:25px;justify-content:space-between;align-items:center;">
+                <button class="btn btn-secondary" onclick="goHome()" style="padding:8px 20px;">← Back to Home</button>
+                <button class="btn btn-primary" onclick="navigateToWorkflow('screenplay')" id="continue-to-screenplay-btn" style="padding:8px 20px;display:none;">📜 Continue to Screenplay →</button>
+            </div>
         </div>
     </div>
 
-    <!-- PAGE: Screenplay -->
+    <!-- PAGE: Screenplay — Shot-Centric Cinematic Workspace -->
     <div class="page" id="page-screenplay">
         <div class="container">
             <div class="workflow-nav">
                 <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
                 <span class="workflow-step active" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('asset-studio')">🎬 Asset Studio</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
@@ -746,7 +755,7 @@
 
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
                 <button class="btn btn-secondary" onclick="navigateToWorkflow('ideas')" style="padding:6px 14px;font-size:0.8rem;">← Back to Ideas</button>
-                <h2 style="color:var(--accent-primary);margin:0;">📜 Screenplay</h2>
+                <h2 style="color:var(--accent-primary);margin:0;">📜 Cinematic Shot Workspace</h2>
             </div>
 
             <div id="screenplay-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
@@ -759,30 +768,107 @@
                 </div>
             </div>
 
+            <!-- Shot Summary Bar -->
+            <div id="shot-summary-bar" style="display:none;background:var(--bg-secondary);border-radius:8px;padding:10px 16px;margin-bottom:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+                <div style="display:flex;gap:16px;font-size:0.8rem;">
+                    <span>🎬 Total: <strong id="ss-total-shots">0</strong></span>
+                    <span style="color:#4caf50;">✅ Approved: <strong id="ss-approved">0</strong></span>
+                    <span style="color:#ff9800;">⏳ Enriched: <strong id="ss-enriched">0</strong></span>
+                    <span>⬜ Pending: <strong id="ss-pending">0</strong></span>
+                    <span style="color:var(--accent-primary);">🔒 Locked: <strong id="ss-locked">0</strong></span>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="generateScreenplay()" id="generate-screenplay-btn" style="padding:4px 12px;font-size:0.75rem;">📜 Generate/Regenerate</button>
+                    <button class="btn btn-primary" onclick="proceedToAssetStudio()" id="proceed-to-asset-studio-btn" style="padding:4px 12px;font-size:0.75rem;display:none;">🎬 Continue to Asset Studio →</button>
+                </div>
+            </div>
+
+            <!-- Film Info Banner -->
+            <div id="screenplay-film-info" style="display:none;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--accent-primary);padding:12px 16px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <div>
+                        <span style="font-weight:600;font-size:0.95rem;" id="sp-film-title">—</span>
+                        <span style="font-size:0.75rem;color:var(--text-secondary);margin-left:8px;" id="sp-film-logline"></span>
+                    </div>
+                    <div style="display:flex;gap:12px;font-size:0.75rem;color:var(--text-secondary);">
+                        <span id="sp-tone">🎭 —</span>
+                        <span id="sp-scenes">🎬 — scenes</span>
+                        <span id="sp-dialogue">💬 —</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Shot Workspace Container -->
             <div id="screenplay-container" style="margin-bottom:15px;">
-                <div style="background:var(--bg-secondary);padding:20px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">
-                    Select a story idea from the Ideas page, then generate the screenplay.
+                <div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">
+                    Select a story idea from the Ideas page, then click "Generate Screenplay" to build your shot workspace.
                 </div>
             </div>
 
             <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
                 <button class="btn btn-secondary" onclick="navigateToWorkflow('ideas')" style="padding:8px 20px;">← Back to Ideas</button>
                 <div style="display:flex;gap:8px;">
-                    <button class="btn btn-secondary" onclick="generateScreenplay()" id="generate-screenplay-btn" style="padding:8px 20px;">📜 Generate Screenplay</button>
-                    <button class="btn btn-primary" onclick="proceedToLocations()" id="proceed-to-locations-btn" style="padding:8px 20px;display:none;">🏠 Continue to Locations →</button>
+                    <button class="btn btn-secondary" onclick="generateScreenplay()" style="padding:8px 20px;">📜 Generate Screenplay</button>
+                    <button class="btn btn-primary" onclick="proceedToAssetStudio()" id="proceed-to-asset-studio-btn-bottom" style="padding:8px 20px;display:none;">🎬 Continue to Asset Studio →</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- PAGE: Locations -->
-    <div class="page" id="page-locations">
+    <!-- Shot Inspector Modal (Fullscreen) -->
+    <div class="modal-overlay" id="shot-inspector-modal" style="display:none;">
+        <div class="modal" style="max-width:95vw;width:95vw;height:95vh;padding:0;overflow:hidden;border-radius:8px;display:flex;flex-direction:column;">
+            <!-- Header -->
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border-color);flex-shrink:0;background:var(--bg-primary);">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <h3 style="margin:0;font-size:1rem;" id="si-shot-title">SHOT_001</h3>
+                    <span style="font-size:0.7rem;padding:2px 8px;border-radius:3px;background:var(--bg-tertiary);color:var(--text-secondary);" id="si-shot-type">—</span>
+                    <span id="si-status-badge" style="font-size:0.7rem;padding:2px 8px;border-radius:3px;">pending</span>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn btn-secondary" onclick="siGenerateImage()" id="si-gen-btn" style="padding:4px 10px;font-size:0.7rem;">🎨 Flux Generate</button>
+                    <button class="btn btn-secondary" onclick="siCreateVariant()" id="si-variant-btn" style="padding:4px 10px;font-size:0.7rem;">✏️ Variant</button>
+                    <button class="btn btn-secondary" onclick="siRegenerate()" id="si-regen-btn" style="padding:4px 10px;font-size:0.7rem;">🔄 Regen</button>
+                    <button class="btn btn-secondary" onclick="siToggleLock()" id="si-lock-btn" style="padding:4px 10px;font-size:0.7rem;">🔒 Lock</button>
+                    <button class="btn btn-primary" onclick="siApprove()" id="si-approve-btn" style="padding:4px 10px;font-size:0.7rem;">✅ Approve</button>
+                    <button class="btn btn-secondary" onclick="closeShotInspector()" style="padding:4px 10px;font-size:0.75rem;">✕</button>
+                </div>
+            </div>
+            <!-- Body -->
+            <div style="display:flex;flex:1;overflow:hidden;">
+                <!-- Left: Image + Gallery -->
+                <div style="flex:1;display:flex;flex-direction:column;overflow-y:auto;padding:12px;gap:10px;">
+                    <div id="si-image-area" style="flex:1;min-height:250px;background:var(--bg-secondary);border-radius:6px;display:flex;align-items:center;justify-content:center;">
+                        <span style="color:var(--text-secondary);font-size:0.8rem;">Generate a storyboard image</span>
+                    </div>
+                    <div id="si-scene-context" style="font-size:0.75rem;color:var(--text-secondary);padding:6px 10px;background:var(--bg-tertiary);border-radius:4px;display:none;"></div>
+                    <div>
+                        <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Variants:</div>
+                        <div id="si-variant-gallery" style="display:flex;gap:6px;flex-wrap:wrap;min-height:40px;background:var(--bg-secondary);border-radius:4px;padding:6px;">
+                            <span style="font-size:0.7rem;color:var(--text-secondary);">No variants yet</span>
+                        </div>
+                    </div>
+                    <!-- Variant input area -->
+                    <div id="si-variant-input-area" style="display:none;">
+                        <textarea id="si-variant-instruction" style="width:100%;min-height:50px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;padding:6px;font-size:0.75rem;" placeholder="Describe cinematic change..."></textarea>
+                        <button class="btn btn-primary" onclick="siSubmitVariant()" style="padding:4px 10px;font-size:0.7rem;margin-top:4px;">Generate 3 Variants</button>
+                    </div>
+                </div>
+                <!-- Right: Metadata -->
+                <div style="width:340px;overflow-y:auto;padding:12px;border-left:1px solid var(--border-color);font-size:0.78rem;line-height:1.6;">
+                    <div id="si-metadata"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAGE: Asset Studio (merged Character + Location) -->
+    <div class="page" id="page-asset-studio">
         <div class="container">
             <div class="workflow-nav">
                 <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
-                <span class="workflow-step active" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step active" onclick="navigateToWorkflow('asset-studio')">🎬 Asset Studio</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
@@ -790,75 +876,95 @@
 
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
                 <button class="btn btn-secondary" onclick="navigateToWorkflow('screenplay')" style="padding:6px 14px;font-size:0.8rem;">← Back to Screenplay</button>
-                <h2 style="color:var(--accent-primary);margin:0;">🏠 Locations</h2>
+                <h2 style="color:var(--accent-primary);margin:0;">🎬 Character & Location Asset Studio</h2>
             </div>
 
-            <div id="locations-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
+            <!-- Tabs -->
+            <div style="display:flex;gap:8px;margin-bottom:15px;border-bottom:1px solid var(--border-color);padding-bottom:8px;">
+                <button class="btn btn-primary" onclick="switchAssetTab('characters')" id="tab-chars-btn" style="padding:8px 18px;">👤 Characters (<span id="asset-char-count">0</span>)</button>
+                <button class="btn btn-secondary" onclick="switchAssetTab('locations')" id="tab-locs-btn" style="padding:8px 18px;">🏠 Locations (<span id="asset-loc-count">0</span>)</button>
+            </div>
+
+            <!-- Asset progress -->
+            <div id="asset-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <span style="font-weight:600;" id="locations-progress-title">Generating locations...</span>
-                    <span style="color:var(--accent-primary);font-weight:700;" id="locations-progress-pct">0%</span>
+                    <span style="font-weight:600;" id="asset-progress-title">Processing...</span>
+                    <span style="color:var(--accent-primary);font-weight:700;" id="asset-progress-pct">0%</span>
                 </div>
                 <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
-                    <div id="locations-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
+                    <div id="asset-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
                 </div>
             </div>
 
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <div style="font-size:0.9rem;color:var(--text-secondary);">
-                    <span id="locations-count-label">3 locations</span> — generate locations for your story
+            <!-- Character Tab -->
+            <div id="asset-chars-tab" class="asset-tab">
+                <div id="char-asset-container" class="asset-grid"></div>
+                <div id="char-asset-empty" style="text-align:center;padding:40px;color:var(--text-secondary);display:none;">
+                    <p>No characters found. Generate a screenplay first to populate character data.</p>
                 </div>
-                <button class="btn btn-primary" type="button" onclick="generateLocations()" style="padding:8px 18px;">✨ Generate Locations</button>
             </div>
 
-            <div id="locations-container" class="locations-grid"></div>
+            <!-- Location Tab -->
+            <div id="asset-locs-tab" class="asset-tab" style="display:none;">
+                <div id="loc-asset-container" class="asset-grid"></div>
+                <div id="loc-asset-empty" style="text-align:center;padding:40px;color:var(--text-secondary);display:none;">
+                    <p>No locations found. Generate a screenplay first to populate location data.</p>
+                </div>
+            </div>
+
+            <!-- Approval Bar -->
+            <div id="asset-approval-bar" style="margin-top:20px;padding:12px;background:var(--bg-secondary);border-radius:8px;display:flex;align-items:center;justify-content:space-between;">
+                <div style="display:flex;gap:12px;align-items:center;">
+                    <span style="font-weight:600;">Approvals:</span>
+                    <span id="asset-char-approval-badge" style="padding:3px 8px;border-radius:4px;font-size:0.8rem;background:#555;color:#fff;">👤 Characters: Pending</span>
+                    <span id="asset-loc-approval-badge" style="padding:3px 8px;border-radius:4px;font-size:0.8rem;background:#555;color:#fff;">🏠 Locations: Pending</span>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="approveAllCharacters()" id="approve-chars-btn" style="padding:6px 14px;font-size:0.8rem;">✅ Approve Characters</button>
+                    <button class="btn btn-secondary" onclick="approveAllLocations()" id="approve-locs-btn" style="padding:6px 14px;font-size:0.8rem;">✅ Approve Locations</button>
+                </div>
+            </div>
 
             <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
                 <button class="btn btn-secondary" onclick="navigateToWorkflow('screenplay')" style="padding:8px 20px;">← Back to Screenplay</button>
-                <button class="btn btn-primary" onclick="proceedToCharacters()" style="padding:8px 20px;">👤 Continue to Characters →</button>
+                <button class="btn btn-primary" onclick="proceedToStoryboard()" id="proceed-to-storyboard-btn" style="padding:8px 20px;" disabled>📋 Continue to Storyboard →</button>
             </div>
         </div>
     </div>
 
-    <!-- PAGE: Characters -->
-    <div class="page" id="page-characters">
-        <div class="container">
-            <div class="workflow-nav">
-                <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
-                <span class="workflow-step active" onclick="navigateToWorkflow('characters')">👤 Characters</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
+    <!-- Asset Studio Expand Modal -->
+    <div class="modal-overlay" id="asset-expand-modal" style="display:none;">
+        <div class="modal" style="max-width:90vw;width:1200px;height:85vh;display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-color);">
+                <h3 style="margin:0;" id="asset-expand-title">Asset</h3>
+                <button class="btn btn-secondary" onclick="closeAssetExpand()" style="padding:4px 12px;">✕</button>
             </div>
-
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-                <button class="btn btn-secondary" onclick="navigateToWorkflow('locations')" style="padding:6px 14px;font-size:0.8rem;">← Back to Locations</button>
-                <h2 style="color:var(--accent-primary);margin:0;">👤 Characters</h2>
-            </div>
-
-            <div id="characters-progress" class="progress-bar" style="display:none;margin-bottom:15px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <span style="font-weight:600;" id="char-progress-title">Generating characters...</span>
-                    <span style="color:var(--accent-primary);font-weight:700;" id="char-progress-pct">0%</span>
+            <div style="display:flex;flex:1;gap:20px;overflow:hidden;padding-top:15px;">
+                <!-- Left: Image -->
+                <div style="flex:1;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
+                    <div id="asset-expand-image-area" style="flex:1;background:var(--bg-secondary);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:300px;">
+                        <span style="color:var(--text-secondary);">Generate an image to preview</span>
+                    </div>
+                    <div id="asset-expand-variant-gallery" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px;background:var(--bg-secondary);border-radius:8px;min-height:60px;">
+                        <span style="color:var(--text-secondary);font-size:0.8rem;">Variants will appear here</span>
+                    </div>
                 </div>
-                <div style="width:100%;height:6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;">
-                    <div id="char-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
+                <!-- Right: Metadata + Controls -->
+                <div style="width:360px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
+                    <div id="asset-expand-metadata" style="flex:1;font-size:0.85rem;line-height:1.6;"></div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--border-color);padding-top:10px;">
+                        <button class="btn btn-primary" onclick="assetGenerateImage()" id="asset-gen-btn" style="padding:6px 12px;font-size:0.8rem;">🎨 Generate</button>
+                        <button class="btn btn-secondary" onclick="assetCreateVariant()" id="asset-variant-btn" style="padding:6px 12px;font-size:0.8rem;">✏️ Variant</button>
+                        <button class="btn btn-secondary" onclick="assetGenerateTurnaround()" id="asset-turnaround-btn" style="padding:6px 12px;font-size:0.8rem;display:none;">📋 Turnaround</button>
+                        <button class="btn btn-secondary" onclick="assetToggleLock()" id="asset-lock-btn" style="padding:6px 12px;font-size:0.8rem;">🔒 Lock</button>
+                        <button class="btn btn-secondary" onclick="assetApprove()" id="asset-approve-btn" style="padding:6px 12px;font-size:0.8rem;">✅ Approve</button>
+                    </div>
+                    <!-- Variant creation input (hidden by default) -->
+                    <div id="asset-variant-input-area" style="display:none;border-top:1px solid var(--border-color);padding-top:10px;">
+                        <textarea id="asset-variant-instruction" style="width:100%;min-height:60px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;padding:8px;font-size:0.8rem;" placeholder="Describe what you'd like to change..."></textarea>
+                        <button class="btn btn-primary" onclick="assetSubmitVariant()" style="padding:6px 12px;font-size:0.8rem;margin-top:6px;">Generate Variant</button>
+                    </div>
                 </div>
-            </div>
-
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <div style="font-size:0.9rem;color:var(--text-secondary);">
-                    <span id="char-count-label">3 characters</span> — fill in details or auto-generate
-                </div>
-                <button class="btn btn-primary" type="button" onclick="generateAllCharacters()" style="padding:8px 18px;">✨ Generate All</button>
-            </div>
-
-            <div id="characters-container" class="characters-grid"></div>
-
-            <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
-                <button class="btn btn-secondary" onclick="navigateToWorkflow('locations')" style="padding:8px 20px;">← Back to Locations</button>
-                <button class="btn btn-primary" onclick="proceedToImagePrompts()" style="padding:8px 20px;">📋 Continue to Storyboard →</button>
             </div>
         </div>
     </div>
@@ -869,15 +975,14 @@
             <div class="workflow-nav">
                 <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('asset-studio')">🎬 Asset Studio</span>
                 <span class="workflow-step active" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
             </div>
 
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-                <button class="btn btn-secondary" onclick="navigateToWorkflow('characters')" style="padding:6px 14px;font-size:0.8rem;">← Back to Characters</button>
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('asset-studio')" style="padding:6px 14px;font-size:0.8rem;">← Back to Asset Studio</button>
                 <h2 style="color:var(--accent-primary);margin:0;">📋 Scene Board</h2>
             </div>
 
@@ -904,7 +1009,7 @@
             <div id="storyboard-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;"></div>
 
             <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
-                <button class="btn btn-secondary" onclick="navigateToWorkflow('characters')" style="padding:8px 20px;">← Back to Characters</button>
+                <button class="btn btn-secondary" onclick="navigateToWorkflow('asset-studio')" style="padding:8px 20px;">← Back to Asset Studio</button>
                 <button class="btn btn-primary" onclick="proceedToVideoPrompts()" style="padding:8px 20px;">🎞️ Continue to Video Prompts →</button>
             </div>
         </div>
@@ -916,8 +1021,7 @@
             <div class="workflow-nav">
                 <span class="workflow-step" onclick="navigateToWorkflow('ideas')">📝 Ideas</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('screenplay')">📜 Screenplay</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('locations')">🏠 Locations</span>
-                <span class="workflow-step" onclick="navigateToWorkflow('characters')">👤 Characters</span>
+                <span class="workflow-step" onclick="navigateToWorkflow('asset-studio')">🎬 Asset Studio</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('storyboard')">📋 Storyboard</span>
                 <span class="workflow-step active" onclick="navigateToWorkflow('video-prompts')">🎞️ Video Prompts</span>
                 <span class="workflow-step" onclick="navigateToWorkflow('videos')">🎥 Videos</span>
@@ -1615,11 +1719,10 @@
 
         // === PAGE NAVIGATION ===
         function navigateToWorkflow(step) {
-            const built = { ideas: 1, screenplay: 1, locations: 1, characters: 1, storyboard: 1, 'video-prompts': 1, videos: 1 };
+            const built = { ideas: 1, screenplay: 1, 'asset-studio': 1, storyboard: 1, 'video-prompts': 1, videos: 1 };
             if (built[step]) {
                 if (step === 'screenplay') renderScreenplay();
-                if (step === 'characters') renderCharacterCards();
-                if (step === 'locations') renderLocations();
+                if (step === 'asset-studio') loadAssetStudioData();
                 if (step === 'storyboard') renderStoryboard();
                 if (step === 'video-prompts') renderVideoStoryboard();
                 showPage(step);
@@ -1678,7 +1781,8 @@
                 sidebarExpanded: !document.getElementById('sidebar').classList.contains('collapsed'),
                 scenesCount: window.scenesCount || 0,
                 charactersCount: window.charactersCount || 0,
-                projectSettings: currentProject?.settings || null
+                projectSettings: currentProject?.settings || null,
+                _assetStudioApprovals: window._assetStudioApprovals || { characters: false, locations: false },
             };
         }
 
@@ -1700,6 +1804,9 @@
             savedAssets = state.savedAssets ? state.savedAssets.slice() : [];
             window.scenesCount = state.scenesCount || 0;
             window.charactersCount = state.charactersCount || 0;
+            if (state._assetStudioApprovals) {
+                window._assetStudioApprovals = state._assetStudioApprovals;
+            }
             if (state.projectSettings) {
                 if (!currentProject) currentProject = {};
                 currentProject.settings = state.projectSettings;
@@ -1770,14 +1877,15 @@
                 if (data.success && data.state) {
                     restoreProjectState(data.state);
                     renderAssets();
-                    renderCharacterCards();
-                    renderLocations();
                     renderStoryboard();
                     renderVideoStoryboard();
                     // Refresh ideas page display
                     if (topicIdeas.length && typeof renderIdeas === 'function') {
                         renderIdeas();
                     }
+                    // Show continue button if idea selected
+                    const contBtn = document.getElementById('continue-to-screenplay-btn');
+                    if (contBtn) contBtn.style.display = selectedIdeaIndex >= 0 ? 'inline-block' : 'none';
                     // Refresh screenplay display
                     if (screenplayData && typeof renderScreenplay === 'function') {
                         renderScreenplay();
@@ -3064,6 +3172,8 @@
             }
             renderIdeas();
             scheduleSaveState();
+            const btn = document.getElementById('continue-to-screenplay-btn');
+            if (btn) btn.style.display = selectedIdeaIndex >= 0 ? 'inline-block' : 'none';
         }
 
         // === SERVICE STATUS POLLING ===
@@ -3404,7 +3514,7 @@
                     renderScreenplay();
                     scheduleSaveState();
                     document.getElementById('screenplay-progress-title').textContent = '✅ Screenplay generated!';
-                    document.getElementById('proceed-to-locations-btn').style.display = 'inline-block';
+                    document.getElementById('proceed-to-asset-studio-btn').style.display = 'inline-block';
                 } else {
                     notify('Screenplay Failed', data.error || 'Generation failed. Check LLM connection.');
                 }
@@ -3417,59 +3527,436 @@
             setTimeout(() => { pb.style.display = 'none'; }, 1500);
         }
 
+        let _siShotId = null; // currently open shot inspector shot_id
+        let _collapsedScenes = {}; // scene_id → true/false
+
+        function toggleSceneCollapse(sceneId) {
+            _collapsedScenes[sceneId] = !_collapsedScenes[sceneId];
+            const grid = document.getElementById('shot-grid-' + sceneId);
+            const icon = document.getElementById('collapse-icon-' + sceneId);
+            if (grid) grid.style.display = _collapsedScenes[sceneId] ? 'none' : 'grid';
+            if (icon) icon.textContent = _collapsedScenes[sceneId] ? '▶' : '▼';
+        }
+
         function renderScreenplay() {
             const container = document.getElementById('screenplay-container');
             if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.length) {
-                container.innerHTML = '<div style="background:var(--bg-secondary);padding:20px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
+                container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
+                document.getElementById('shot-summary-bar').style.display = 'none';
+                document.getElementById('screenplay-film-info').style.display = 'none';
                 return;
             }
 
             const sp = screenplayData;
-            let totalShots = sp.scenes.reduce((sum, s) => sum + (s.estimated_shots || 1), 0);
-            const charsSet = new Set();
-            sp.scenes.forEach(s => (s.characters_present || []).forEach(c => charsSet.add(c)));
+            const hasShotNodes = sp.scenes.some(s => s.shots && s.shots.length > 0);
 
-            let html = `
-                <div style="background:var(--bg-secondary);border-radius:8px;border:1px solid var(--accent-primary);padding:20px;margin-bottom:15px;">
-                    <h3 style="color:var(--accent-primary);font-size:1.2rem;margin-bottom:6px;">${escapeHtml(sp.title || 'Untitled')}</h3>
-                    <p style="color:var(--text-secondary);font-style:italic;margin-bottom:12px;">${escapeHtml(sp.logline || '')}</p>
-                    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-secondary);">
-                        <span>🎭 Tone: ${sp.tone || 'N/A'}</span>
-                        <span>🎬 Scenes: ${sp.scenes.length}</span>
-                        <span>📸 Total Shots: ${totalShots}</span>
-                        <span>👥 Characters: ${charsSet.size}</span>
-                        <span>💬 Dialogue: ${sp.dialogue_enabled ? 'Enabled' : 'Disabled (Visual Storytelling)'}</span>
-                    </div>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:8px;">`;
+            // Show film info
+            document.getElementById('screenplay-film-info').style.display = 'block';
+            document.getElementById('sp-film-title').textContent = sp.title || 'Untitled';
+            document.getElementById('sp-film-logline').textContent = (sp.logline || '').substring(0, 80);
+            document.getElementById('sp-tone').textContent = '🎭 ' + (sp.tone || '—');
+            document.getElementById('sp-scenes').textContent = '🎬 ' + sp.scenes.length + ' scenes';
+            document.getElementById('sp-dialogue').textContent = '💬 ' + (sp.dialogue_enabled ? 'Enabled' : 'Visual');
+
+            // Show summary bar
+            const totalShots = hasShotNodes
+                ? sp.scenes.reduce((sum, s) => sum + (s.shots ? s.shots.length : 0), 0)
+                : sp.scenes.reduce((sum, s) => sum + (s.estimated_shots || 1), 0);
+            document.getElementById('shot-summary-bar').style.display = 'flex';
+            document.getElementById('ss-total-shots').textContent = totalShots;
+
+            // Count statuses
+            let approvedCt = 0, enrichedCt = 0, pendingCt = 0, lockedCt = 0;
+            if (hasShotNodes) {
+                sp.scenes.forEach(s => (s.shots || []).forEach(sh => {
+                    const st = sh.storyboard_status || 'pending';
+                    if (st === 'approved') approvedCt++;
+                    else if (st === 'enriched' || st === 'regenerated') enrichedCt++;
+                    else pendingCt++;
+                }));
+            }
+            document.getElementById('ss-approved').textContent = approvedCt;
+            document.getElementById('ss-enriched').textContent = enrichedCt;
+            document.getElementById('ss-pending').textContent = pendingCt;
+            document.getElementById('ss-locked').textContent = lockedCt;
+
+            document.getElementById('proceed-to-asset-studio-btn').style.display = 'inline-block';
+            document.getElementById('proceed-to-asset-studio-btn-bottom').style.display = 'inline-block';
+
+            let html = '<div style="display:flex;flex-direction:column;gap:10px;">';
 
             sp.scenes.forEach((s, i) => {
                 const chars = (s.characters_present || []).join(', ') || 'None';
-                const dialogueHtml = s.dialogue && s.dialogue.length ? `
-                    <div style="margin-top:8px;padding:8px;background:var(--bg-tertiary);border-radius:6px;">
-                        <div style="font-size:0.8rem;color:var(--accent-primary);margin-bottom:4px;">🎙️ Dialogue:</div>
-                        ${s.dialogue.map(d => `<div style="font-size:0.8rem;padding:2px 0;"><strong>${escapeHtml(d.speaker || '')}:</strong> ${escapeHtml(d.text || '')}</div>`).join('')}
-                    </div>` : '<div style="margin-top:8px;font-size:0.75rem;color:var(--text-secondary);">🎬 Visual storytelling (no dialogue)</div>';
+                const shotCount = hasShotNodes ? (s.shots ? s.shots.length : 0) : (s.estimated_shots || 1);
+                const collapsible = _collapsedScenes[s.scene_id] || false;
 
+                // Scene header (always visible, clickable)
                 html += `
-                    <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;border-left:3px solid var(--accent-primary);">
-                        <div style="display:flex;justify-content:space-between;align-items:start;">
-                            <div>
-                                <strong style="color:var(--accent-primary);">#${s.scene_number || i+1}</strong>
-                                <span style="color:var(--text-primary);margin-left:8px;">${escapeHtml(s.scene_title || '')}</span>
+                    <div style="background:var(--bg-secondary);border-radius:8px;overflow:hidden;border:1px solid var(--border-color);">
+                        <div onclick="toggleSceneCollapse('${s.scene_id}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;cursor:pointer;background:var(--bg-tertiary);">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span id="collapse-icon-${s.scene_id}" style="font-size:0.7rem;color:var(--text-secondary);">${collapsible ? '▶' : '▼'}</span>
+                                <strong style="color:var(--accent-primary);font-size:0.85rem;">${s.scene_id || '#' + (s.scene_number || i+1)}</strong>
+                                <span style="color:var(--text-primary);font-size:0.85rem;">${escapeHtml(s.scene_title || '')}</span>
+                                <span style="font-size:0.7rem;color:var(--text-secondary);">📍 ${s.location_id || 'Unknown'}</span>
                             </div>
-                            <span style="font-size:0.75rem;color:var(--text-secondary);">${s.estimated_shots || 1} shot(s)</span>
+                            <div style="display:flex;align-items:center;gap:8px;font-size:0.7rem;color:var(--text-secondary);">
+                                <span>👥 ${chars}</span>
+                                <span>🎭 ${s.emotional_tone || '—'}</span>
+                                <span style="background:var(--bg-secondary);padding:2px 6px;border-radius:3px;">${shotCount} shot${shotCount !== 1 ? 's' : ''}</span>
+                            </div>
                         </div>
-                        <div style="font-size:0.85rem;color:var(--text-secondary);margin-top:4px;">
-                            📍 ${s.location_id || 'Unknown'} | 👥 ${chars} | 🎭 ${s.emotional_tone || 'N/A'}
-                        </div>
-                        <div style="font-size:0.85rem;color:var(--text-primary);margin-top:6px;">${escapeHtml(s.synopsis || '')}</div>
-                        ${dialogueHtml}
+                        <div style="font-size:0.78rem;color:var(--text-primary);padding:4px 12px;background:var(--bg-secondary);">
+                            ${escapeHtml((s.synopsis || '').substring(0, 200))}
+                        </div>`;
+
+                // Dialogue snippet
+                if (s.dialogue && s.dialogue.length) {
+                    html += `<div style="font-size:0.7rem;color:var(--text-secondary);padding:2px 12px 6px;background:var(--bg-secondary);">
+                        🎙️ ${s.dialogue.slice(0, 2).map(d => `<em>${escapeHtml(d.speaker || '')}: ${escapeHtml((d.text || '').substring(0, 50))}</em>`).join(' | ')}
+                        ${s.dialogue.length > 2 ? ` <span style="color:var(--accent-primary);">+${s.dialogue.length - 2} more</span>` : ''}
                     </div>`;
+                }
+
+                // Shot grid
+                if (hasShotNodes && s.shots && s.shots.length) {
+                    html += `<div id="shot-grid-${s.scene_id}" style="display:${collapsible ? 'none' : 'grid'};grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;padding:8px 12px 12px;">`;
+                    s.shots.forEach(sh => {
+                        const status = sh.storyboard_status || 'pending';
+                        const statusColor = status === 'approved' ? '#4caf50' : (status === 'enriched' || status === 'regenerated' ? '#ff9800' : '#555');
+                        const hasImage = sh.image_generated || false;
+                        const locked = false; // will be fetched from backend
+                        html += `
+                            <div style="background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);">
+                                <!-- Top: ID + Type + Badge -->
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:var(--bg-primary);">
+                                    <span style="font-size:0.65rem;color:var(--accent-primary);font-weight:600;">${sh.shot_id || 'SHOT_?'}</span>
+                                    <span style="font-size:0.6rem;color:var(--text-secondary);">${sh.shot_type || ''}</span>
+                                    <span style="font-size:0.55rem;padding:1px 4px;border-radius:2px;background:${statusColor};color:#fff;">${status}</span>
+                                </div>
+                                <!-- Center: Image / Placeholder -->
+                                <div style="aspect-ratio:16/9;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:var(--text-secondary);">
+                                    ${hasImage ? '<span>🖼️ Generated</span>' : '<span>No preview</span>'}
+                                </div>
+                                <!-- Bottom: Actions -->
+                                <div style="display:flex;gap:2px;padding:4px 6px;flex-wrap:wrap;">
+                                    <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">⛶</button>
+                                    <button class="btn btn-primary" onclick="siGenerateImage('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">🎨</button>
+                                    <button class="btn btn-secondary" onclick="siShowVariantInput('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">✏️</button>
+                                    <button class="btn btn-secondary" onclick="shotRegenerate('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">🔄</button>
+                                    <button class="btn btn-secondary" onclick="shotToggleLock('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">${locked ? '🔓' : '🔒'}</button>
+                                    <button class="btn btn-secondary" onclick="shotApprove('${sh.shot_id}')" style="padding:2px 5px;font-size:0.55rem;">✅</button>
+                                </div>
+                            </div>`;
+                    });
+                    html += `</div>`;
+                }
+
+                html += `</div>`;
             });
 
             html += '</div>';
             container.innerHTML = html;
+            // Update status counts after render
+            _updateShotSummaryCounts();
+        }
+
+        function _updateShotSummaryCounts() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            const hasShotNodes = screenplayData.scenes.some(s => s.shots && s.shots.length > 0);
+            if (!hasShotNodes) return;
+            let approved = 0, enriched = 0, pending = 0;
+            screenplayData.scenes.forEach(s => (s.shots || []).forEach(sh => {
+                const st = sh.storyboard_status || 'pending';
+                if (st === 'approved') approved++;
+                else if (st === 'enriched' || st === 'regenerated') enriched++;
+                else pending++;
+            }));
+            document.getElementById('ss-approved').textContent = approved;
+            document.getElementById('ss-enriched').textContent = enriched;
+            document.getElementById('ss-pending').textContent = pending;
+        }
+
+        // === SHOT INSPECTOR ===
+
+        function openShotInspector(shotId) {
+            _siShotId = shotId;
+            if (!screenplayData || !screenplayData.scenes) return;
+            let found = null, sceneObj = null;
+            for (const s of screenplayData.scenes) {
+                if (s.shots) {
+                    for (const sh of s.shots) {
+                        if (sh.shot_id === shotId) { found = sh; sceneObj = s; break; }
+                    }
+                }
+                if (found) break;
+            }
+            if (!found) { notify('Not Found', `Shot ${shotId}`, '⚠️'); return; }
+
+            // Set header
+            document.getElementById('si-shot-title').textContent = shotId;
+            document.getElementById('si-shot-type').textContent = found.shot_type || '—';
+            const status = found.storyboard_status || 'pending';
+            const badge = document.getElementById('si-status-badge');
+            const statusColors = {approved: '#4caf50', enriched: '#ff9800', regenerated: '#ff9800', pending: '#555'};
+            badge.style.background = statusColors[status] || '#555';
+            badge.textContent = status;
+
+            // Scene context
+            const ctxDiv = document.getElementById('si-scene-context');
+            if (sceneObj) {
+                ctxDiv.style.display = 'block';
+                ctxDiv.textContent = `📍 ${sceneObj.scene_id}: ${sceneObj.scene_title} @ ${sceneObj.location_id} · 🎭 ${sceneObj.emotional_tone || '—'}`;
+            } else {
+                ctxDiv.style.display = 'none';
+            }
+
+            // Image area
+            const imgArea = document.getElementById('si-image-area');
+            imgArea.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem;">Generate a storyboard image</span>';
+
+            // Metadata
+            const metaDiv = document.getElementById('si-metadata');
+            const charsList = (found.characters_present || []).join(', ') || '—';
+            const dialogueHtml = (found.dialogue || []).map(d => `<div style="padding:2px 0;"><strong>${escapeHtml(d.speaker || '')}:</strong> ${escapeHtml(d.text || '')}</div>`).join('') || '<span style="color:var(--text-secondary);">No dialogue</span>';
+            const motifs = (found.visual_motifs || []).join(', ') || '—';
+            const motionOps = (found.motion_opportunities || []).join(', ') || '—';
+            const envMotion = (found.environmental_motion || []).join(', ') || '—';
+            const audioNotes = (found.audio_notes || []).join(', ') || '—';
+            metaDiv.innerHTML = `
+                <div style="margin-bottom:10px;"><b>📝 Dialogue</b><br>${dialogueHtml}</div>
+                <hr style="border:none;border-top:1px solid var(--border-color);margin:6px 0;">
+                <b>👥 Characters:</b> ${charsList}<br>
+                <b>📷 Camera:</b> ${found.camera_language || '—'}<br>
+                <b>💡 Lighting:</b> ${found.lighting_language || '—'}<br>
+                <b>🎭 Emotion:</b> ${found.emotion || '—'}<br>
+                <b>🎬 Action:</b> ${(found.action || '').substring(0, 120)}<br>
+                <hr style="border:none;border-top:1px solid var(--border-color);margin:6px 0;">
+                <b>🎨 Visual Motifs:</b> ${motifs}<br>
+                <b>🏃 Motion Opportunities:</b> ${motionOps}<br>
+                <b>🌊 Environmental Motion:</b> ${envMotion}<br>
+                <b>🎵 Audio Notes:</b> ${audioNotes}<br>
+                <hr style="border:none;border-top:1px solid var(--border-color);margin:6px 0;">
+                <b>📋 Continuity:</b> ${found.continuity_notes || '—'}<br>
+                <b>🎥 Cinematic:</b> ${found.cinematic_notes || '—'}<br>
+                ${found.cinematic_composition ? `<b>🖼 Composition:</b> ${found.cinematic_composition.substring(0, 100)}<br>` : ''}
+                ${found.storyboard_prompt ? `<b>📄 Storyboard Prompt:</b> <span style="font-size:0.7rem;">${found.storyboard_prompt.substring(0, 150)}...</span>` : ''}
+            `;
+
+            // Variant gallery
+            document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">No variants yet</span>';
+            document.getElementById('si-variant-input-area').style.display = 'none';
+            document.getElementById('shot-inspector-modal').style.display = 'flex';
+
+            // Try to fetch enriched data from backend
+            _fetchShotEnrichment(shotId, found);
+        }
+
+        async function _fetchShotEnrichment(shotId, localShot) {
+            try {
+                const res = await fetch(`/api/orchestrator/shot/${shotId}`);
+                const data = await res.json();
+                if (!data.success) return;
+                const shot = data.shot || localShot;
+
+                // Show storyboard image if enrichment has a prompt
+                if (data.storyboard_enrichment && data.storyboard_enrichment.storyboard_prompt) {
+                    // Future: trigger image generation automatically or show prompt
+                }
+
+                // Show variants
+                const variants = data.variants || [];
+                if (variants.length) {
+                    const gallery = document.getElementById('si-variant-gallery');
+                    gallery.innerHTML = variants.map((v, i) => `
+                        <div style="background:var(--bg-primary);border-radius:4px;padding:4px 8px;font-size:0.65rem;border:1px solid var(--border-color);">
+                            <strong>${v.variant_id}</strong> — ${v.shot_type || ''}
+                        </div>
+                    `).join('');
+                }
+
+                // Update lock button
+                const locks = data.locks || {};
+                const hasLocks = Object.values(locks).some(v => v === true);
+                const lockBtn = document.getElementById('si-lock-btn');
+                lockBtn.textContent = hasLocks ? '🔓 Unlock' : '🔒 Lock';
+            } catch(e) {
+                // Silently fall back to local data
+            }
+        }
+
+        function closeShotInspector() {
+            document.getElementById('shot-inspector-modal').style.display = 'none';
+            _siShotId = null;
+        }
+
+        // === SHOT ACTIONS ===
+
+        async function siGenerateImage(shotId) {
+            const id = shotId || _siShotId;
+            if (!id) return;
+            try {
+                const res = await fetch('/api/orchestrator/generate-shot-image', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ shot_id: id }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('si-image-area').innerHTML = `
+                        <div style="text-align:center;padding:20px;">
+                            <div style="font-size:0.8rem;color:var(--accent-primary);margin-bottom:8px;">📄 Storyboard Prompt</div>
+                            <div style="font-size:0.7rem;color:var(--text-primary);max-width:400px;">${escapeHtml(data.prompt)}</div>
+                            <div style="margin-top:10px;font-size:0.7rem;color:var(--text-secondary);">Send this prompt to Flux2 Klein via the Storyboard page</div>
+                        </div>`;
+                    notify('Prompt Ready', `Storyboard prompt generated for ${id}`, '📄');
+                    _updateShotSummaryCounts();
+                } else {
+                    notify('Failed', data.error || 'Generation failed', '❌');
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        function siShowVariantInput(shotId) {
+            _siShotId = shotId || _siShotId;
+            document.getElementById('si-variant-input-area').style.display = 'block';
+            document.getElementById('si-variant-instruction').value = '';
+            document.getElementById('si-variant-instruction').focus();
+        }
+
+        async function siSubmitVariant() {
+            const instruction = document.getElementById('si-variant-instruction').value.trim();
+            if (!instruction || !_siShotId) return;
+            try {
+                const res = await fetch('/api/orchestrator/shot-variant', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ shot_id: _siShotId, user_instruction: instruction }),
+                });
+                const data = await res.json();
+                if (data.success && data.variants) {
+                    const gallery = document.getElementById('si-variant-gallery');
+                    gallery.innerHTML = data.variants.map((v, i) => `
+                        <div style="background:var(--bg-primary);border-radius:4px;padding:6px 10px;font-size:0.7rem;border:1px solid var(--accent-primary);">
+                            <strong>${v.variant_id || 'Variant ' + (i+1)}</strong><br>
+                            ${v.shot_type || ''}<br>
+                            <span style="color:var(--text-secondary);">${(v.camera_language || '').substring(0, 40)}</span>
+                        </div>
+                    `).join('');
+                    notify('Variants', `3 variants generated for ${_siShotId}`, '✏️');
+                } else {
+                    notify('Failed', data.error || 'Variant generation failed', '❌');
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+            document.getElementById('si-variant-input-area').style.display = 'none';
+        }
+
+        async function siRegenerate() {
+            if (!_siShotId) return;
+            try {
+                const res = await fetch('/api/orchestrator/shot-regenerate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ shot_id: _siShotId }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Regenerated', `${_siShotId} regenerated with continuity preserved`, '🔄');
+                    // Update local screenplayData
+                    if (screenplayData && screenplayData.scenes) {
+                        for (const s of screenplayData.scenes) {
+                            if (s.shots) {
+                                for (let i = 0; i < s.shots.length; i++) {
+                                    if (s.shots[i].shot_id === _siShotId) {
+                                        s.shots[i] = data.shot;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    openShotInspector(_siShotId);
+                    renderScreenplay();
+                } else {
+                    notify('Failed', data.error || 'Regeneration failed', '❌');
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        async function siToggleLock() {
+            if (!_siShotId) return;
+            try {
+                const res = await fetch('/api/orchestrator/asset-lock', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ category: 'shots', item_id: _siShotId, field: 'composition', locked: true }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Locked', `${_siShotId} composition locked`, '🔒');
+                    const btn = document.getElementById('si-lock-btn');
+                    btn.textContent = '🔓 Unlock';
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        async function siApprove() {
+            if (!_siShotId) return;
+            try {
+                const res = await fetch('/api/orchestrator/shot-approve', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ shot_id: _siShotId }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Approved', `${_siShotId} approved for timeline`, '✅');
+                    const badge = document.getElementById('si-status-badge');
+                    badge.style.background = '#4caf50';
+                    badge.textContent = 'approved';
+                    // Update local data
+                    if (screenplayData && screenplayData.scenes) {
+                        for (const s of screenplayData.scenes) {
+                            if (s.shots) {
+                                for (let i = 0; i < s.shots.length; i++) {
+                                    if (s.shots[i].shot_id === _siShotId) {
+                                        s.shots[i].storyboard_status = 'approved';
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    renderScreenplay();
+                } else {
+                    notify('Failed', data.error || 'Approval failed', '❌');
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        // Card-level shot actions (called from shot card buttons)
+        async function shotRegenerate(shotId) {
+            _siShotId = shotId;
+            await siRegenerate();
+        }
+
+        async function shotToggleLock(shotId) {
+            _siShotId = shotId;
+            await siToggleLock();
+        }
+
+        async function shotApprove(shotId) {
+            _siShotId = shotId;
+            await siApprove();
+        }
+
+        function siCreateVariant() {
+            siShowVariantInput(_siShotId);
         }
 
         function proceedToScenesFromScreenplay() {
@@ -3792,15 +4279,384 @@
             }
         }
 
-        function proceedToLocations() {
-            navigateToWorkflow('locations');
-            setTimeout(() => generateLocations(), 300);
+        // === Asset Studio State ===
+        let _assetStudioData = { characters: [], locations: [], assets: {}, approvals: {}, locks: {} };
+        window._currentAssetExpandId = null;
+        window._currentAssetExpandType = null;
+        window._assetStudioApprovals = { characters: false, locations: false };
+
+        async function loadAssetStudioData() {
+            try {
+                const res = await fetch('/api/orchestrator/asset-studio');
+                const data = await res.json();
+                if (!data.success) return;
+                _assetStudioData = data;
+                // Also populate charData / locationData from bible for backward compat
+                if (data.character_bible && data.character_bible.length) {
+                    charData = data.character_bible.map((ch, i) => ({
+                        character_id: ch.character_id || 'CHAR_' + (i+1),
+                        character_name: ch.full_name || ch.character_name || '',
+                        role: ch.role || '',
+                        physical_appearance: ch.physical_appearance || '',
+                        personality: ch.personality || '',
+                        savedImage: (data.character_assets && data.character_assets[ch.character_id || ch.id] && data.character_assets[ch.character_id || ch.id].approved_image) || '',
+                    }));
+                }
+                if (data.location_bible && data.location_bible.length) {
+                    locationData = data.location_bible.map((loc, i) => ({
+                        location_id: loc.location_id || 'LOC_' + (i+1),
+                        location_name: loc.location_name || '',
+                        environment_type: loc.environment_type || '',
+                        mood: loc.mood || '',
+                        savedImage: (data.location_assets && data.location_assets[loc.location_id || loc.id] && data.location_assets[loc.location_id || loc.id].approved_image) || '',
+                    }));
+                }
+                window._assetStudioApprovals = {
+                    characters: !!(data.approvals && data.approvals.characters_approved),
+                    locations: !!(data.approvals && data.approvals.locations_approved),
+                };
+                renderAssetStudio();
+                _updateApprovalUI();
+            } catch (e) {
+                console.error('Failed to load asset studio data:', e);
+            }
         }
-        function proceedToCharacters() {
-            navigateToWorkflow('characters');
-            setTimeout(() => generateAllCharacters(), 300);
+
+        function renderAssetStudio() {
+            const charBible = _assetStudioData.character_bible || [];
+            const locBible = _assetStudioData.location_bible || [];
+            document.getElementById('asset-char-count').textContent = charBible.length;
+            document.getElementById('asset-loc-count').textContent = locBible.length;
+            renderCharacterAssets(charBible);
+            renderLocationAssets(locBible);
         }
-        function proceedToImagePrompts() {
+
+        function renderCharacterAssets(bible) {
+            const container = document.getElementById('char-asset-container');
+            const empty = document.getElementById('char-asset-empty');
+            container.innerHTML = '';
+            if (!bible || !bible.length) { empty.style.display = 'block'; return; }
+            empty.style.display = 'none';
+            bible.forEach(ch => {
+                const cid = ch.character_id || ch.id || '';
+                const assetInfo = (_assetStudioData.character_assets || {})[cid] || {};
+                const locked = assetInfo.locked || false;
+                const approved = assetInfo.approved || false;
+                const approvedImg = assetInfo.approved_image || '';
+                const card = document.createElement('div');
+                card.className = 'asset-card';
+                card.style.cssText = 'background:var(--bg-secondary);border-radius:8px;overflow:hidden;border:1px solid var(--border-color);cursor:pointer;';
+                card.innerHTML = `
+                    <div style="padding:8px 12px;background:var(--bg-tertiary);display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-weight:600;font-size:0.85rem;">${cid} · ${ch.full_name || ch.character_name || 'Unknown'}</span>
+                        <span style="font-size:0.7rem;padding:2px 6px;border-radius:3px;background:${approved ? '#4caf50' : '#555'};color:#fff;">${approved ? 'Approved' : (locked ? 'Locked' : 'Pending')}</span>
+                    </div>
+                    <div style="padding:10px;min-height:180px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);">
+                        ${approvedImg ? `<img src="${approvedImg}" style="max-width:100%;max-height:180px;border-radius:4px;">` : `<span style="color:var(--text-secondary);font-size:0.8rem;">${ch.role || 'No image'}</span>`}
+                    </div>
+                    <div style="padding:8px 12px;font-size:0.75rem;color:var(--text-secondary);line-height:1.5;">
+                        ${ch.personality ? `<div>🧠 ${ch.personality.substring(0, 80)}${ch.personality.length > 80 ? '...' : ''}</div>` : ''}
+                        ${ch.physical_appearance ? `<div>👁 ${ch.physical_appearance.substring(0, 80)}${ch.physical_appearance.length > 80 ? '...' : ''}</div>` : ''}
+                    </div>
+                    <div style="padding:8px 12px;display:flex;gap:4px;flex-wrap:wrap;border-top:1px solid var(--border-color);">
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('char','${cid}')" style="padding:3px 8px;font-size:0.7rem;">⛶ Expand</button>
+                        <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${cid}','char')" style="padding:3px 8px;font-size:0.7rem;">🎨 Gen</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${cid}','char')" style="padding:3px 8px;font-size:0.7rem;">✏️ Var</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetToggleLock('${cid}','char')" style="padding:3px 8px;font-size:0.7rem;">${locked ? '🔓' : '🔒'}</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${cid}','char')" style="padding:3px 8px;font-size:0.7rem;">✅</button>
+                    </div>
+                `;
+                card.onclick = () => expandAssetItem('char', cid);
+                container.appendChild(card);
+            });
+        }
+
+        function renderLocationAssets(bible) {
+            const container = document.getElementById('loc-asset-container');
+            const empty = document.getElementById('loc-asset-empty');
+            container.innerHTML = '';
+            if (!bible || !bible.length) { empty.style.display = 'block'; return; }
+            empty.style.display = 'none';
+            bible.forEach(loc => {
+                const lid = loc.location_id || loc.id || '';
+                const assetInfo = (_assetStudioData.location_assets || {})[lid] || {};
+                const locked = assetInfo.locked || false;
+                const approved = assetInfo.approved || false;
+                const approvedImg = assetInfo.approved_image || '';
+                const card = document.createElement('div');
+                card.className = 'asset-card';
+                card.style.cssText = 'background:var(--bg-secondary);border-radius:8px;overflow:hidden;border:1px solid var(--border-color);cursor:pointer;';
+                card.innerHTML = `
+                    <div style="padding:8px 12px;background:var(--bg-tertiary);display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-weight:600;font-size:0.85rem;">${lid} · ${loc.location_name || 'Unknown'}</span>
+                        <span style="font-size:0.7rem;padding:2px 6px;border-radius:3px;background:${approved ? '#4caf50' : '#555'};color:#fff;">${approved ? 'Approved' : (locked ? 'Locked' : 'Pending')}</span>
+                    </div>
+                    <div style="padding:10px;min-height:180px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);">
+                        ${approvedImg ? `<img src="${approvedImg}" style="max-width:100%;max-height:180px;border-radius:4px;">` : `<span style="color:var(--text-secondary);font-size:0.8rem;">${loc.environment_type || 'No image'}</span>`}
+                    </div>
+                    <div style="padding:8px 12px;font-size:0.75rem;color:var(--text-secondary);line-height:1.5;">
+                        ${loc.architecture_style ? `<div>🏛 ${loc.architecture_style.substring(0, 80)}</div>` : ''}
+                        ${loc.mood ? `<div>🎭 ${loc.mood.substring(0, 80)}</div>` : ''}
+                    </div>
+                    <div style="padding:8px 12px;display:flex;gap:4px;flex-wrap:wrap;border-top:1px solid var(--border-color);">
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('loc','${lid}')" style="padding:3px 8px;font-size:0.7rem;">⛶ Expand</button>
+                        <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${lid}','loc')" style="padding:3px 8px;font-size:0.7rem;">🎨 Gen</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${lid}','loc')" style="padding:3px 8px;font-size:0.7rem;">✏️ Var</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetToggleLock('${lid}','loc')" style="padding:3px 8px;font-size:0.7rem;">${locked ? '🔓' : '🔒'}</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${lid}','loc')" style="padding:3px 8px;font-size:0.7rem;">✅</button>
+                    </div>
+                `;
+                card.onclick = () => expandAssetItem('loc', lid);
+                container.appendChild(card);
+            });
+        }
+
+        function switchAssetTab(tab) {
+            document.getElementById('asset-chars-tab').style.display = tab === 'characters' ? 'block' : 'none';
+            document.getElementById('asset-locs-tab').style.display = tab === 'locations' ? 'block' : 'none';
+            const charsBtn = document.getElementById('tab-chars-btn');
+            const locsBtn = document.getElementById('tab-locs-btn');
+            charsBtn.className = tab === 'characters' ? 'btn btn-primary' : 'btn btn-secondary';
+            locsBtn.className = tab === 'locations' ? 'btn btn-primary' : 'btn btn-secondary';
+        }
+
+        function expandAssetItem(type, id) {
+            window._currentAssetExpandType = type;
+            window._currentAssetExpandId = id;
+            const bible = type === 'char'
+                ? (_assetStudioData.character_bible || [])
+                : (_assetStudioData.location_bible || []);
+            const asset = bible.find(x => (x.character_id || x.id || x.location_id) === id);
+            if (!asset) return;
+            const title = type === 'char'
+                ? `${id} · ${asset.full_name || asset.character_name || ''}`
+                : `${id} · ${asset.location_name || ''}`;
+            document.getElementById('asset-expand-title').textContent = title;
+            // Show/hide turnaround button
+            document.getElementById('asset-turnaround-btn').style.display = type === 'char' ? 'inline-block' : 'none';
+            // Metadata
+            const metaDiv = document.getElementById('asset-expand-metadata');
+            if (type === 'char') {
+                metaDiv.innerHTML = `
+                    <b>Role:</b> ${asset.role || '—'}<br>
+                    <b>Age:</b> ${asset.age || '—'}<br>
+                    <b>Appearance:</b> ${asset.physical_appearance || '—'}<br>
+                    <b>Clothing:</b> ${asset.clothing || '—'}<br>
+                    <b>Personality:</b> ${asset.personality || '—'}<br>
+                    <b>Emotional Traits:</b> ${asset.emotional_traits || '—'}<br>
+                    <b>Visual Identity:</b> ${asset.visual_identity || '—'}<br>
+                    <b>Costume Continuity:</b> ${asset.costume_continuity || '—'}<br>
+                    <b>Signature Items:</b> ${asset.signature_items || '—'}<br>
+                    <b>Cinematic Presence:</b> ${asset.cinematic_presence || '—'}
+                `;
+            } else {
+                metaDiv.innerHTML = `
+                    <b>Environment:</b> ${asset.environment_type || '—'}<br>
+                    <b>Architecture:</b> ${asset.architecture_style || '—'}<br>
+                    <b>Mood:</b> ${asset.mood || '—'}<br>
+                    <b>Lighting:</b> ${asset.lighting_style || '—'}<br>
+                    <b>Features:</b> ${asset.cinematic_features || '—'}<br>
+                    <b>Storytelling:</b> ${asset.environmental_storytelling || '—'}
+                `;
+            }
+            // Image area
+            const imgArea = document.getElementById('asset-expand-image-area');
+            const assets = type === 'char'
+                ? (_assetStudioData.character_assets || {})
+                : (_assetStudioData.location_assets || {});
+            const info = assets[id] || {};
+            if (info.approved_image) {
+                imgArea.innerHTML = `<img src="${info.approved_image}" style="max-width:100%;max-height:100%;border-radius:4px;">`;
+            } else {
+                imgArea.innerHTML = '<span style="color:var(--text-secondary);">Generate an image to preview</span>';
+            }
+            document.getElementById('asset-expand-modal').style.display = 'flex';
+        }
+
+        function closeAssetExpand() {
+            document.getElementById('asset-expand-modal').style.display = 'none';
+            window._currentAssetExpandId = null;
+            window._currentAssetExpandType = null;
+        }
+
+        async function assetGenerateImage(id, type) {
+            id = id || window._currentAssetExpandId;
+            type = type || window._currentAssetExpandType;
+            if (!id) return;
+            const bible = type === 'char'
+                ? (_assetStudioData.character_bible || [])
+                : (_assetStudioData.location_bible || []);
+            const asset = bible.find(x => (x.character_id || x.id || x.location_id) === id);
+            if (!asset) return;
+            const prompt = asset.image_prompt || '';
+            if (!prompt) { notify('No Prompt', 'No image prompt available for this asset', '⚠️'); return; }
+            // Use settings to get the image provider
+            const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
+            const imgSettings = settings.image_gen || {};
+            const provider = imgSettings.provider || 'comfyui';
+            const model = imgSettings.model || '';
+            const host = imgSettings.host || '';
+            const apiKey = imgSettings.apiKey || '';
+            notify('Generating', `Sending to ${provider}...`, '🎨');
+            try {
+                const res = await fetch('/api/image/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ provider, model, prompt, host, api_key: apiKey, width: 1024, height: 1024 }),
+                });
+                const data = await res.json();
+                if (data.success && data.image_url) {
+                    const imgArea = document.getElementById('asset-expand-image-area');
+                    imgArea.innerHTML = `<img src="${data.image_url}" style="max-width:100%;max-height:100%;border-radius:4px;">`;
+                    // Save to asset
+                    const assets = type === 'char'
+                        ? (_assetStudioData.character_assets || {})
+                        : (_assetStudioData.location_assets || {});
+                    if (!assets[id]) assets[id] = {};
+                    if (!assets[id].generation_history) assets[id].generation_history = [];
+                    assets[id].generation_history.push(data.image_url);
+                    notify('Generated', 'Image ready for approval', '✅');
+                } else {
+                    notify('Failed', data.error || 'Generation failed', '❌');
+                }
+            } catch (e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        function showAssetVariantInput(id, type) {
+            document.getElementById('asset-variant-input-area').style.display = 'block';
+        }
+
+        async function assetSubmitVariant() {
+            const instruction = document.getElementById('asset-variant-instruction').value.trim();
+            if (!instruction) return;
+            const id = window._currentAssetExpandId;
+            const type = window._currentAssetExpandType;
+            if (!id) return;
+            // For assets, variants are visual only - we'll generate a new image with modified prompt
+            try {
+                const res = await fetch('/api/orchestrator/idea-variants', { /* use idea-variants as a placeholder for now */
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ idea: {title: 'asset variant'}, user_change: instruction }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Variants', '3 variants generated', '✅');
+                    const gallery = document.getElementById('asset-expand-variant-gallery');
+                    gallery.innerHTML = '';
+                    (data.variants || []).forEach((v, i) => {
+                        const badge = document.createElement('div');
+                        badge.style.cssText = 'padding:4px 8px;background:var(--bg-primary);border-radius:4px;font-size:0.7rem;';
+                        badge.textContent = `V${i+1}: ${v.title || 'Variant'}`;
+                        gallery.appendChild(badge);
+                    });
+                } else {
+                    notify('Failed', data.error || 'Variant generation failed', '❌');
+                }
+            } catch (e) {
+                notify('Error', e.message, '❌');
+            }
+            document.getElementById('asset-variant-input-area').style.display = 'none';
+            document.getElementById('asset-variant-instruction').value = '';
+        }
+
+        async function assetToggleLock(id, type) {
+            id = id || window._currentAssetExpandId;
+            type = type || window._currentAssetExpandType;
+            if (!id) return;
+            const category = type === 'char' ? 'characters' : 'locations';
+            try {
+                const res = await fetch('/api/orchestrator/asset-lock', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ category, item_id: id, field: 'appearance', locked: true }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Locked', `Asset ${id} locked`, '🔒');
+                    loadAssetStudioData();
+                }
+            } catch (e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        async function assetApprove(id, type) {
+            id = id || window._currentAssetExpandId;
+            type = type || window._currentAssetExpandType;
+            if (!id) return;
+            // For individual asset approval, we mark it in AssetStudioData
+            const assets = type === 'char'
+                ? (_assetStudioData.character_assets || {})
+                : (_assetStudioData.location_assets || {});
+            if (!assets[id]) assets[id] = {};
+            assets[id].approved = true;
+            // Set the approved image to the most recent generation
+            const history = assets[id].generation_history || [];
+            if (history.length) {
+                assets[id].approved_image = history[history.length - 1];
+            }
+            notify('Approved', `${id} approved`, '✅');
+            loadAssetStudioData();
+        }
+
+        async function approveAllCharacters() {
+            await fetch('/api/orchestrator/approve-characters', { method: 'POST' });
+            window._assetStudioApprovals.characters = true;
+            _updateApprovalUI();
+            notify('Characters Approved', 'All characters approved', '✅');
+        }
+
+        async function approveAllLocations() {
+            await fetch('/api/orchestrator/approve-locations', { method: 'POST' });
+            window._assetStudioApprovals.locations = true;
+            _updateApprovalUI();
+            notify('Locations Approved', 'All locations approved', '✅');
+        }
+
+        async function assetGenerateTurnaround() {
+            const id = window._currentAssetExpandId;
+            if (!id) return;
+            try {
+                const res = await fetch('/api/orchestrator/generate-turnaround', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ character_id: id }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Turnaround', data.turnaround_request.prompt.substring(0, 60) + '...', '📋');
+                } else {
+                    notify('Failed', data.error || 'Turnaround generation failed', '❌');
+                }
+            } catch (e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        function _updateApprovalUI() {
+            const ap = window._assetStudioApprovals || {};
+            document.getElementById('asset-char-approval-badge').style.background = ap.characters ? '#4caf50' : '#555';
+            document.getElementById('asset-char-approval-badge').textContent = ap.characters ? '✅ Characters: Approved' : '👤 Characters: Pending';
+            document.getElementById('asset-loc-approval-badge').style.background = ap.locations ? '#4caf50' : '#555';
+            document.getElementById('asset-loc-approval-badge').textContent = ap.locations ? '✅ Locations: Approved' : '🏠 Locations: Pending';
+            const proceedBtn = document.getElementById('proceed-to-storyboard-btn');
+            if (ap.characters && ap.locations) {
+                proceedBtn.disabled = false;
+                proceedBtn.style.opacity = '1';
+            } else {
+                proceedBtn.disabled = true;
+                proceedBtn.style.opacity = '0.5';
+            }
+        }
+        function proceedToStoryboard() {
+            const approvals = window._assetStudioApprovals || {};
+            if (!approvals.characters || !approvals.locations) {
+                alert('Please approve characters and locations first.');
+                return;
+            }
             navigateToWorkflow('storyboard');
             if (!imagePromptData.length) setTimeout(() => generateImagePrompts(), 300);
         }

@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 
@@ -38,6 +39,27 @@ class CinematicMemory:
         self.selected_locations: int = 3
         self.selected_scenes: int = 10
         self.selected_total_shots: int = 30
+        self.project_graph: Dict[str, Any] = self._new_project_graph()
+
+    @staticmethod
+    def _new_project_graph() -> Dict:
+        return {
+            "project_id": str(uuid.uuid4())[:8],
+            "idea": {},
+            "screenplay": {},
+            "character_bible": [],
+            "location_bible": [],
+            "scene_graph": [],
+            "shots": {},
+            "storyboards": {},
+            "videos": {},
+            "variants": {},
+            "timeline": [],
+            "locks": {"characters": {}, "locations": {}, "shots": {}},
+            "approvals": {"characters_approved": False, "locations_approved": False},
+            "character_assets": {},
+            "location_assets": {},
+        }
 
     @property
     def selected_idea(self) -> Optional[Dict]:
@@ -59,6 +81,7 @@ class CinematicMemory:
             "selected_locations": self.selected_locations,
             "selected_scenes": self.selected_scenes,
             "selected_total_shots": self.selected_total_shots,
+            "project_graph": self.project_graph,
         }
 
     def from_dict(self, data: Dict):
@@ -74,6 +97,11 @@ class CinematicMemory:
         self.selected_locations = data.get("selected_locations", 3)
         self.selected_scenes = data.get("selected_scenes", 10)
         self.selected_total_shots = data.get("selected_total_shots", 30)
+        raw = data.get("project_graph", None)
+        if raw:
+            self.project_graph = raw
+        else:
+            self.project_graph = self._new_project_graph()
 
 
 class CinematicOrchestrator:
@@ -113,6 +141,7 @@ class CinematicOrchestrator:
     def get_continuity_context(self) -> str:
         """Build the continuity context string from current memory."""
         parts = []
+        pg = self.memory.project_graph
 
         if self.memory.project_info:
             info = self.memory.project_info
@@ -121,32 +150,58 @@ class CinematicOrchestrator:
                 if v:
                     parts.append(f"{k}: {v}")
 
-        if self.memory.screenplay:
-            sp = self.memory.screenplay
+        sp = pg.get("screenplay", {}) or self.memory.screenplay
+        if sp:
             parts.append("\n=== SCREENPLAY CONTINUITY ===")
             parts.append(f"Title: {sp.get('title', '')}")
             parts.append(f"Logline: {sp.get('logline', '')}")
             parts.append(f"Tone: {sp.get('tone', '')}")
-            scenes = sp.get("scenes", [])
-            for s in scenes:
-                parts.append(f"  Scene {s.get('scene_id', '?')}: {s.get('scene_title', '')} @ {s.get('location_id', '?')}")
+
+            scene_graph = pg.get("scene_graph", []) or sp.get("scenes", [])
+            for s in scene_graph:
+                sid = s.get("scene_id", "?")
+                stitle = s.get("scene_title", "")
+                loc = s.get("location_id", "?")
+                shots = s.get("shots", [])
+                parts.append(f"  Scene {sid}: {stitle} @ {loc} ({len(shots)} shots)")
                 for c in s.get("characters_present", []):
                     parts.append(f"    Character: {c}")
+                for sh in shots:
+                    parts.append(f"    Shot {sh.get('shot_id', '?')}: {sh.get('shot_type', '')} - {sh.get('camera_language', '')}")
 
-        if self.memory.characters:
-            parts.append("\n=== CHARACTER ASSETS ===")
-            for ch in self.memory.characters:
-                parts.append(f"  [{ch.get('character_id', '?')}] {ch.get('character_name', '')} - {ch.get('role', '')}")
+        cb = pg.get("character_bible", []) or self.memory.characters
+        if cb:
+            parts.append("\n=== CHARACTER BIBLE ===")
+            for ch in cb:
+                ch_id = ch.get("character_id", ch.get("id", "?"))
+                parts.append(f"  [{ch_id}] {ch.get('character_name', ch.get('full_name', ''))} - {ch.get('role', '')}")
 
-        if self.memory.locations:
-            parts.append("\n=== LOCATION ASSETS ===")
-            for loc in self.memory.locations:
-                parts.append(f"  [{loc.get('location_id', '?')}] {loc.get('location_name', '')} - {loc.get('environment_type', '')}")
+        lb = pg.get("location_bible", []) or self.memory.locations
+        if lb:
+            parts.append("\n=== LOCATION BIBLE ===")
+            for loc in lb:
+                loc_id = loc.get("location_id", loc.get("id", "?"))
+                parts.append(f"  [{loc_id}] {loc.get('location_name', loc.get('name', ''))} - {loc.get('environment_type', loc.get('type', ''))}")
 
-        if self.memory.storyboard:
+        storyboards = pg.get("storyboards", {})
+        if storyboards:
+            parts.append("\n=== STORYBOARD ASSETS ===")
+            parts.append(f"  {len(storyboards)} shots enriched")
+        elif self.memory.storyboard:
             parts.append("\n=== STORYBOARD ASSETS ===")
             for sb in self.memory.storyboard:
                 parts.append(f"  Scene {sb.get('scene_id', '?')}: {sb.get('shot_count', 0)} shots")
+
+        locks = pg.get("locks", {})
+        lock_entries = []
+        for cat in ["characters", "locations", "shots"]:
+            for k, v in locks.get(cat, {}).items():
+                for field, locked in v.items():
+                    if locked:
+                        lock_entries.append(f"  [{cat}] {k}.{field} = (CANNOT CHANGE)")
+        if lock_entries:
+            parts.append("\n=== CONTINUITY LOCKS ===")
+            parts.extend(lock_entries)
 
         return "\n".join(parts)
 
@@ -541,9 +596,9 @@ Every concept must feel:
         return result
 
     def generate_screenplay(self, params: Dict) -> Dict:
-        """Stage 2: Generate master screenplay with exact count enforcement."""
+        """Stage 2: Generate master screenplay with shot nodes + character/location bible."""
         self._reset_progress()
-        self.set_progress(5, "Starting screenplay generation...")
+        self.set_progress(5, "Starting screenplay + shot design...")
 
         idea_index = params.get("idea_index", self.memory.selected_idea_index)
         if 0 <= idea_index < len(self.memory.ideas):
@@ -573,7 +628,7 @@ Every concept must feel:
         tone = idea.get("tone", "")
 
         prompt_parts = [
-            f"Based on the selected story idea, generate a full screenplay as a JSON object.",
+            "Based on the selected story idea, generate a complete cinematic screenplay with shot-level design.",
             "",
             f"Title: {idea.get('title', 'Untitled')}",
             f"Logline: {idea.get('logline', '')}",
@@ -586,7 +641,18 @@ Every concept must feel:
             f"EXACTLY {char_count} characters required",
             f"EXACTLY {loc_count} locations required",
             f"EXACTLY {scene_count} scenes required",
-            f"EXACTLY {shot_count} total shots required (sum of all scene estimated_shots)",
+            f"EXACTLY {shot_count} total shots required (sum of all scene shots)",
+            "",
+            "=== RULE: SCREENPLAY + SHOT DESIGN ===",
+            "The screenplay module is SCREENPLAY + SHOT DESIGN. Not just narrative writing.",
+            "Generate actual cinematic shot nodes for every scene — NOT estimated_shots numbers.",
+            "",
+            "Each shot must be:",
+            "- visually distinct",
+            "- support storyboard generation",
+            "- support Flux2 Klein image generation",
+            "- support LTX 2.3 video generation",
+            "- contain cinematic intent",
         ]
 
         pacing_guide = self._get_pacing_guide(genre_blend, tone)
@@ -598,24 +664,68 @@ Every concept must feel:
 - logline (string)
 - tone (string)
 - dialogue_enabled (boolean)
-- scenes (array of scene objects, each with:)
-  - scene_id (string, e.g. "S1", "S2")
+- character_bible (array of objects, EXACTLY {char_count} characters, each with:)
+  - character_id (string, e.g. "CHAR_001")
+  - full_name (string)
+  - role (string, e.g. protagonist, antagonist, supporting)
+  - age (string)
+  - physical_appearance (string)
+  - clothing (string, era-appropriate)
+  - personality (string)
+  - emotional_traits (string)
+  - signature_items (string)
+  - cinematic_presence (string)
+  - visual_identity (string, how they look on screen)
+  - costume_continuity (string)
+  - image_prompt (string, optimized for ZImage Turbo)
+- location_bible (array of objects, EXACTLY {loc_count} locations, each with:)
+  - location_id (string, e.g. "LOC_001")
+  - location_name (string)
+  - environment_type (string)
+  - architecture_style (string)
+  - mood (string)
+  - lighting_style (string)
+  - cinematic_features (string)
+  - environmental_storytelling (string)
+  - image_prompt (string, optimized for ZImage Turbo)
+- scenes (array of scene objects, EXACTLY {scene_count} scenes, each with:)
+  - scene_id (string, e.g. "SC_001")
   - scene_title (string)
   - scene_number (number)
-  - location_id (string, placeholder like "LOC_1")
-  - characters_present (array of character name strings)
-  - synopsis (string, what happens in this scene)
+  - location_id (string, matching one from location_bible)
+  - synopsis (string)
   - emotional_tone (string)
+  - characters_present (array of character_id strings matching character_bible)
   - dialogue (array of dialogue lines, each with speaker and text; empty array if dialogue_enabled is false)
-  - estimated_shots (number, 1-5)
+  - shots (array of shot nodes, sum of ALL shots across ALL scenes must be EXACTLY {shot_count})
+    - shot_id (string, e.g. "SHOT_001")
+    - shot_number (number)
+    - shot_type (string, e.g. Wide Shot, Medium Shot, Close-Up, Over-the-Shoulder, Tracking Shot, Low Angle, POV Shot, Insert Shot, Establishing Shot)
+    - camera_language (string, how the camera moves and frames)
+    - lighting_language (string, lighting conditions for this shot)
+    - emotion (string, emotional intent of the shot)
+    - characters_present (array of character_id strings)
+    - dialogue (array, direct dialogue in this shot)
+    - action (string, what happens in this shot)
+    - visual_motifs (array of strings)
+    - motion_opportunities (array of strings)
+    - environmental_motion (array of strings)
+    - audio_notes (array of strings)
+    - continuity_notes (string)
+    - cinematic_notes (string)
+    - storyboard_status (string, always "pending")
 
-IMPORTANT CONSTRAINTS — MUST BE EXACT:
-- Total estimated_shots across ALL scenes MUST BE EXACTLY {shot_count}
-- Number of UNIQUE character names across all scenes MUST BE EXACTLY {char_count}
-- Number of UNIQUE location_ids across all scenes MUST BE EXACTLY {loc_count}
+IMPORTANT CONSTRAINTS:
+- Total shots across ALL scenes MUST BE EXACTLY {shot_count}
+- Number of UNIQUE character_id in character_bible MUST BE EXACTLY {char_count}
+- Number of UNIQUE location_id in location_bible MUST BE EXACTLY {loc_count}
 - Number of scenes MUST BE EXACTLY {scene_count}
+- Each scene's location_id must match one from location_bible
+- Each shot's characters_present must reference character_id from character_bible
 - Intelligently allocate shots based on emotional pacing, genre, and story complexity
-- The sum of all scene estimated_shots must equal {shot_count} — count carefully"""
+- Each shot must feel visually distinct and cinematically intentional
+- Shot types must vary across the scene (avoid repetition)
+- Dialogue array is empty array [] if dialogue_enabled is false"""
 
         self.set_progress(50, "Generating screenplay with LLM...")
 
@@ -637,7 +747,22 @@ IMPORTANT CONSTRAINTS — MUST BE EXACT:
                     data = result["data"]
 
             self.memory.screenplay = data
-            self.set_progress(100, "Screenplay generated!", f"{len(data.get('scenes', []))} scenes")
+            # Also populate project_graph
+            pg = self.memory.project_graph
+            pg["screenplay"] = data
+            pg["character_bible"] = data.get("character_bible", [])
+            pg["location_bible"] = data.get("location_bible", [])
+            pg["scene_graph"] = data.get("scenes", [])
+            # Build flat shots dict
+            shots_dict = {}
+            for s in data.get("scenes", []):
+                for sh in s.get("shots", []):
+                    shots_dict[sh["shot_id"]] = sh
+            pg["shots"] = shots_dict
+
+            scene_count_actual = len(data.get("scenes", []))
+            shot_count_actual = sum(len(s.get("shots", [])) for s in data.get("scenes", []))
+            self.set_progress(100, "Screenplay + shot design complete!", f"{scene_count_actual} scenes, {shot_count_actual} shots")
             return {"success": True, "screenplay": data, "raw": result.get("raw")}
 
         self.set_progress(0, "Failed", result.get("error", "Generation failed"))
@@ -682,27 +807,42 @@ IMPORTANT CONSTRAINTS — MUST BE EXACT:
         return (len(issues) == 0, issues)
 
     def _validate_screenplay_counts(self, data: Dict) -> Tuple[bool, List[str]]:
-        """Validate that screenplay respects exact count constraints."""
+        """Validate that screenplay respects exact count constraints (shot node schema)."""
         issues = []
         scenes = data.get("scenes", [])
         if len(scenes) != self.memory.selected_scenes:
             issues.append(f"Scenes: got {len(scenes)}, expected {self.memory.selected_scenes}")
-        total_shots = sum(s.get("estimated_shots", 0) for s in scenes)
+
+        # Shot nodes count (NOT estimated_shots)
+        total_shots = sum(len(s.get("shots", [])) for s in scenes)
         if total_shots != self.memory.selected_total_shots:
             issues.append(f"Total shots: got {total_shots}, expected {self.memory.selected_total_shots}")
-        unique_chars = set()
-        for s in scenes:
-            for c in s.get("characters_present", []):
-                unique_chars.add(c)
-        if len(unique_chars) != self.memory.selected_characters:
-            issues.append(f"Unique characters: got {len(unique_chars)}, expected {self.memory.selected_characters}")
-        unique_locs = set()
+
+        # Character bible count
+        cb = data.get("character_bible", [])
+        if len(cb) != self.memory.selected_characters:
+            issues.append(f"Character bible: got {len(cb)} entries, expected {self.memory.selected_characters}")
+
+        # Location bible count
+        lb = data.get("location_bible", [])
+        if len(lb) != self.memory.selected_locations:
+            issues.append(f"Location bible: got {len(lb)} entries, expected {self.memory.selected_locations}")
+
+        # Unique scene location_ids match location_bible
+        loc_ids_in_bible = set(l.get("location_id", "") for l in lb)
         for s in scenes:
             lid = s.get("location_id", "")
-            if lid:
-                unique_locs.add(lid)
-        if len(unique_locs) != self.memory.selected_locations:
-            issues.append(f"Unique locations: got {len(unique_locs)}, expected {self.memory.selected_locations}")
+            if lid and lid not in loc_ids_in_bible:
+                issues.append(f"Scene {s.get('scene_id', '?')} location_id '{lid}' not in location_bible")
+
+        # Shot IDs must be unique
+        all_shot_ids = []
+        for s in scenes:
+            for sh in s.get("shots", []):
+                all_shot_ids.append(sh.get("shot_id", ""))
+        if len(all_shot_ids) != len(set(all_shot_ids)):
+            issues.append("Duplicate shot_id found across scenes")
+
         return (len(issues) == 0, issues)
 
     def regenerate_single_idea(self, params: Dict) -> Dict:
@@ -776,14 +916,40 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
         return result
 
     def generate_locations(self, params: Dict = None) -> Dict:
-        """Stage 3: Generate reusable location assets from screenplay."""
+        """Stage 3: Extract from location_bible if present, else LLM fallback."""
+        self._reset_progress()
+        self.set_progress(10, "Checking location bible...")
+
+        pg = self.memory.project_graph
+        bible = pg.get("location_bible", [])
+        if bible:
+            self.set_progress(50, "Extracting from location bible...")
+            self.memory.locations = bible
+            pg["location_assets"] = {}
+            for loc in bible:
+                lid = loc.get("location_id", loc.get("id", ""))
+                pg["location_assets"][lid] = {
+                    "location_id": lid,
+                    "approved_image": "",
+                    "generation_history": [],
+                    "variants": [],
+                    "locked": False,
+                    "approved": False,
+                }
+            self.set_progress(100, "Locations extracted from bible!", f"{len(bible)} locations ready")
+            return {"success": True, "locations": bible, "from_bible": True}
+
+        # Fallback: LLM generation (legacy path)
         screenplay = self.memory.screenplay
         if not screenplay:
+            self.set_progress(0, "Failed", "No screenplay and no location bible")
             return {"success": False, "error": "No screenplay generated yet"}
 
         scenes = screenplay.get("scenes", [])
         unique_loc_ids = list(dict.fromkeys(s.get("location_id", "") for s in scenes if s.get("location_id")))
         count = min(len(unique_loc_ids), self.memory.selected_locations)
+
+        self.set_progress(30, "Generating locations via LLM...")
 
         prompt_parts = [
             f"Based on the screenplay, generate exactly {count} reusable location assets as a JSON array.",
@@ -815,14 +981,40 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
 
         if result.get("success") and result.get("data") and isinstance(result["data"], list):
             self.memory.locations = result["data"]
+            self.set_progress(100, "Locations generated!", f"{len(result['data'])} ready")
             return {"success": True, "locations": result["data"], "raw": result.get("raw")}
 
+        self.set_progress(0, "Failed", result.get("error", "Generation failed"))
         return result
 
     def generate_characters(self, params: Dict = None) -> Dict:
-        """Stage 4: Generate reusable character assets from screenplay."""
+        """Stage 4: Extract from character_bible if present, else LLM fallback."""
+        self._reset_progress()
+        self.set_progress(10, "Checking character bible...")
+
+        pg = self.memory.project_graph
+        bible = pg.get("character_bible", [])
+        if bible:
+            self.set_progress(50, "Extracting from character bible...")
+            self.memory.characters = bible
+            pg["character_assets"] = {}
+            for ch in bible:
+                cid = ch.get("character_id", ch.get("id", ""))
+                pg["character_assets"][cid] = {
+                    "character_id": cid,
+                    "approved_image": "",
+                    "generation_history": [],
+                    "variants": [],
+                    "locked": False,
+                    "approved": False,
+                }
+            self.set_progress(100, "Characters extracted from bible!", f"{len(bible)} characters ready")
+            return {"success": True, "characters": bible, "from_bible": True}
+
+        # Fallback: LLM generation (legacy path)
         screenplay = self.memory.screenplay
         if not screenplay:
+            self.set_progress(0, "Failed", "No screenplay and no character bible")
             return {"success": False, "error": "No screenplay generated yet"}
 
         scenes = screenplay.get("scenes", [])
@@ -830,6 +1022,8 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
             name for s in scenes for name in s.get("characters_present", [])
         ))
         count = min(len(unique_names), self.memory.selected_characters)
+
+        self.set_progress(30, "Generating characters via LLM...")
 
         prompt_parts = [
             f"Based on the screenplay, generate exactly {count} reusable character assets as a JSON array.",
@@ -869,61 +1063,189 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
 
         if result.get("success") and result.get("data") and isinstance(result["data"], list):
             self.memory.characters = result["data"]
+            self.set_progress(100, "Characters generated!", f"{len(result['data'])} ready")
             return {"success": True, "characters": result["data"], "raw": result.get("raw")}
 
+        self.set_progress(0, "Failed", result.get("error", "Generation failed"))
         return result
 
     def generate_storyboard(self, params: Dict = None) -> Dict:
-        """Stage 5: Generate storyboard with shots for each scene."""
-        screenplay = self.memory.screenplay
-        if not screenplay:
-            return {"success": False, "error": "No screenplay generated yet"}
+        """Stage 5: Shot enrichment pipeline. NEVER creates shots, only enriches existing ones."""
+        self._reset_progress()
+        self.set_progress(5, "Starting shot enrichment...")
 
-        scenes = screenplay.get("scenes", [])
-        if not scenes:
+        pg = self.memory.project_graph
+        scene_graph = pg.get("scene_graph", [])
+        if not scene_graph:
+            scene_graph = self.memory.screenplay.get("scenes", [])
+        if not scene_graph:
+            self.set_progress(0, "Failed", "No scene graph available")
             return {"success": False, "error": "No scenes in screenplay"}
+
+        # Collect all shots to enrich
+        all_shots = []
+        for s in scene_graph:
+            for sh in s.get("shots", []):
+                all_shots.append({
+                    "scene_id": s.get("scene_id", ""),
+                    "scene_title": s.get("scene_title", ""),
+                    "location_id": s.get("location_id", ""),
+                    "shot": sh,
+                })
+
+        if not all_shots:
+            self.set_progress(0, "Failed", "No shot nodes in scene graph")
+            return {"success": False, "error": "No shots in screenplay (has the new screenplay prompt been used?)"}
+
+        self.set_progress(20, f"Enriching {len(all_shots)} shots...")
+
+        # Check approvals
+        approvals = pg.get("approvals", {})
+        if not approvals.get("characters_approved", False) or not approvals.get("locations_approved", False):
+            self.set_progress(0, "Blocked", "Characters and locations must be approved first")
+            return {"success": False, "error": "Characters and locations must be approved before storyboard generation"}
 
         continuity = self.get_continuity_context()
 
-        prompt_parts = [
-            "Generate a storyboard as a JSON array based on the screenplay and existing production assets.",
-            "",
-            "=== CONTINUITY ASSETS ===",
-            continuity,
-            "",
-            "For each scene in the screenplay, determine the shot breakdown and generate image prompts.",
-            "Each storyboard entry inherits character and location continuity.",
-        ]
+        # Build per-shot enrichment requests (batch in groups to avoid huge LLM calls)
+        enriched_shots = {}
+        batch_size = 5
+        for i in range(0, len(all_shots), batch_size):
+            batch = all_shots[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            total_batches = (len(all_shots) + batch_size - 1) // batch_size
+            pct = 20 + int(60 * (i / len(all_shots)))
+            self.set_progress(pct, f"Enriching shots (batch {batch_num}/{total_batches})...")
 
-        system_suffix = """You MUST respond with ONLY a JSON array. Each element corresponds to one screenplay scene and must have:
-- scene_id (string, matching screenplay)
-- scene_title (string)
-- location_reference (string, the location_id used)
-- character_references (array of character_id strings)
-- emotional_state (string)
-- scene_action (string, what happens)
-- shot_count (number)
-- shots (array of shot objects, each with:)
-  - shot_number (number)
-  - camera_direction (string, e.g. Medium Wide Shot, Close-Up, Over-the-Shoulder)
-  - lens_suggestion (string)
-  - lighting (string)
-  - atmosphere (string)
-  - cinematic_composition (string)
-  - image_prompt (string, optimized for Flux2 Klein Image-to-Image - MUST reference established character appearance and location without redesigning them)
+            batch_prompt_parts = [
+                "You are the SHOT ENRICHMENT PIPELINE inside an AI Film Production System.",
+                "",
+                "Your ONLY job is to enrich existing cinematic shot nodes with storyboard-ready fields.",
+                "You MUST NOT create new shots, delete shots, reorder shots, or alter continuity.",
+                "",
+                "=== CONTINUITY ASSETS ===",
+                continuity,
+                "",
+                "For each shot node below, enrich it with:",
+                "- storyboard_prompt (Flux2 Klein-optimized prompt referencing approved character/location assets)",
+                "- cinematic_composition (string)",
+                "- lighting_enrichment (string)",
+                "- framing_enrichment (string)",
+                "- camera_direction_enrichment (string)",
+                "- lens_suggestion (string)",
+                "- atmosphere (string)",
+                "",
+                "RULES:",
+                "- NEVER change shot_id, shot_number, shot_type, or any existing field",
+                "- NEVER redesign characters or locations — reference approved assets only",
+                "- NEVER add shots, remove shots, or change shot order",
+                "- Each prompt must feel like a specific cinematic moment from that exact shot",
+                "- Use the shot's existing camera_language, lighting_language, emotion, action as foundation",
+                "- Refer to character_bible and location_bible for appearance continuity",
+                "",
+                "SHOTS TO ENRICH:",
+            ]
 
-IMPORTANT:
-- Do NOT redesign characters or locations
-- Total shots across ALL scenes in the storyboard MUST NOT exceed the screenplay's estimated total
-- Each shot prompt must feel like a specific cinematic moment, not a generic character/location description"""
+            for entry in batch:
+                shot = entry["shot"]
+                batch_prompt_parts.append(
+                    f"\n--- Shot: {shot.get('shot_id', '?')} ---"
+                    f"\nScene: {entry.get('scene_id', '?')} - {entry.get('scene_title', '')}"
+                    f"\nLocation: {entry.get('location_id', '?')}"
+                    f"\nShot Type: {shot.get('shot_type', '')}"
+                    f"\nCamera: {shot.get('camera_language', '')}"
+                    f"\nLighting: {shot.get('lighting_language', '')}"
+                    f"\nEmotion: {shot.get('emotion', '')}"
+                    f"\nAction: {shot.get('action', '')}"
+                    f"\nCharacters: {json.dumps(shot.get('characters_present', []))}"
+                    f"\nDialogue: {json.dumps(shot.get('dialogue', []))}"
+                    f"\nVisual Motifs: {json.dumps(shot.get('visual_motifs', []))}"
+                    f"\nMotion Opportunities: {json.dumps(shot.get('motion_opportunities', []))}"
+                    f"\nContinuity Notes: {shot.get('continuity_notes', '')}"
+                    f"\nCinematic Notes: {shot.get('cinematic_notes', '')}"
+                )
 
-        result = self._call_llm("\n".join(prompt_parts), system_suffix=system_suffix)
+            system_suffix = """You MUST respond with ONLY a JSON object where keys are shot_ids and values are enriched shot data objects. Each enriched shot object must have:
+- shot_id (string, MUST match input)
+- storyboard_prompt (string, Flux2 Klein optimized)
+- cinematic_composition (string)
+- lighting_enrichment (string)
+- framing_enrichment (string)
+- camera_direction_enrichment (string)
+- lens_suggestion (string)
+- atmosphere (string)
+- image_generated (boolean, always false)
+- storyboard_status (string, "enriched")
 
-        if result.get("success") and result.get("data") and isinstance(result["data"], list):
-            self.memory.storyboard = result["data"]
-            return {"success": True, "storyboard": result["data"], "raw": result.get("raw")}
+Output example format:
+{
+  "SHOT_001": {
+    "shot_id": "SHOT_001",
+    "storyboard_prompt": "...",
+    "cinematic_composition": "...",
+    ...
+  }
+}"""
 
-        return result
+            result = self._call_llm("\n".join(batch_prompt_parts), system_suffix=system_suffix)
+
+            if result.get("success") and result.get("data"):
+                batch_enriched = result["data"]
+                if isinstance(batch_enriched, dict):
+                    enriched_shots.update(batch_enriched)
+                elif isinstance(batch_enriched, list):
+                    for item in batch_enriched:
+                        if isinstance(item, dict) and item.get("shot_id"):
+                            enriched_shots[item["shot_id"]] = item
+
+        self.set_progress(90, "Merging enriched data into shot nodes...")
+
+        # Merge enrichment back into scene_graph shots
+        enriched_count = 0
+        for s in scene_graph:
+            for sh in s.get("shots", []):
+                sid = sh.get("shot_id", "")
+                if sid in enriched_shots:
+                    enrichment = enriched_shots[sid]
+                    for key in ["storyboard_prompt", "cinematic_composition", "lighting_enrichment",
+                                 "framing_enrichment", "camera_direction_enrichment", "lens_suggestion",
+                                 "atmosphere", "storyboard_status", "image_generated"]:
+                        if key in enrichment:
+                            sh[key] = enrichment[key]
+                    sh["storyboard_status"] = "enriched"
+                    enriched_count += 1
+
+        pg["scene_graph"] = scene_graph
+        pg["storyboards"] = enriched_shots
+
+        # Also build backward-compat storyboard list
+        self.memory.storyboard = []
+        for s in scene_graph:
+            entry = {
+                "scene_id": s.get("scene_id", ""),
+                "scene_title": s.get("scene_title", ""),
+                "location_reference": s.get("location_id", ""),
+                "shot_count": len(s.get("shots", [])),
+                "shots": [{
+                    "shot_number": sh.get("shot_number", 0),
+                    "shot_id": sh.get("shot_id", ""),
+                    "camera_direction": sh.get("camera_direction_enrichment", sh.get("shot_type", "")),
+                    "lens_suggestion": sh.get("lens_suggestion", ""),
+                    "lighting": sh.get("lighting_enrichment", sh.get("lighting_language", "")),
+                    "atmosphere": sh.get("atmosphere", ""),
+                    "cinematic_composition": sh.get("cinematic_composition", ""),
+                    "image_prompt": sh.get("storyboard_prompt", ""),
+                } for sh in s.get("shots", [])]
+            }
+            self.memory.storyboard.append(entry)
+
+        self.set_progress(100, "Shot enrichment complete!", f"{enriched_count} shots enriched")
+        return {
+            "success": True,
+            "storyboard": self.memory.storyboard,
+            "enriched_count": enriched_count,
+            "total_shots": len(all_shots),
+        }
 
     def generate_video_prompts(self, params: Dict = None) -> Dict:
         """Stage 6: Generate LTX 2.3 video prompts from storyboard."""
@@ -982,6 +1304,375 @@ LTX PROMPT RULES:
             return {"success": True, "video_prompts": result["data"], "raw": result.get("raw")}
 
         return result
+
+    def create_shot_variant(self, params: Dict) -> Dict:
+        """Generate 3 non-destructive variants of a shot node."""
+        self._reset_progress()
+        self.set_progress(10, "Preparing shot variant generation...")
+
+        shot_id = params.get("shot_id", "")
+        user_instruction = params.get("user_instruction", "")
+        if not shot_id or not user_instruction.strip():
+            return {"success": False, "error": "shot_id and user_instruction required"}
+
+        pg = self.memory.project_graph
+        shot = pg.get("shots", {}).get(shot_id)
+        if not shot:
+            return {"success": False, "error": f"Shot {shot_id} not found"}
+
+        # Find scene context
+        scene_ctx = ""
+        for s in pg.get("scene_graph", []):
+            for sh in s.get("shots", []):
+                if sh.get("shot_id") == shot_id:
+                    scene_ctx = f"Scene {s.get('scene_id', '?')}: {s.get('scene_title', '')} @ {s.get('location_id', '?')}"
+                    break
+
+        self.set_progress(30, "Sending to LLM...")
+
+        prompt = f"""You are a SHOT VARIATION ENGINE. Generate 3 non-destructive variants of a cinematic shot node.
+
+ORIGINAL SHOT:
+{json.dumps(shot, indent=2)}
+
+SCENE CONTEXT:
+{scene_ctx}
+
+USER CHANGE REQUEST:
+{user_instruction}
+
+CONTINUITY CONTEXT:
+{self.get_continuity_context()}
+
+Generate 3 distinct variants that address the user's request while preserving:
+- shot_id (keep original)
+- shot_number (keep original)
+- characters_present (keep original)
+- dialogue (keep original)
+- scene relationships (keep original)
+
+Each variant may differ in:
+- shot_type
+- camera_language
+- lighting_language
+- emotion
+- action
+- visual_motifs
+- motion_opportunities
+- environmental_motion
+- audio_notes
+- continuity_notes
+- cinematic_notes
+
+Each variant must be meaningfully different from the original and from each other."""
+
+        system_suffix = """You MUST respond with ONLY a JSON array of exactly 3 variant objects. Each variant object must have:
+- variant_id (string, e.g. "VAR_001")
+- parent_shot_id (string, the original shot_id)
+- variant_number (number)
+- user_instruction (string, the user's change request)
+- shot_type (string)
+- camera_language (string)
+- lighting_language (string)
+- emotion (string)
+- action (string)
+- visual_motifs (array of strings)
+- motion_opportunities (array of strings)
+- environmental_motion (array of strings)
+- audio_notes (array of strings)
+- continuity_notes (string)
+- cinematic_notes (string)
+- storyboard_status (string, "variant")
+- storyboard_prompt (string, Flux2 Klein optimized, if applicable)
+- cinematic_composition (string)
+- lighting_enrichment (string)
+- framing_enrichment (string)
+- camera_direction_enrichment (string)
+- lens_suggestion (string)
+- atmosphere (string)"""
+
+        result = self._call_llm(prompt, system_suffix=system_suffix)
+
+        if result.get("success") and result.get("data"):
+            variants = result["data"] if isinstance(result["data"], list) else [result["data"]]
+            # Store variants in project_graph
+            for var in variants:
+                if isinstance(var, dict) and var.get("variant_id"):
+                    pg["variants"][var["variant_id"]] = var
+            self.set_progress(100, "Shot variants ready!", f"{len(variants)} variants generated")
+            return {"success": True, "variants": variants, "raw": result.get("raw")}
+
+        self.set_progress(0, "Failed", result.get("error", "Generation failed"))
+        return result
+
+    def set_lock(self, params: Dict) -> Dict:
+        """Lock/unlock a field on a character, location, or shot."""
+        category = params.get("category", "")  # characters, locations, shots
+        item_id = params.get("item_id", "")
+        field = params.get("field", "")  # e.g. appearance, costume, composition, camera
+        locked = params.get("locked", True)
+
+        if category not in ("characters", "locations", "shots"):
+            return {"success": False, "error": f"Invalid category: {category}"}
+
+        pg = self.memory.project_graph
+        locks = pg.setdefault("locks", {})
+        cat_locks = locks.setdefault(category, {})
+        item_locks = cat_locks.setdefault(item_id, {})
+        item_locks[field] = bool(locked)
+        return {"success": True, "lock_state": {category: {item_id: item_locks}}}
+
+    def get_locks(self) -> Dict:
+        """Get all lock states."""
+        return {"success": True, "locks": self.memory.project_graph.get("locks", {})}
+
+    def approve_characters(self, params: Dict = None) -> Dict:
+        """Mark characters as approved, enabling storyboard generation."""
+        pg = self.memory.project_graph
+        approvals = pg.setdefault("approvals", {})
+        approvals["characters_approved"] = True
+        return {"success": True, "approvals": approvals}
+
+    def approve_locations(self, params: Dict = None) -> Dict:
+        """Mark locations as approved, enabling storyboard generation."""
+        pg = self.memory.project_graph
+        approvals = pg.setdefault("approvals", {})
+        approvals["locations_approved"] = True
+        return {"success": True, "approvals": approvals}
+
+    def get_approvals(self) -> Dict:
+        """Get current approval state."""
+        return {"success": True, "approvals": self.memory.project_graph.get("approvals", {})}
+
+    def generate_turnaround(self, params: Dict) -> Dict:
+        """Generate a turnaround sheet for an approved character (ZImage Turbo)."""
+        character_id = params.get("character_id", "")
+        if not character_id:
+            return {"success": False, "error": "character_id required"}
+
+        pg = self.memory.project_graph
+        approvals = pg.get("approvals", {})
+        if not approvals.get("characters_approved", False):
+            return {"success": False, "error": "Characters must be approved before generating turnaround sheets"}
+
+        # Find character in bible
+        bible = pg.get("character_bible", [])
+        character = None
+        for ch in bible:
+            if ch.get("character_id") == character_id or ch.get("id") == character_id:
+                character = ch
+                break
+        if not character:
+            character = next((c for c in self.memory.characters if c.get("character_id") == character_id), None)
+        if not character:
+            return {"success": False, "error": f"Character {character_id} not found in bible"}
+
+        return {
+            "success": True,
+            "turnaround_request": {
+                "character_id": character_id,
+                "character_name": character.get("full_name", character.get("character_name", "")),
+                "prompt": f"Turnaround reference sheet of {character.get('full_name', character.get('character_name', ''))} — {character.get('physical_appearance', '')}, {character.get('clothing', '')}. Four views: front, three-quarter, profile, back. Clean background, consistent lighting, professional character turnaround reference sheet. ZImage Turbo.",
+            }
+        }
+
+    def get_asset_studio_state(self) -> Dict:
+        """Get full asset studio state for frontend."""
+        pg = self.memory.project_graph
+        return {
+            "success": True,
+            "character_bible": pg.get("character_bible", []),
+            "location_bible": pg.get("location_bible", []),
+            "character_assets": pg.get("character_assets", {}),
+            "location_assets": pg.get("location_assets", {}),
+            "approvals": pg.get("approvals", {}),
+            "locks": pg.get("locks", {}),
+        }
+
+    def get_shot(self, shot_id: str) -> Dict:
+        """Get enriched shot data by shot_id."""
+        pg = self.memory.project_graph
+        shot = pg.get("shots", {}).get(shot_id)
+        if not shot:
+            return {"success": False, "error": f"Shot {shot_id} not found"}
+
+        # Find scene context
+        scene_ctx = None
+        for s in pg.get("scene_graph", []):
+            for sh in s.get("shots", []):
+                if sh.get("shot_id") == shot_id:
+                    scene_ctx = {
+                        "scene_id": s.get("scene_id", ""),
+                        "scene_title": s.get("scene_title", ""),
+                        "location_id": s.get("location_id", ""),
+                        "synopsis": s.get("synopsis", ""),
+                        "emotional_tone": s.get("emotional_tone", ""),
+                    }
+                    break
+            if scene_ctx:
+                break
+
+        # Get variants for this shot
+        shot_variants = [v for v in pg.get("variants", {}).values() if v.get("parent_shot_id") == shot_id]
+
+        result = {
+            "success": True,
+            "shot": shot,
+            "scene": scene_ctx,
+            "variants": shot_variants,
+            "locks": pg.get("locks", {}).get("shots", {}).get(shot_id, {}),
+            "storyboard_enrichment": pg.get("storyboards", {}).get(shot_id, {}),
+        }
+        return result
+
+    def regenerate_shot(self, params: Dict) -> Dict:
+        """Regenerate a single shot, preserving continuity and locked fields."""
+        self._reset_progress()
+        self.set_progress(10, "Preparing shot regeneration...")
+
+        shot_id = params.get("shot_id", "")
+        if not shot_id:
+            return {"success": False, "error": "shot_id required"}
+
+        pg = self.memory.project_graph
+        shot = pg.get("shots", {}).get(shot_id)
+        if not shot:
+            return {"success": False, "error": f"Shot {shot_id} not found"}
+
+        # Find scene context
+        scene_ctx = None
+        scene_graph = pg.get("scene_graph", [])
+        for s in scene_graph:
+            for sh in s.get("shots", []):
+                if sh.get("shot_id") == shot_id:
+                    scene_ctx = s
+                    break
+            if scene_ctx:
+                break
+
+        if not scene_ctx:
+            return {"success": False, "error": "Shot scene context not found"}
+
+        locks = pg.get("locks", {}).get("shots", {}).get(shot_id, {})
+        lock_hints = "\n".join([f"- {k}: CANNOT CHANGE (locked)" for k, v in locks.items() if v]) if locks else "- No locked fields"
+
+        self.set_progress(40, "Regenerating shot via LLM...")
+
+        prompt = f"""You are a SHOT REGENERATION ENGINE. Regenerate the following cinematic shot while preserving continuity.
+
+SHOT TO REGENERATE:
+{json.dumps(shot, indent=2)}
+
+SCENE CONTEXT:
+{json.dumps(scene_ctx, indent=2, default=str)}
+
+CONTINUITY:
+{self.get_continuity_context()}
+
+LOCKS:
+{lock_hints}
+
+REGENERATION RULES:
+- Preserve shot_id, shot_number, characters_present, dialogue exactly as-is
+- Preserve locked fields (marked CANNOT CHANGE)
+- The shot_type, camera_language, lighting_language, emotion, action, and all cinematic fields can be reinterpreted
+- Maintain scene continuity — do not create narrative contradictions
+- All outputs must remain cinematic and producible
+
+Generate a fresh cinematic interpretation of this shot that feels meaningfully different while being continuous."""
+
+        system_suffix = """You MUST respond with ONLY a JSON object with the regenerated shot data. The object must have:
+- shot_id (string, MUST match original)
+- shot_number (number, MUST match original)
+- shot_type (string)
+- camera_language (string)
+- lighting_language (string)
+- emotion (string)
+- characters_present (array, MUST match original)
+- dialogue (array, MUST match original)
+- action (string)
+- visual_motifs (array of strings)
+- motion_opportunities (array of strings)
+- environmental_motion (array of strings)
+- audio_notes (array of strings)
+- continuity_notes (string)
+- cinematic_notes (string)
+- storyboard_status (string, "regenerated")"""
+
+        result = self._call_llm(prompt, system_suffix=system_suffix)
+
+        if result.get("success") and result.get("data"):
+            regenerated = result["data"]
+            # Preserve locked fields from original
+            for field, val in locks.items():
+                if val and field in shot:
+                    regenerated[field] = shot[field]
+            # Preserve protected fields
+            for field in ["shot_id", "shot_number", "characters_present", "dialogue"]:
+                if field in shot:
+                    regenerated[field] = shot[field]
+            # Update shot in scene_graph and shots dict
+            for s in scene_graph:
+                for i, sh in enumerate(s.get("shots", [])):
+                    if sh.get("shot_id") == shot_id:
+                        s["shots"][i] = regenerated
+                        break
+            pg["shots"][shot_id] = regenerated
+            self.set_progress(100, "Shot regenerated!", f"{shot_id} updated")
+            return {"success": True, "shot": regenerated, "raw": result.get("raw")}
+
+        self.set_progress(0, "Failed", result.get("error", "Generation failed"))
+        return result
+
+    def approve_shot(self, params: Dict) -> Dict:
+        """Mark a shot as approved for timeline."""
+        shot_id = params.get("shot_id", "")
+        if not shot_id:
+            return {"success": False, "error": "shot_id required"}
+        pg = self.memory.project_graph
+        shot = pg.get("shots", {}).get(shot_id)
+        if not shot:
+            return {"success": False, "error": f"Shot {shot_id} not found"}
+        shot["storyboard_status"] = "approved"
+        shot["approved"] = True
+        pg["shots"][shot_id] = shot
+        # Also update in scene_graph
+        for s in pg.get("scene_graph", []):
+            for i, sh in enumerate(s.get("shots", [])):
+                if sh.get("shot_id") == shot_id:
+                    s["shots"][i]["storyboard_status"] = "approved"
+                    s["shots"][i]["approved"] = True
+                    break
+        return {"success": True, "shot": shot}
+
+    def generate_shot_image(self, params: Dict) -> Dict:
+        """Generate storyboard image prompt for a shot (Flux2 Klein). Returns the prompt for frontend to execute."""
+        shot_id = params.get("shot_id", "")
+        if not shot_id:
+            return {"success": False, "error": "shot_id required"}
+        pg = self.memory.project_graph
+        shot = pg.get("shots", {}).get(shot_id)
+        if not shot:
+            return {"success": False, "error": f"Shot {shot_id} not found"}
+        enrichment = pg.get("storyboards", {}).get(shot_id, {})
+        prompt = enrichment.get("storyboard_prompt", shot.get("storyboard_prompt", ""))
+        if not prompt:
+            # Build a prompt from available data
+            chars = ", ".join(shot.get("characters_present", [])) or "characters"
+            action = shot.get("action", "scene")
+            camera = shot.get("camera_language", "cinematic shot")
+            lighting = shot.get("lighting_language", "cinematic lighting")
+            emotion = shot.get("emotion", "dramatic")
+            prompt = f"{camera} of {chars}, {action}, {lighting}, {emotion} atmosphere, cinematic composition, film still, Flux2 Klein"
+        shot["image_generated"] = True
+        shot["storyboard_status"] = "enriched"
+        pg["shots"][shot_id] = shot
+        return {
+            "success": True,
+            "shot_id": shot_id,
+            "prompt": prompt,
+            "shot": shot,
+        }
 
     def reset(self):
         """Reset the orchestrator memory."""
