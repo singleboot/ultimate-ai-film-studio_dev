@@ -5860,6 +5860,7 @@ Project visual language: ${projVL}`;
                 const data = await res.json();
                 if (data.success && data.prompt) {
                     asset.image_prompt = data.prompt;
+                    scheduleSaveState();
                     // Update the textarea directly
                     if (zone) {
                         const card = zone.closest('div[style*="width:280px"]');
@@ -5904,6 +5905,7 @@ Project visual language: ${projVL}`;
                     const data = await res.json();
                     if (data.success && data.prompt) {
                         item.asset.image_prompt = data.prompt;
+                        scheduleSaveState();
                         successCount++;
                     } else {
                         failCount++;
@@ -6076,6 +6078,7 @@ Project visual language: ${projVL}`;
                     if (!assets[id].generation_history) assets[id].generation_history = [];
                     assets[id].generation_history.push(imgUrl);
                     assets[id].approved_image = imgUrl;
+                    scheduleSaveState();
                     // Refresh history in modal
                     const historyEl = document.getElementById('asset-expand-history');
                     if (historyEl) {

@@ -2099,6 +2099,16 @@ Write a single, rich image generation prompt that describes how this location sh
         if result.get("success"):
             prompt = result["data"].strip().strip('"').strip("'") if result.get("data") else ""
             if prompt:
+                # Persist the prompt to project_graph so it survives page refresh
+                aid = asset.get("character_id") or asset.get("id") or asset.get("location_id") or asset.get("_id", "")
+                if aid:
+                    bible_key = "character_bible" if asset_type == "char" else "location_bible"
+                    pg = self.memory.project_graph
+                    for entry in pg.get(bible_key, []):
+                        eid = entry.get("character_id") or entry.get("id") or entry.get("location_id") or entry.get("_id", "")
+                        if eid == aid:
+                            entry["image_prompt"] = prompt
+                            break
                 return {"success": True, "prompt": prompt}
             return {"success": False, "error": "LLM returned empty response. Check your LLM provider/model settings."}
         return {"success": False, "error": result.get("error", "LLM call failed")}
