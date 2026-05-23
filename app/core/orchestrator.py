@@ -216,11 +216,43 @@ class CinematicOrchestrator:
         if system_suffix:
             system_prompt = system_prompt + "\n\n" + system_suffix
 
+        # Resolve provider/model/host: project_info → global settings → auto-detect → defaults
+        provider = self.memory.project_info.get("llm_provider", "")
+        model = self.memory.project_info.get("llm_model", "")
+        host = ""
+        try:
+            sp = getattr(self.llm_engine, '_settings_path', None)
+            if sp and sp.exists():
+                import json
+                gs = json.loads(sp.read_text(encoding='utf-8'))
+                llm_cfg = gs.get("llm", {})
+                if not provider:
+                    provider = llm_cfg.get("provider", "ollama")
+                if not model:
+                    model = llm_cfg.get("model", "")
+                host = llm_cfg.get("host", "")
+        except Exception:
+            pass
+        if not provider:
+            provider = "ollama"
+        if not model:
+            try:
+                import requests
+                oh = host or "http://localhost:11434"
+                r = requests.get(f"{oh}/api/tags", timeout=5)
+                if r.status_code == 200:
+                    tags = r.json().get("models", [])
+                    if tags:
+                        model = tags[0].get("name", "llama3.1")
+            except Exception:
+                model = "llama3.1"
+
         result = self.llm_engine.generate(
-            provider_id=self.memory.project_info.get("llm_provider", "ollama"),
-            model=self.memory.project_info.get("llm_model", "llama3.1"),
+            provider_id=provider,
+            model=model,
             prompt=prompt,
             system_prompt=system_prompt,
+            host=host or None,
         )
 
         if result.get("success"):
@@ -2014,6 +2046,62 @@ Example:
             if not found:
                 pg["scene_graph"].append({"scene_id": sid, "shots": s.get("shots", [])})
         return {"success": True, "count": count}
+
+    def generate_asset_prompt(self, asset_type: str, asset: Dict) -> Dict:
+        """Generate an image_prompt for a character or location using the LLM."""
+        info = self.memory.project_info
+        genre = info.get("genres", "") or info.get("genre", "")
+        vs = info.get("visual_style", "")
+        fa = info.get("film_aesthetic", "")
+        era = info.get("era", "")
+        proj_context = f"Genre: {genre}; Visual Style: {vs}; Film Aesthetic: {fa}; Era: {era}"
+
+        if asset_type == "char":
+            name = asset.get("full_name", asset.get("character_name", asset.get("name", "")))
+            role = asset.get("role", "")
+            personality = asset.get("personality", asset.get("description", ""))
+            appearance = asset.get("physical_appearance", "")
+            clothing = asset.get("clothing_continuity", asset.get("clothing", ""))
+            identity = asset.get("visual_identity", "")
+            prompt_text = f"""Project context: {proj_context}
+
+You are a cinema visual AI. Given this character, write a detailed visual image generation prompt for a cinematic character reference image.
+
+Character: {name}
+Role: {role}
+Personality/traits: {personality}
+Physical appearance: {appearance}
+Clothing/costume: {clothing}
+Visual identity: {identity}
+
+Write a single, rich image generation prompt that describes how this character should look in a cinematic character reference shot. Include: facial features, hairstyle, costume details, body type, posture, lighting, mood, and background. Return ONLY the prompt text, no explanation, no JSON."""
+        else:
+            name = asset.get("location_name", asset.get("environment_type", asset.get("name", "")))
+            arch = asset.get("architecture_style", "")
+            mood = asset.get("mood", "")
+            lighting = asset.get("lighting_style", "")
+            period = asset.get("time_period", "")
+            desc = asset.get("description", "")
+            prompt_text = f"""Project context: {proj_context}
+
+You are a cinema visual AI. Given this location, write a detailed visual image generation prompt for a cinematic environment reference image.
+
+Location: {name}
+Architecture: {arch}
+Mood: {mood}
+Lighting: {lighting}
+Time period: {period}
+Description: {desc}
+
+Write a single, rich image generation prompt that describes how this location should look in a cinematic environment reference shot. Include: architectural details, lighting conditions, color palette, atmosphere, camera angle, and mood. Return ONLY the prompt text, no explanation, no JSON."""
+
+        result = self._call_llm(prompt_text, system_suffix="You output short, image-generation-ready visual prompts only.", json_output=False)
+        if result.get("success"):
+            prompt = result["data"].strip().strip('"').strip("'") if result.get("data") else ""
+            if prompt:
+                return {"success": True, "prompt": prompt}
+            return {"success": False, "error": "LLM returned empty response. Check your LLM provider/model settings."}
+        return {"success": False, "error": result.get("error", "LLM call failed")}
 
     def sync_bibles_from_frontend(self, character_bible: List = None, location_bible: List = None) -> Dict:
         """Sync frontend character/location bible data into project_graph when backend memory is empty."""

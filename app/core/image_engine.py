@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import threading
 import requests
 from typing import Dict, List, Optional, Any
 from pathlib import Path
@@ -19,6 +20,20 @@ class ImageEngine:
             self._settings_path = Path(settings_path)
         else:
             self._settings_path = Path(__file__).parent.parent / "settings.json"
+        self._gen_progress = {"pct": 0, "status": "idle", "label": ""}
+        self._gen_lock = threading.Lock()
+
+    def _update_gen_progress(self, pct: int, status: str = None, label: str = None):
+        with self._gen_lock:
+            self._gen_progress["pct"] = min(100, max(0, pct))
+            if status:
+                self._gen_progress["status"] = status
+            if label is not None:
+                self._gen_progress["label"] = label
+
+    def get_gen_progress(self) -> Dict:
+        with self._gen_lock:
+            return dict(self._gen_progress)
 
     def _load_config(self, config_path: str) -> Dict:
         try:
@@ -151,13 +166,44 @@ class ImageEngine:
             return {"success": False, "error": "ComfyUI client not initialized"}
         if host:
             self.comfyui.set_host(host)
-        if workflow_name:
-            return self.comfyui.generate_with_workflow(
-                prompt=prompt, workflow_name=workflow_name,
-                input_images=input_images, aspect_ratio=aspect_ratio,
-                resolution=resolution, seed=seed
-            )
-        return self.comfyui.generate_image(prompt, model, 1024, 1024, seed or -1)
+
+        self._update_gen_progress(0, "running", "Starting generation...")
+
+        _stop_polling = False
+        def _poll_progress():
+            while not _stop_polling:
+                try:
+                    prog = self.comfyui.get_progress()
+                    if prog.get("running") and prog.get("max", 0) > 0:
+                        pct = round(prog["current"] / prog["max"] * 100)
+                        self._update_gen_progress(pct, "running", f"Step {prog['current']}/{prog['max']}")
+                except Exception:
+                    pass
+                time.sleep(1)
+
+        poll_thread = threading.Thread(target=_poll_progress, daemon=True)
+        poll_thread.start()
+
+        try:
+            if workflow_name:
+                result = self.comfyui.generate_with_workflow(
+                    prompt=prompt, workflow_name=workflow_name,
+                    input_images=input_images, aspect_ratio=aspect_ratio,
+                    resolution=resolution, seed=seed
+                )
+            else:
+                result = self.comfyui.generate_image(prompt, model, 1024, 1024, seed or -1)
+
+            if result.get("success"):
+                self._update_gen_progress(100, "done", "Complete")
+            else:
+                self._update_gen_progress(0, "error", result.get("error", "Generation failed"))
+            return result
+        except Exception as e:
+            self._update_gen_progress(0, "error", str(e))
+            return {"success": False, "error": str(e)}
+        finally:
+            _stop_polling = True
 
     def _generate_comfyui_video(self, provider: Dict, model: str, prompt: str, host: str = None,
                                  workflow_name: str = None, input_image: str = None, **kwargs) -> Dict:

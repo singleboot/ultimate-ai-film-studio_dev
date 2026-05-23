@@ -121,6 +121,21 @@ class ComfyUIClient:
             print(f"Error queueing prompt: {e}")
         return None
 
+    def get_progress(self) -> Dict:
+        """Get current generation progress from ComfyUI."""
+        try:
+            resp = requests.get(f"{self.host}/progress", timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "running": data.get("running", False),
+                    "current": data.get("current", 0),
+                    "max": data.get("max", 25)
+                }
+        except Exception:
+            pass
+        return {"running": False, "current": 0, "max": 0}
+
     def get_queue(self) -> Dict:
         """Get current queue status."""
         try:

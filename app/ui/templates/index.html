@@ -873,31 +873,49 @@
                 <h2 style="color:var(--accent-primary);margin:0;">🎬 Character & Location Asset Studio</h2>
             </div>
 
-            <!-- Casting Board strip -->
-            <div id="casting-board" style="display:none;position:sticky;top:0;z-index:10;background:var(--bg-secondary);border-radius:8px;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-color);">
+            <!-- Asset progress -->
+            <div id="asset-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <span style="font-weight:600;font-size:0.8rem;color:var(--accent-primary);">◈ CASTING BOARD — Quick Access</span>
-                    <span style="font-size:0.65rem;color:var(--text-secondary);">Click any slot to inspect · Drag to upload</span>
+                    <span style="font-weight:600;" id="asset-progress-title">Processing...</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="color:var(--accent-primary);font-weight:700;" id="asset-progress-pct">0%</span>
+                        <button class="btn btn-danger" onclick="cancelAssetBatch()" id="asset-cancel-btn" style="padding:2px 8px;font-size:0.7rem;background:#e74c3c;color:#fff;border:none;border-radius:3px;cursor:pointer;">✕ Cancel</button>
+                    </div>
                 </div>
-                <div id="casting-char-row" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:4px;min-height:100px;"></div>
-                <div id="casting-loc-row" style="display:flex;gap:6px;overflow-x:auto;min-height:100px;"></div>
+                <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
+                    <div id="asset-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
+                </div>
+            </div>
+
+            <!-- Approval Bar (above grid, matching screenplay module layout) -->
+            <div id="asset-approval-bar" style="margin-bottom:15px;padding:12px;background:var(--bg-secondary);border-radius:8px;display:flex;align-items:center;justify-content:space-between;">
+                <div style="display:flex;gap:16px;align-items:center;">
+                    <span style="font-weight:600;font-size:0.8rem;">Approvals:</span>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <span style="font-size:0.75rem;color:var(--text-secondary);">👤 Characters:</span>
+                        <span id="asset-char-pending-badge" style="padding:2px 5px;border-radius:3px;background:#555;color:#fff;font-size:0.65rem;">⏳ Pending(0)</span>
+                        <span id="asset-char-approved-badge" style="padding:2px 5px;border-radius:3px;background:#4caf50;color:#fff;font-size:0.65rem;">✅ Approved(0)</span>
+                    </div>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <span style="font-size:0.75rem;color:var(--text-secondary);">🏠 Locations:</span>
+                        <span id="asset-loc-pending-badge" style="padding:2px 5px;border-radius:3px;background:#555;color:#fff;font-size:0.65rem;">⏳ Pending(0)</span>
+                        <span id="asset-loc-approved-badge" style="padding:2px 5px;border-radius:3px;background:#4caf50;color:#fff;font-size:0.65rem;">✅ Approved(0)</span>
+                    </div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:nowrap;">
+                    <button class="btn btn-primary" onclick="generateAllCharacterPrompts()" id="gen-char-prompts-btn" style="padding:3px 8px;font-size:0.65rem;">👤 Char Prompts</button>
+                    <button class="btn btn-primary" onclick="generateAllLocationPrompts()" id="gen-loc-prompts-btn" style="padding:3px 8px;font-size:0.65rem;">🏠 Loc Prompts</button>
+                    <button class="btn btn-primary" onclick="generateAllCharacterImages()" id="gen-char-img-btn" style="padding:3px 8px;font-size:0.65rem;">🎬 Char Images</button>
+                    <button class="btn btn-primary" onclick="generateAllLocationImages()" id="gen-loc-img-btn" style="padding:3px 8px;font-size:0.65rem;">🎬 Loc Images</button>
+                    <button class="btn btn-secondary" onclick="approveAllCharacters()" id="approve-chars-btn" style="padding:3px 8px;font-size:0.65rem;">✅ Approve Chars</button>
+                    <button class="btn btn-secondary" onclick="approveAllLocations()" id="approve-locs-btn" style="padding:3px 8px;font-size:0.65rem;">✅ Approve Locs</button>
+                </div>
             </div>
 
             <!-- Tabs -->
             <div style="display:flex;gap:8px;margin-bottom:15px;border-bottom:1px solid var(--border-color);padding-bottom:8px;">
                 <button class="btn btn-primary" onclick="switchAssetTab('characters')" id="tab-chars-btn" style="padding:8px 18px;">👤 Characters (<span id="asset-char-count">0</span>)</button>
                 <button class="btn btn-secondary" onclick="switchAssetTab('locations')" id="tab-locs-btn" style="padding:8px 18px;">🏠 Locations (<span id="asset-loc-count">0</span>)</button>
-            </div>
-
-            <!-- Asset progress -->
-            <div id="asset-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <span style="font-weight:600;" id="asset-progress-title">Processing...</span>
-                    <span style="color:var(--accent-primary);font-weight:700;" id="asset-progress-pct">0%</span>
-                </div>
-                <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
-                    <div id="asset-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
-                </div>
             </div>
 
             <!-- Character Tab -->
@@ -913,29 +931,6 @@
                 <div id="loc-asset-container" class="asset-grid"></div>
                 <div id="loc-asset-empty" style="text-align:center;padding:40px;color:var(--text-secondary);display:none;">
                     <p>No locations found. Generate a screenplay first to populate location data.</p>
-                </div>
-            </div>
-
-            <!-- Approval Bar -->
-            <div id="asset-approval-bar" style="margin-top:20px;padding:12px;background:var(--bg-secondary);border-radius:8px;display:flex;align-items:center;justify-content:space-between;">
-                <div style="display:flex;gap:16px;align-items:center;">
-                    <span style="font-weight:600;font-size:0.8rem;">Approvals:</span>
-                    <div style="display:flex;gap:6px;align-items:center;">
-                        <span style="font-size:0.75rem;color:var(--text-secondary);">👤 Characters:</span>
-                        <span id="asset-char-pending-badge" style="padding:2px 5px;border-radius:3px;background:#555;color:#fff;font-size:0.65rem;">⏳ Pending(0)</span>
-                        <span id="asset-char-approved-badge" style="padding:2px 5px;border-radius:3px;background:#4caf50;color:#fff;font-size:0.65rem;">✅ Approved(0)</span>
-                        <span id="asset-char-locked-badge" style="padding:2px 5px;border-radius:3px;background:#ff9800;color:#fff;font-size:0.65rem;">🔒 Locked(0)</span>
-                    </div>
-                    <div style="display:flex;gap:6px;align-items:center;">
-                        <span style="font-size:0.75rem;color:var(--text-secondary);">🏠 Locations:</span>
-                        <span id="asset-loc-pending-badge" style="padding:2px 5px;border-radius:3px;background:#555;color:#fff;font-size:0.65rem;">⏳ Pending(0)</span>
-                        <span id="asset-loc-approved-badge" style="padding:2px 5px;border-radius:3px;background:#4caf50;color:#fff;font-size:0.65rem;">✅ Approved(0)</span>
-                        <span id="asset-loc-locked-badge" style="padding:2px 5px;border-radius:3px;background:#ff9800;color:#fff;font-size:0.65rem;">🔒 Locked(0)</span>
-                    </div>
-                </div>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn btn-secondary" onclick="approveAllCharacters()" id="approve-chars-btn" style="padding:6px 14px;font-size:0.8rem;">✅ Approve Characters</button>
-                    <button class="btn btn-secondary" onclick="approveAllLocations()" id="approve-locs-btn" style="padding:6px 14px;font-size:0.8rem;">✅ Approve Locations</button>
                 </div>
             </div>
 
@@ -1016,7 +1011,6 @@
                         <button class="btn btn-secondary" onclick="showAssetVariantInput()" id="asset-variant-btn" style="padding:6px 12px;font-size:0.8rem;">✏️ Variant</button>
                         <button class="btn btn-secondary" onclick="assetGenerateTurnaround()" id="asset-turnaround-btn" style="padding:6px 12px;font-size:0.8rem;display:none;">📋 Turnaround</button>
                         <button class="btn btn-secondary" onclick="assetUploadFromModal()" id="asset-upload-btn" style="padding:6px 12px;font-size:0.8rem;">📁 Upload</button>
-                        <button class="btn btn-secondary" onclick="assetToggleLock()" id="asset-lock-btn" style="padding:6px 12px;font-size:0.8rem;">🔒 Lock</button>
                         <button class="btn btn-secondary" onclick="assetApprove()" id="asset-approve-btn" style="padding:6px 12px;font-size:0.8rem;">✅ Approve</button>
                     </div>
                     <!-- Variant creation input (hidden by default) -->
@@ -4941,6 +4935,19 @@
                     if (!data.success) return;
                 }
                 _assetStudioData = data;
+                // Normalize bible entries to ensure every item has character_id/location_id + full_name/location_name
+                if (_assetStudioData.character_bible) {
+                    _assetStudioData.character_bible.forEach((ch, i) => {
+                        if (!ch.character_id && !ch.id) ch.character_id = ch.name || 'CHAR_' + (i+1);
+                        if (!ch.full_name && !ch.character_name && ch.name) ch.full_name = ch.name;
+                    });
+                }
+                if (_assetStudioData.location_bible) {
+                    _assetStudioData.location_bible.forEach((loc, i) => {
+                        if (!loc.location_id && !loc.id) loc.location_id = loc.name || 'LOC_' + (i+1);
+                        if (!loc.location_name && !loc.environment_type && loc.name) loc.location_name = loc.name;
+                    });
+                }
                 // Also populate charData / locationData from bible for backward compat
                 if (data.character_bible && data.character_bible.length) {
                     charData = data.character_bible.map((ch, i) => ({
@@ -4980,64 +4987,8 @@
             const locBible = _assetStudioData.location_bible || [];
             document.getElementById('asset-char-count').textContent = charBible.length;
             document.getElementById('asset-loc-count').textContent = locBible.length;
-            renderCastingBoard(charBible, locBible);
             renderCharacterAssets(charBible);
             renderLocationAssets(locBible);
-        }
-
-        function renderCastingBoard(charBible, locBible) {
-            const board = document.getElementById('casting-board');
-            const charRow = document.getElementById('casting-char-row');
-            const locRow = document.getElementById('casting-loc-row');
-            charRow.innerHTML = '';
-            locRow.innerHTML = '';
-            const total = (charBible?.length || 0) + (locBible?.length || 0);
-            if (!total) { board.style.display = 'none'; return; }
-            board.style.display = 'block';
-
-            // Quick slot helper
-            function makeSlot(item, type) {
-                const id = item.character_id || item.location_id || item.id || '';
-                const assets = type === 'char' ? (_assetStudioData.character_assets || {}) : (_assetStudioData.location_assets || {});
-                const info = assets[id] || {};
-                const hasImg = !!info.approved_image;
-                const status = info.approved ? 'Approved' : (info.locked ? 'Locked' : 'Pending');
-                const statusColor = info.approved ? '#4caf50' : (info.locked ? '#ff9800' : '#555');
-                const slot = document.createElement('div');
-                slot.style.cssText = 'width:100px;height:100px;flex-shrink:0;background:var(--bg-primary);border-radius:4px;border:1px solid var(--border-color);display:flex;flex-direction:column;cursor:pointer;overflow:hidden;position:relative;';
-                slot.innerHTML = `
-                    <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--bg-tertiary);">
-                        ${hasImg
-                            ? `<img src="${getAssetImageSrc(info.approved_image)}" style="width:100%;height:100%;object-fit:cover;">`
-                            : `<span style="font-size:0.5rem;color:var(--text-secondary);text-align:center;padding:4px;">Drop<br>image</span>`
-                        }
-                    </div>
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:1px 4px;background:var(--bg-secondary);flex-shrink:0;">
-                        <span style="font-size:0.45rem;color:var(--accent-primary);font-weight:600;max-width:55px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${id}</span>
-                        <span style="font-size:0.4rem;padding:0 3px;border-radius:2px;background:${statusColor};color:#fff;line-height:1.4;">${status}</span>
-                    </div>
-                `;
-                slot.onclick = () => {
-                    switchAssetTab(type === 'char' ? 'characters' : 'locations');
-                    expandAssetItem(type, id);
-                };
-                // Drag-drop support
-                slot.ondragover = function(e) { e.preventDefault(); this.style.borderColor = '#4ade80'; };
-                slot.ondragleave = function(e) { this.style.borderColor = 'var(--border-color)'; };
-                slot.ondrop = function(e) {
-                    e.preventDefault(); e.stopPropagation();
-                    this.style.borderColor = 'var(--border-color)';
-                    const file = e.dataTransfer.files[0];
-                    if (file && file.type.startsWith('image/')) {
-                        if (type === 'char') uploadCharacterImage(id, file);
-                        else uploadLocationImage(id, file);
-                    }
-                };
-                return slot;
-            }
-
-            (charBible || []).forEach(ch => charRow.appendChild(makeSlot(ch, 'char')));
-            (locBible || []).forEach(loc => locRow.appendChild(makeSlot(loc, 'loc')));
         }
 
         function getAssetImageSrc(path) {
@@ -5110,17 +5061,17 @@
                         }
                     </div>
                     <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
-                        ${!hasImage && ch.image_prompt ? `<div style="color:var(--accent-secondary);font-size:0.6rem;">🎨 ${ch.image_prompt.substring(0, 100)}${ch.image_prompt.length > 100 ? '…' : ''}</div>` : ''}
                         ${ch.physical_appearance ? `<div style="color:var(--text-secondary);font-size:0.6rem;">👁 ${ch.physical_appearance.substring(0, 80)}${ch.physical_appearance.length > 80 ? '…' : ''}</div>` : ''}
                         ${ch.personality ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🧠 ${ch.personality.substring(0, 80)}${ch.personality.length > 80 ? '…' : ''}</div>` : ''}
                     </div>
                     <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
                         <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('char','${cid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();generateAssetPrompt('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Generate Prompt">📝</button>
                         <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Generate with T2I">🎨 Gen</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetToggleLock('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="${locked ? 'Unlock' : 'Lock'}">${locked ? '🔓' : '🔒'}</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Approve">✅</button>
                     </div>
+                    <textarea oninput="event.stopPropagation();const b=_assetStudioData.character_bible||[];const e=b.find(x=>(x.character_id||x.id)=='${cid}');if(e){e.image_prompt=this.value;scheduleSaveState();}" style="width:100%;min-height:36px;font-size:0.55rem;background:var(--bg-tertiary);color:var(--text-primary);border:none;border-top:1px solid var(--border-color);padding:4px 6px;resize:vertical;flex-shrink:0;outline:none;" placeholder="Image prompt..." onclick="event.stopPropagation()">${(ch.image_prompt || '')}</textarea>
                 `;
                 card.onclick = () => expandAssetItem('char', cid);
                 const imgZone = card.querySelector('.char-img-zone');
@@ -5549,18 +5500,18 @@
                         }
                     </div>
                     <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
-                        ${!hasImage && loc.image_prompt ? `<div style="color:var(--accent-secondary);font-size:0.6rem;">🎨 ${loc.image_prompt.substring(0, 100)}${loc.image_prompt.length > 100 ? '…' : ''}</div>` : ''}
                         ${loc.architecture_style ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🏛 ${loc.architecture_style.substring(0, 80)}${loc.architecture_style.length > 80 ? '…' : ''}</div>` : ''}
                         ${loc.mood ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🎭 ${loc.mood.substring(0, 80)}${loc.mood.length > 80 ? '…' : ''}</div>` : ''}
                         ${loc.lighting_style ? `<div style="color:var(--text-secondary);font-size:0.6rem;">💡 ${loc.lighting_style.substring(0, 80)}${loc.lighting_style.length > 80 ? '…' : ''}</div>` : ''}
                     </div>
                     <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
                         <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('loc','${lid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();generateAssetPrompt('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Generate Prompt">📝</button>
                         <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Generate with T2I">🎨 Gen</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetToggleLock('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="${locked ? 'Unlock' : 'Lock'}">${locked ? '🔓' : '🔒'}</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Approve">✅</button>
                     </div>
+                    <textarea oninput="event.stopPropagation();const b=_assetStudioData.location_bible||[];const e=b.find(x=>(x.location_id||x.id)=='${lid}');if(e){e.image_prompt=this.value;scheduleSaveState();}" style="width:100%;min-height:36px;font-size:0.55rem;background:var(--bg-tertiary);color:var(--text-primary);border:none;border-top:1px solid var(--border-color);padding:4px 6px;resize:vertical;flex-shrink:0;outline:none;" placeholder="Image prompt..." onclick="event.stopPropagation()">${(loc.image_prompt || '')}</textarea>
                 `;
                 card.onclick = () => expandAssetItem('loc', lid);
                 const imgZone = card.querySelector('.loc-img-zone');
@@ -5726,20 +5677,336 @@
             input.click();
         }
 
-        async function assetGenerateImage(id, type) {
+        function buildCharacterMasterPrompt(ch) {
+            const g = (selectedGenres || []).join(', ') || '—';
+            const vs = selectedVisualStyle || '—';
+            const fa = selectedFilmAesthetic || '—';
+            const projVL = `Genre: ${g}; Visual Style: ${vs}; Film Aesthetic: ${fa}`;
+            return `Create a cinematic full-body character reference image of ${ch.full_name || ch.character_name || ''}, a ${ch.role || '—'} from a ${g} film world.
+
+The character should visually embody:
+${ch.personality || '—'},
+while subtly reflecting emotional undertones of:
+${ch.emotional_traits || ch.emotional_wounds || '—'}.
+
+The visual identity should feel:
+${ch.visual_identity || '—'}.
+
+Wardrobe and costume design must maintain:
+${ch.clothing_continuity || ch.clothing || '—'}.
+
+The character should display subtle behavioral personality traits inspired by:
+${ch.signature_items || ch.signature_behavior || '—'}.
+
+The image must feel grounded within:
+${ch.age || ch.era || '—'},
+while matching the cinematic language of:
+${fa}.
+
+Visual rendering style:
+${vs}.
+
+Maintain strong continuity-safe identity consistency including:
+- facial structure
+- hairstyle
+- silhouette
+- body proportions
+- costume details
+- accessories
+- texture realism
+
+The composition should present the character as:
+A PROFESSIONAL CINEMATIC REFERENCE ASSET
+
+Show:
+- full body framing
+- neutral but cinematic stance
+- readable costume details
+- visible facial features
+- clear silhouette
+- production-ready presentation
+
+Lighting should feel:
+- cinematic
+- realistic
+- emotionally atmospheric
+- continuity-safe
+
+Use:
+- subtle cinematic depth
+- realistic material textures
+- grounded proportions
+- believable anatomy
+- film-grade visual realism
+
+The image should feel suitable for:
+- virtual production
+- casting reference
+- storyboard continuity
+- AI filmmaking pipelines
+
+Avoid:
+- exaggerated anime anatomy
+- chaotic composition
+- cropped body framing
+- inconsistent costume details
+- unstable facial features
+- random accessories
+- over-stylized posing
+- extreme perspective distortion
+
+Output style:
+ultra cinematic character reference, production-ready film character sheet, highly detailed realism, continuity-safe design, cinematic lighting, clean silhouette readability, virtual production quality, premium film concept art
+
+Project visual language: ${projVL}`;
+        }
+
+        function setAssetProgress(pct, title) {
+            const bar = document.getElementById('asset-progress');
+            const barInner = document.getElementById('asset-progress-bar');
+            const pctEl = document.getElementById('asset-progress-pct');
+            const titleEl = document.getElementById('asset-progress-title');
+            if (!bar) return;
+            bar.style.display = 'block';
+            if (barInner) barInner.style.width = Math.min(pct, 100) + '%';
+            if (pctEl) pctEl.textContent = Math.min(pct, 100) + '%';
+            if (titleEl && title) titleEl.textContent = title;
+        }
+        function hideAssetProgress() {
+            const bar = document.getElementById('asset-progress');
+            if (bar) bar.style.display = 'none';
+        }
+        function setAssetCardSpinner(id, type, on) {
+            const sel = type === 'char' ? `.char-img-zone[data-cid="${id}"]` : `.loc-img-zone[data-lid="${id}"]`;
+            const zone = document.querySelector(sel);
+            if (!zone) return;
+            if (on) {
+                zone.style.position = 'relative';
+                let sp = zone.querySelector('.asset-card-spinner');
+                if (!sp) {
+                    sp = document.createElement('div');
+                    sp.className = 'asset-card-spinner';
+                    sp.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);border-radius:4px;z-index:5;';
+                    sp.innerHTML = '<div class="spinner" style="width:24px;height:24px;border:3px solid rgba(255,255,255,0.3);border-top:3px solid #fff;border-radius:50%;animation:spin 0.8s linear infinite;"></div>';
+                    zone.appendChild(sp);
+                }
+                sp.style.display = 'flex';
+            } else {
+                const sp = zone.querySelector('.asset-card-spinner');
+                if (sp) sp.style.display = 'none';
+            }
+        }
+
+        function setCardProgress(id, type, pct) {
+            const sel = type === 'char' ? `.char-img-zone[data-cid="${id}"]` : `.loc-img-zone[data-lid="${id}"]`;
+            const zone = document.querySelector(sel);
+            if (!zone) return;
+            // Show spinner with progress text
+            zone.style.position = 'relative';
+            let overlay = zone.querySelector('.asset-card-spinner');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.className = 'asset-card-spinner';
+                overlay.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;background:rgba(0,0,0,0.5);border-radius:4px;z-index:5;';
+                overlay.innerHTML = '<div class="spinner" style="width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top:2px solid #fff;border-radius:50%;animation:spin 0.8s linear infinite;"></div><span class="card-progress-pct" style="color:#fff;font-size:0.7rem;font-weight:600;"></span>';
+                zone.appendChild(overlay);
+            }
+            overlay.style.display = 'flex';
+            const pctEl = overlay.querySelector('.card-progress-pct');
+            if (pctEl) pctEl.textContent = pct > 0 ? `${pct}%` : '⏳';
+        }
+
+        function updateAssetCardImage(id, type, imageUrl) {
+            const sel = type === 'char' ? `.char-img-zone[data-cid="${id}"]` : `.loc-img-zone[data-lid="${id}"]`;
+            const zone = document.querySelector(sel);
+            if (!zone) return;
+            zone.innerHTML = `<img src="${getAssetImageSrc(imageUrl)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`;
+        }
+
+        function cancelAssetBatch() {
+            if (window._assetBatchAbortController) {
+                window._assetBatchAbortController.abort();
+                window._assetBatchAbortController = null;
+            }
+        }
+
+        async function generateAssetPrompt(id, type) {
             id = id || window._currentAssetExpandId;
             type = type || window._currentAssetExpandType;
             if (!id) return;
-            const btn = document.getElementById('asset-gen-btn');
-            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
             const bible = type === 'char'
                 ? (_assetStudioData.character_bible || [])
                 : (_assetStudioData.location_bible || []);
             const asset = bible.find(x => (x.character_id || x.id || x.location_id) === id);
-            if (!asset) { if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate Image'; } return; }
-            const prompt = asset.image_prompt || '';
-            if (!prompt) { if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate Image'; } notify('No Prompt', 'No image prompt available for this asset', '⚠️'); return; }
-            // Use settings to get the image provider
+            if (!asset) return;
+            // Find and disable the button
+            const selBtn = type === 'char' ? `.char-img-zone[data-cid="${id}"]` : `.loc-img-zone[data-lid="${id}"]`;
+            const zone = document.querySelector(selBtn);
+            let btn = null;
+            if (zone) {
+                const card = zone.closest('div[style*="width:280px"]');
+                if (card) {
+                    const btns = card.querySelectorAll('button');
+                    btns.forEach(b => { if (b.textContent === '📝') { btn = b; } });
+                }
+            }
+            if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+            setAssetCardSpinner(id, type, true);
+            try {
+                const res = await fetch('/api/orchestrator/generate-asset-prompt', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({type, asset, id})
+                });
+                const data = await res.json();
+                if (data.success && data.prompt) {
+                    asset.image_prompt = data.prompt;
+                    // Update the textarea directly
+                    if (zone) {
+                        const card = zone.closest('div[style*="width:280px"]');
+                        if (card) {
+                            const ta = card.querySelector('textarea');
+                            if (ta) ta.value = data.prompt;
+                        }
+                    }
+                } else {
+                    notify('Prompt Failed', data.error || 'No prompt returned', '⚠️');
+                }
+            } catch(e) {
+                if (e.name !== 'AbortError') notify('Prompt Error', e.message, '⚠️');
+            }
+            setAssetCardSpinner(id, type, false);
+            if (btn) { btn.disabled = false; btn.textContent = '📝'; }
+        }
+
+        async function _generateBulkPrompts(type, btnId, label) {
+            cancelAssetBatch();
+            const ac = new AbortController();
+            window._assetBatchAbortController = ac;
+            const bibleName = type === 'char' ? 'character_bible' : 'location_bible';
+            const items = (_assetStudioData[bibleName] || []).map(x => ({
+                id: x.character_id || x.id || x.location_id || '',
+                asset: x
+            })).filter(x => x.id);
+            if (!items.length) { notify('Nothing', `No ${label} found`, '⚠️'); return; }
+            const btn = document.getElementById(btnId);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            let done = 0;
+            for (const item of items) {
+                if (ac.signal.aborted) break;
+                done++;
+                setAssetProgress(Math.round(done/items.length*100), `Generating ${label} prompt ${done}/${items.length}: ${item.asset.full_name || item.asset.character_name || item.asset.name || item.asset.location_name || item.id}`);
+                setAssetCardSpinner(item.id, type, true);
+                try {
+                    const res = await fetch('/api/orchestrator/generate-asset-prompt', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({type, asset: item.asset, id: item.id})
+                    });
+                    const data = await res.json();
+                    if (data.success && data.prompt) {
+                        item.asset.image_prompt = data.prompt;
+                    } else {
+                        notify('Prompt Failed', data.error || 'No prompt returned', '⚠️');
+                    }
+                } catch(e) {
+                    if (e.name !== 'AbortError') notify('Prompt Error', e.message, '⚠️');
+                }
+                setAssetCardSpinner(item.id, type, false);
+            }
+            window._assetBatchAbortController = null;
+            if (btn) { btn.disabled = false; btn.textContent = label === 'character' ? '👤 Char Prompts' : '🏠 Loc Prompts'; }
+            // Re-render active tab
+            const activeTab = document.querySelector('.asset-tab[style*="display: block"]') || document.getElementById('asset-chars-tab');
+            if (!ac.signal.aborted) {
+                if (activeTab) {
+                    if (activeTab.id === 'asset-chars-tab') renderCharacterAssets(_assetStudioData.character_bible || []);
+                    else renderLocationAssets(_assetStudioData.location_bible || []);
+                }
+                setAssetProgress(100, `All ${label} prompts generated!`);
+                notify('Done', `All ${label} prompts generated`, '✅');
+                setTimeout(hideAssetProgress, 3000);
+            } else {
+                hideAssetProgress();
+            }
+        }
+
+        async function generateAllCharacterPrompts() {
+            return _generateBulkPrompts('char', 'gen-char-prompts-btn', 'character');
+        }
+
+        async function generateAllLocationPrompts() {
+            return _generateBulkPrompts('loc', 'gen-loc-prompts-btn', 'location');
+        }
+
+        async function _generateBulkImages(type, btnId, label) {
+            cancelAssetBatch();
+            const ac = new AbortController();
+            window._assetBatchAbortController = ac;
+            const bibleName = type === 'char' ? 'character_bible' : 'location_bible';
+            const items = (_assetStudioData[bibleName] || []).map(x => ({
+                id: x.character_id || x.id || x.location_id || '',
+                type: type,
+                name: x.full_name || x.character_name || x.name || x.location_name || x.id
+            })).filter(x => x.id);
+            if (!items.length) { notify('Nothing', `No ${label} found`, '⚠️'); return; }
+            const btn = document.getElementById(btnId);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            let done = 0;
+            for (const item of items) {
+                if (ac.signal.aborted) break;
+                done++;
+                setAssetProgress(Math.round(done/items.length*100), `Generating ${label} image ${done}/${items.length}: ${item.name}`);
+                const assetStore = type === 'char' ? (_assetStudioData.character_assets || {}) : (_assetStudioData.location_assets || {});
+                const oldImg = (assetStore[item.id] || {}).approved_image;
+                try {
+                    await assetGenerateImage(item.id, item.type);
+                } catch(e) {
+                    if (e.name !== 'AbortError') console.warn('Image gen error', e.message);
+                }
+                if (!ac.signal.aborted) {
+                    const newImg = (assetStore[item.id] || {}).approved_image;
+                    if (newImg && newImg !== oldImg) updateAssetCardImage(item.id, item.type, newImg);
+                }
+            }
+            window._assetBatchAbortController = null;
+            if (btn) { btn.disabled = false; btn.textContent = label === 'character' ? '🎬 Char Images' : '🎬 Loc Images'; }
+            if (!ac.signal.aborted) {
+                const activeTab = document.querySelector('.asset-tab[style*="display: block"]') || document.getElementById('asset-chars-tab');
+                if (activeTab) {
+                    if (activeTab.id === 'asset-chars-tab') renderCharacterAssets(_assetStudioData.character_bible || []);
+                    else renderLocationAssets(_assetStudioData.location_bible || []);
+                }
+                setAssetProgress(100, `All ${label} images generated!`);
+                notify('Done', `All ${label} images generated`, '✅');
+                setTimeout(hideAssetProgress, 3000);
+            } else {
+                hideAssetProgress();
+            }
+        }
+
+        async function generateAllCharacterImages() {
+            return _generateBulkImages('char', 'gen-char-img-btn', 'character');
+        }
+
+        async function generateAllLocationImages() {
+            return _generateBulkImages('loc', 'gen-loc-img-btn', 'location');
+        }
+
+        async function assetGenerateImage(id, type) {
+            id = id || window._currentAssetExpandId;
+            type = type || window._currentAssetExpandType;
+            if (!id) return;
+            const bible = type === 'char'
+                ? (_assetStudioData.character_bible || [])
+                : (_assetStudioData.location_bible || []);
+            const asset = bible.find(x => (x.character_id || x.id || x.location_id) === id);
+            if (!asset) { setAssetCardSpinner(id, type, false); return; }
+            const prompt = type === 'char' ? buildCharacterMasterPrompt(asset) : (asset.image_prompt || '');
+            if (!prompt) { setAssetCardSpinner(id, type, false); notify('No Prompt', 'No image prompt available for this asset', '⚠️'); return; }
+            // Disable the expand-modal btn if it exists for this asset
+            const expandBtn = document.getElementById('asset-gen-btn');
+            if (expandBtn && id === (window._currentAssetExpandId || '')) { expandBtn.disabled = true; expandBtn.textContent = '⏳ Generating...'; }
+            // Show card spinner
+            setAssetCardSpinner(id, type, true);
             const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
             const imgSettings = settings.image_gen || {};
             const provider = imgSettings.provider || 'comfyui';
@@ -5747,6 +6014,19 @@
             const host = imgSettings.host || '';
             const apiKey = imgSettings.apiKey || '';
             notify('Generating', `Sending to ${provider}...`, '🎨');
+            // Start progress polling
+            let progressInterval = null;
+            progressInterval = setInterval(async () => {
+                try {
+                    const pRes = await fetch('/api/image/progress');
+                    const p = await pRes.json();
+                    if (p && p.pct !== undefined && p.status === 'running') {
+                        setCardProgress(id, type, p.pct);
+                    } else if (p && (p.status === 'idle' || p.status === 'done' || p.status === 'error')) {
+                        if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+                    }
+                } catch(e) {}
+            }, 1000);
             try {
                 const res = await fetch('/api/image/generate', {
                     method: 'POST',
@@ -5754,9 +6034,14 @@
                     body: JSON.stringify({ provider, model, prompt, host, api_key: apiKey, width: 1024, height: 1024 }),
                 });
                 const data = await res.json();
+                if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+                setAssetCardSpinner(id, type, false);
                 if (data.success && data.image_url) {
-                    const imgArea = document.getElementById('asset-expand-image-area');
-                    imgArea.innerHTML = `<img src="${getAssetImageSrc(data.image_url)}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
+                    // Update expand modal image area if open for this asset
+                    if (expandBtn && id === (window._currentAssetExpandId || '')) {
+                        const imgArea = document.getElementById('asset-expand-image-area');
+                        if (imgArea) imgArea.innerHTML = `<img src="${getAssetImageSrc(data.image_url)}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
+                    }
                     // Save to asset
                     const assets = type === 'char'
                         ? (_assetStudioData.character_assets || {})
@@ -5767,20 +6052,24 @@
                     assets[id].approved_image = data.image_url;
                     // Refresh history in modal
                     const historyEl = document.getElementById('asset-expand-history');
-                    const history = assets[id].generation_history;
-                    historyEl.innerHTML = history.map((h, i) => `
-                        <div style="width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === data.image_url ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="assetSetActiveFromHistory(${i})" title="Click to set as active">
-                            <img src="${getAssetImageSrc(h)}" style="width:100%;height:100%;object-fit:cover;">
-                        </div>
-                    `).join('');
+                    if (historyEl) {
+                        const history = assets[id].generation_history;
+                        historyEl.innerHTML = history.map((h, i) => `
+                            <div style="width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === data.image_url ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="assetSetActiveFromHistory(${i})" title="Click to set as active">
+                                <img src="${getAssetImageSrc(h)}" style="width:100%;height:100%;object-fit:cover;">
+                            </div>
+                        `).join('');
+                    }
                     notify('Generated', 'Image ready for approval', '✅');
                 } else {
                     notify('Failed', data.error || 'Generation failed', '❌');
                 }
             } catch (e) {
+                if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+                setAssetCardSpinner(id, type, false);
                 notify('Error', e.message, '❌');
             }
-            if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate Image'; }
+            if (expandBtn && id === (window._currentAssetExpandId || '')) { expandBtn.disabled = false; expandBtn.textContent = '🎨 Generate Image'; }
         }
 
         function showAssetVariantInput(id, type) {
@@ -5819,28 +6108,6 @@
             }
             document.getElementById('asset-variant-input-area').style.display = 'none';
             document.getElementById('asset-variant-instruction').value = '';
-        }
-
-        async function assetToggleLock(id, type) {
-            id = id || window._currentAssetExpandId;
-            type = type || window._currentAssetExpandType;
-            if (!id) return;
-            const category = type === 'char' ? 'characters' : 'locations';
-            try {
-                const res = await fetch('/api/orchestrator/asset-lock', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ category, item_id: id, field: 'appearance', locked: true }),
-                });
-                const data = await res.json();
-                if (data.success) {
-                    notify('Locked', `Asset ${id} locked`, '🔒');
-                    loadAssetStudioData();
-                    scheduleSaveState();
-                }
-            } catch (e) {
-                notify('Error', e.message, '❌');
-            }
         }
 
         async function assetApprove(id, type) {
@@ -5915,28 +6182,24 @@
             const locBible = _assetStudioData?.location_bible || [];
             const charAssets = _assetStudioData?.character_assets || {};
             const locAssets = _assetStudioData?.location_assets || {};
-            let charPending = 0, charApproved = 0, charLocked = 0;
+            let charPending = 0, charApproved = 0;
             charBible.forEach(ch => {
                 const id = ch.character_id || ch.id || '';
                 const info = charAssets[id] || {};
                 if (info.approved) charApproved++;
-                else if (info.locked) charLocked++;
                 else charPending++;
             });
-            let locPending = 0, locApproved = 0, locLocked = 0;
+            let locPending = 0, locApproved = 0;
             locBible.forEach(loc => {
                 const id = loc.location_id || loc.id || '';
                 const info = locAssets[id] || {};
                 if (info.approved) locApproved++;
-                else if (info.locked) locLocked++;
                 else locPending++;
             });
             document.getElementById('asset-char-pending-badge').textContent = `⏳ Pending(${charPending})`;
             document.getElementById('asset-char-approved-badge').textContent = `✅ Approved(${charApproved})`;
-            document.getElementById('asset-char-locked-badge').textContent = `🔒 Locked(${charLocked})`;
             document.getElementById('asset-loc-pending-badge').textContent = `⏳ Pending(${locPending})`;
             document.getElementById('asset-loc-approved-badge').textContent = `✅ Approved(${locApproved})`;
-            document.getElementById('asset-loc-locked-badge').textContent = `🔒 Locked(${locLocked})`;
             const proceedBtn = document.getElementById('proceed-to-storyboard-btn');
             if (ap.characters && ap.locations) {
                 proceedBtn.disabled = false;

@@ -565,6 +565,16 @@ def sync_bibles(data: dict):
         location_bible=data.get("location_bible"),
     )
 
+@app.post("/api/orchestrator/generate-asset-prompt")
+def generate_asset_prompt(data: dict):
+    """Generate image_prompt for a character or location using LLM."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.generate_asset_prompt(
+        asset_type=data.get("type", ""),
+        asset=data.get("asset", {}),
+    )
+
 # === V2.0: Shot-level endpoints ===
 
 @app.get("/api/orchestrator/shot/{shot_id}")
@@ -657,6 +667,13 @@ def generate_image_endpoint(data: dict):
         resolution=data.get("resolution"),
         seed=data.get("seed")
     )
+
+@app.get("/api/image/progress")
+async def get_image_progress():
+    """Get current image generation progress."""
+    if not image_engine:
+        return {"pct": 0, "status": "idle", "label": ""}
+    return image_engine.get_gen_progress()
 
 @app.post("/api/video/generate")
 def generate_video_endpoint(data: dict):
