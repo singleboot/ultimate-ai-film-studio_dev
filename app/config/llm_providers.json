@@ -89,7 +89,7 @@
       "name": "App LLM (Local - Project Model)",
       "type": "local",
       "host": "http://localhost:8081",
-      "default_model": "",
+      "default_model": "gemma-4-E2B-it-Q4_K_M.gguf",
       "api_endpoint": "/v1/chat/completions",
       "requires_api_key": false,
       "binary": "llama-server",

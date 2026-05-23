@@ -1,9 +1,13 @@
 import json
+import logging
 import os
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
+
+logger = logging.getLogger("film-studio.orchestrator")
 
 
 SKILL_PATH = Path(__file__).parent.parent.parent / "skills" / "cinematic_story_architect.md"
@@ -227,25 +231,28 @@ class CinematicOrchestrator:
                 gs = json.loads(sp.read_text(encoding='utf-8'))
                 llm_cfg = gs.get("llm", {})
                 if not provider:
-                    provider = llm_cfg.get("provider", "ollama")
+                    provider = llm_cfg.get("provider", "app_llm")
                 if not model:
                     model = llm_cfg.get("model", "")
                 host = llm_cfg.get("host", "")
         except Exception:
             pass
         if not provider:
-            provider = "ollama"
+            provider = "app_llm"
         if not model:
-            try:
-                import requests
-                oh = host or "http://localhost:11434"
-                r = requests.get(f"{oh}/api/tags", timeout=5)
-                if r.status_code == 200:
-                    tags = r.json().get("models", [])
-                    if tags:
-                        model = tags[0].get("name", "llama3.1")
-            except Exception:
-                model = "llama3.1"
+            if provider == "app_llm":
+                model = "gemma-4-E2B-it-Q4_K_M.gguf"
+            else:
+                try:
+                    import requests
+                    oh = host or "http://localhost:11434"
+                    r = requests.get(f"{oh}/api/tags", timeout=5)
+                    if r.status_code == 200:
+                        tags = r.json().get("models", [])
+                        if tags:
+                            model = tags[0].get("name", "llama3.1")
+                except Exception:
+                    model = "llama3.1"
 
         result = self.llm_engine.generate(
             provider_id=provider,
@@ -725,7 +732,10 @@ Every concept must feel:
   - clothing (string, era-appropriate)
   - personality (string)
   - emotional_traits (string)
+  - emotional_wounds (string, underlying traumas and unresolved emotional drives)
+  - motivations (string, what drives this character forward)
   - signature_items (string)
+  - signature_behavior (string, distinctive gestures, mannerisms, or behavioral patterns)
   - cinematic_presence (string)
   - visual_identity (string, how they look on screen)
   - costume_continuity (string)
@@ -735,6 +745,7 @@ Every concept must feel:
   - location_name (string)
   - environment_type (string)
   - architecture_style (string)
+  - time_period (string, historical or futuristic era the location belongs to)
   - mood (string)
   - lighting_style (string)
   - cinematic_features (string)
@@ -869,37 +880,64 @@ IMPORTANT CONSTRAINTS:
     def _validate_screenplay_counts(self, data: Dict) -> Tuple[bool, List[str]]:
         """Validate that screenplay respects exact count constraints (shot node schema)."""
         issues = []
+        if not isinstance(data, dict):
+            return False, [f"Expected JSON object, got {type(data).__name__}"]
+
         scenes = data.get("scenes", [])
+        if not isinstance(scenes, list):
+            return False, [f"Expected 'scenes' to be a list, got {type(scenes).__name__}"]
+
         if len(scenes) != self.memory.selected_scenes:
             issues.append(f"Scenes: got {len(scenes)}, expected {self.memory.selected_scenes}")
 
         # Shot nodes count (NOT estimated_shots)
-        total_shots = sum(len(s.get("shots", [])) for s in scenes)
+        total_shots = 0
+        for s in scenes:
+            if isinstance(s, dict):
+                shots = s.get("shots", [])
+                if isinstance(shots, list):
+                    total_shots += sum(1 for sh in shots if isinstance(sh, dict))
+                else:
+                    issues.append(f"Scene {s.get('scene_id', '?')} shots is not a list")
+            else:
+                issues.append("Scene entry in list is not a dictionary")
+
         if total_shots != self.memory.selected_total_shots:
             issues.append(f"Total shots: got {total_shots}, expected {self.memory.selected_total_shots}")
 
         # Character bible count
         cb = data.get("character_bible", [])
+        if not isinstance(cb, list):
+            issues.append(f"Expected 'character_bible' to be a list, got {type(cb).__name__}")
+            cb = []
         if len(cb) != self.memory.selected_characters:
             issues.append(f"Character bible: got {len(cb)} entries, expected {self.memory.selected_characters}")
 
         # Location bible count
         lb = data.get("location_bible", [])
+        if not isinstance(lb, list):
+            issues.append(f"Expected 'location_bible' to be a list, got {type(lb).__name__}")
+            lb = []
         if len(lb) != self.memory.selected_locations:
             issues.append(f"Location bible: got {len(lb)} entries, expected {self.memory.selected_locations}")
 
         # Unique scene location_ids match location_bible
-        loc_ids_in_bible = set(l.get("location_id", "") for l in lb)
+        loc_ids_in_bible = set(l.get("location_id", "") for l in lb if isinstance(l, dict))
         for s in scenes:
-            lid = s.get("location_id", "")
-            if lid and lid not in loc_ids_in_bible:
-                issues.append(f"Scene {s.get('scene_id', '?')} location_id '{lid}' not in location_bible")
+            if isinstance(s, dict):
+                lid = s.get("location_id", "")
+                if lid and lid not in loc_ids_in_bible:
+                    issues.append(f"Scene {s.get('scene_id', '?')} location_id '{lid}' not in location_bible")
 
         # Shot IDs must be unique
         all_shot_ids = []
         for s in scenes:
-            for sh in s.get("shots", []):
-                all_shot_ids.append(sh.get("shot_id", ""))
+            if isinstance(s, dict):
+                shots = s.get("shots", [])
+                if isinstance(shots, list):
+                    for sh in shots:
+                        if isinstance(sh, dict):
+                            all_shot_ids.append(sh.get("shot_id", ""))
         if len(all_shot_ids) != len(set(all_shot_ids)):
             issues.append("Duplicate shot_id found across scenes")
 
@@ -1487,17 +1525,31 @@ Each variant must be meaningfully different from the original and from each othe
         return {"success": True, "locks": self.memory.project_graph.get("locks", {})}
 
     def approve_characters(self, params: Dict = None) -> Dict:
-        """Mark characters as approved, enabling storyboard generation."""
+        """Mark characters as approved, enabling storyboard generation. Auto-locks image_prompt for each character."""
         pg = self.memory.project_graph
         approvals = pg.setdefault("approvals", {})
         approvals["characters_approved"] = True
+        # Auto-lock each character's image_prompt
+        locks = pg.setdefault("locks", {})
+        cat_locks = locks.setdefault("characters", {})
+        for ch in pg.get("character_bible", []):
+            cid = ch.get("character_id") or ch.get("id", "")
+            if cid:
+                cat_locks.setdefault(cid, {})["image_prompt"] = True
         return {"success": True, "approvals": approvals}
 
     def approve_locations(self, params: Dict = None) -> Dict:
-        """Mark locations as approved, enabling storyboard generation."""
+        """Mark locations as approved, enabling storyboard generation. Auto-locks image_prompt for each location."""
         pg = self.memory.project_graph
         approvals = pg.setdefault("approvals", {})
         approvals["locations_approved"] = True
+        # Auto-lock each location's image_prompt
+        locks = pg.setdefault("locks", {})
+        cat_locks = locks.setdefault("locations", {})
+        for loc in pg.get("location_bible", []):
+            lid = loc.get("location_id") or loc.get("id", "")
+            if lid:
+                cat_locks.setdefault(lid, {})["image_prompt"] = True
         return {"success": True, "approvals": approvals}
 
     def get_approvals(self) -> Dict:
@@ -2063,25 +2115,34 @@ Example:
             appearance = asset.get("physical_appearance", "")
             clothing = asset.get("clothing_continuity", asset.get("clothing", ""))
             identity = asset.get("visual_identity", "")
+            emotional = asset.get("emotional_traits", "")
+            wounds = asset.get("emotional_wounds", "")
+            motivations = asset.get("motivations", "")
+            behavior = asset.get("signature_behavior", "")
             prompt_text = f"""Project context: {proj_context}
 
 You are a cinema visual AI. Given this character, write a detailed visual image generation prompt for a cinematic character reference image.
 
 Character: {name}
 Role: {role}
-Personality/traits: {personality}
+Personality: {personality}
+Emotional traits: {emotional}
+Emotional wounds: {wounds}
+Motivations: {motivations}
 Physical appearance: {appearance}
 Clothing/costume: {clothing}
 Visual identity: {identity}
+Signature behavior: {behavior}
 
-Write a single, rich image generation prompt that describes how this character should look in a cinematic character reference shot. Include: facial features, hairstyle, costume details, body type, posture, lighting, mood, and background. Return ONLY the prompt text, no explanation, no JSON."""
+Write a single, rich image generation prompt for a cinematic full-body character reference. Include: facial features with character-appropriate expression, hairstyle, costume continuity, body type and proportions, neutral but cinematic stance, subtle personality expression through posture, cinematic lighting and mood, atmospheric but minimal background. Emphasize identity consistency and production-ready realism. Return ONLY the prompt text, no explanation, no JSON."""
         else:
             name = asset.get("location_name", asset.get("environment_type", asset.get("name", "")))
             arch = asset.get("architecture_style", "")
             mood = asset.get("mood", "")
             lighting = asset.get("lighting_style", "")
             period = asset.get("time_period", "")
-            desc = asset.get("description", "")
+            features = asset.get("cinematic_features", "")
+            storytelling = asset.get("environmental_storytelling", "")
             prompt_text = f"""Project context: {proj_context}
 
 You are a cinema visual AI. Given this location, write a detailed visual image generation prompt for a cinematic environment reference image.
@@ -2091,9 +2152,10 @@ Architecture: {arch}
 Mood: {mood}
 Lighting: {lighting}
 Time period: {period}
-Description: {desc}
+Cinematic features: {features}
+Environmental storytelling: {storytelling}
 
-Write a single, rich image generation prompt that describes how this location should look in a cinematic environment reference shot. Include: architectural details, lighting conditions, color palette, atmosphere, camera angle, and mood. Return ONLY the prompt text, no explanation, no JSON."""
+Write a single, rich image generation prompt for a cinematic environment reference. Include: wide composition with clear foreground/midground/background depth, architectural and environmental details, lighting conditions and atmosphere, color palette, spatial readability, cinematic mood and atmosphere. Emphasize continuity-safe environment design and production-ready realism. Return ONLY the prompt text, no explanation, no JSON."""
 
         result = self._call_llm(prompt_text, system_suffix="You output short, image-generation-ready visual prompts only.", json_output=False)
         if result.get("success"):
@@ -2101,26 +2163,89 @@ Write a single, rich image generation prompt that describes how this location sh
             if prompt:
                 # Persist the prompt to project_graph so it survives page refresh
                 aid = asset.get("character_id") or asset.get("id") or asset.get("location_id") or asset.get("_id", "")
-                if aid:
-                    bible_key = "character_bible" if asset_type == "char" else "location_bible"
-                    pg = self.memory.project_graph
-                    for entry in pg.get(bible_key, []):
+                bible_key = "character_bible" if asset_type == "char" else "location_bible"
+                pg = self.memory.project_graph
+                if aid and pg.get(bible_key) is not None:
+                    found = False
+                    for entry in pg[bible_key]:
                         eid = entry.get("character_id") or entry.get("id") or entry.get("location_id") or entry.get("_id", "")
                         if eid == aid:
                             entry["image_prompt"] = prompt
+                            found = True
                             break
+                    if not found:
+                        new_entry = dict(asset)
+                        new_entry["image_prompt"] = prompt
+                        if "character_id" not in new_entry and "id" not in new_entry:
+                            new_entry["character_id"] = aid
+                        pg[bible_key].append(new_entry)
                 return {"success": True, "prompt": prompt}
             return {"success": False, "error": "LLM returned empty response. Check your LLM provider/model settings."}
         return {"success": False, "error": result.get("error", "LLM call failed")}
+
+    def generate_asset_variant(self, asset_type: str, asset: Dict, current_image: str = "", variant_instruction: str = "") -> Dict:
+        """Generate 3 variant prompts for an asset preserving locked continuity rules."""
+        info = self.memory.project_info
+        genre = info.get("genres", "") or info.get("genre", "")
+        vs = info.get("visual_style", "")
+        fa = info.get("film_aesthetic", "")
+        proj_context = f"Genre: {genre}; Visual Style: {vs}; Film Aesthetic: {fa}"
+
+        name = asset.get("full_name", asset.get("character_name", asset.get("location_name", asset.get("name", ""))))
+        continuity_rules = asset.get("clothing_continuity", "") or asset.get("clothing", "") or asset.get("architecture_style", "")
+        identity = asset.get("visual_identity", "")
+        original_prompt = asset.get("image_prompt", "")
+
+        prompt_text = f"""Project context: {proj_context}
+
+You are a cinema visual AI. Given an existing character/location reference, generate 3 variant visual prompts.
+
+Asset: {name}
+Original prompt: {original_prompt}
+Continuity rules (must preserve): {continuity_rules}
+Visual identity (must preserve): {identity}
+Variant instruction: {variant_instruction or 'subtle variation of composition, lighting, or expression while maintaining identity'}
+
+Rules:
+- Each variant MUST preserve the core identity and continuity constraints
+- Slight variations in composition, lighting, mood, or camera angle are permitted
+- Do NOT change clothing, architecture, facial structure, or key identity markers
+- Each variant must be clearly different from the others
+
+Return a JSON array of exactly 3 variant prompt strings. No explanation."""
+        result = self._call_llm(prompt_text, system_suffix="You output JSON arrays of image prompts only.", json_output=True)
+        if result.get("success"):
+            try:
+                variants = result["data"]
+                if isinstance(variants, list) and len(variants) >= 3:
+                    variant_records = [{"id": f"v{int(time.time())}_{i}", "prompt": v, "instruction": variant_instruction, "image": "", "approved": False} for i, v in enumerate(variants[:3])]
+                    # Persist variants into project_graph
+                    pg = self.memory.project_graph
+                    bible_key = "character_bible" if asset_type == "char" else "location_bible"
+                    aid = asset.get("character_id") or asset.get("id") or asset.get("location_id") or asset.get("_id", "")
+                    if aid and pg.get(bible_key) is not None:
+                        for entry in pg[bible_key]:
+                            eid = entry.get("character_id") or entry.get("id") or entry.get("location_id") or entry.get("_id", "")
+                            if eid == aid:
+                                if "variants" not in entry:
+                                    entry["variants"] = []
+                                entry["variants"].extend(variant_records)
+                                break
+                    return {"success": True, "variants": variants[:3]}
+            except (json.JSONDecodeError, TypeError, IndexError):
+                pass
+        return {"success": False, "error": result.get("error", "Variant generation failed")}
 
     def sync_bibles_from_frontend(self, character_bible: List = None, location_bible: List = None) -> Dict:
         """Sync frontend character/location bible data into project_graph when backend memory is empty."""
         pg = self.memory.project_graph
         if character_bible and len(character_bible) > 0:
-            if not pg.get("character_bible") or len(pg["character_bible"]) == 0:
+            existing = pg.get("character_bible") or []
+            if not existing or len(existing) == 0:
                 pg["character_bible"] = character_bible
         if location_bible and len(location_bible) > 0:
-            if not pg.get("location_bible") or len(pg["location_bible"]) == 0:
+            existing = pg.get("location_bible") or []
+            if not existing or len(existing) == 0:
                 pg["location_bible"] = location_bible
         return {
             "success": True,

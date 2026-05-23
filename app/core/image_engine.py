@@ -132,8 +132,10 @@ class ImageEngine:
         }
         handler = handlers.get(provider_id)
         if handler:
-            return handler(provider, model, prompt, host, api_key, width, height,
-                           workflow_name, input_images, aspect_ratio, resolution, seed, **kwargs)
+            return handler(provider=provider, model=model, prompt=prompt, host=host,
+                           api_key=api_key, width=width, height=height,
+                           workflow_name=workflow_name, input_images=input_images,
+                           aspect_ratio=aspect_ratio, resolution=resolution, seed=seed, **kwargs)
         return {"success": False, "error": "Unsupported provider"}
 
     def generate_video(self, provider_id: str, model: str, prompt: str, host: str = None,

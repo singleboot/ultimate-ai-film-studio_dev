@@ -4,6 +4,7 @@ import subprocess
 import time
 import requests
 import shutil
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
@@ -18,6 +19,7 @@ class LLMEngine:
         self.current_model = None
         self.connection_status = {}
         self._subprocesses: Dict[str, subprocess.Popen] = {}
+        self._downloads = {}
         if settings_path:
             self._settings_path = Path(settings_path)
         else:
@@ -300,25 +302,92 @@ class LLMEngine:
         except Exception as e:
             return [{"error": str(e)}]
 
+    def get_download_status(self, filename: str) -> Dict:
+        """Get the current progress of a background model download."""
+        dest_path = self._models_dir / filename
+        if dest_path.exists() and filename not in self._downloads:
+            return {
+                "status": "completed",
+                "progress": 100,
+                "downloaded_bytes": dest_path.stat().st_size,
+                "total_bytes": dest_path.stat().st_size
+            }
+        return self._downloads.get(filename, {"status": "idle", "progress": 0})
+
     def download_model_from_hf(self, repo: str, filename: str) -> Dict:
-        """Download a GGUF model file from HuggingFace to models/ folder."""
-        try:
-            from huggingface_hub import hf_hub_download
-            dest_path = self._models_dir / filename
-            if dest_path.exists():
-                return {"success": True, "message": f"Already downloaded: {filename}", "path": str(dest_path)}
-            downloaded = hf_hub_download(
-                repo_id=repo,
-                filename=filename,
-                local_dir=str(self._models_dir),
-                local_dir_use_symlinks=False,
-                resume_download=True
-            )
-            return {"success": True, "message": f"Downloaded {filename}", "path": downloaded}
-        except ImportError:
-            return {"success": False, "error": "huggingface-hub not installed"}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        """Download a GGUF model file from HuggingFace to models/ folder in background."""
+        dest_path = self._models_dir / filename
+        if dest_path.exists():
+            return {"success": True, "message": f"Already downloaded: {filename}", "path": str(dest_path)}
+
+        if filename in self._downloads and self._downloads[filename]["status"] == "downloading":
+            return {"success": True, "message": "Download already in progress"}
+
+        self._downloads[filename] = {
+            "status": "downloading",
+            "progress": 0,
+            "downloaded_bytes": 0,
+            "total_bytes": 0,
+            "error": None
+        }
+
+        def download_thread():
+            temp_path = dest_path.with_suffix('.download')
+            try:
+                url = f"https://huggingface.co/{repo}/resolve/main/{filename}"
+                self._models_dir.mkdir(parents=True, exist_ok=True)
+
+                response = requests.get(url, stream=True, allow_redirects=True, timeout=30)
+                if response.status_code != 200:
+                    self._downloads[filename] = {
+                        "status": "failed",
+                        "progress": 0,
+                        "error": f"HTTP error {response.status_code}"
+                    }
+                    return
+
+                total_size = int(response.headers.get('content-length', 0))
+                self._downloads[filename]["total_bytes"] = total_size
+
+                downloaded = 0
+                with open(temp_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            self._downloads[filename]["downloaded_bytes"] = downloaded
+                            if total_size > 0:
+                                self._downloads[filename]["progress"] = int((downloaded / total_size) * 100)
+
+                if total_size > 0 and downloaded < total_size:
+                    raise Exception("Connection closed prematurely during download")
+
+                if temp_path.exists():
+                    if dest_path.exists():
+                        dest_path.unlink()
+                    temp_path.rename(dest_path)
+
+                self._downloads[filename] = {
+                    "status": "completed",
+                    "progress": 100,
+                    "downloaded_bytes": total_size,
+                    "total_bytes": total_size
+                }
+            except Exception as e:
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except Exception:
+                        pass
+                self._downloads[filename] = {
+                    "status": "failed",
+                    "progress": 0,
+                    "error": str(e)
+                }
+
+        t = threading.Thread(target=download_thread, daemon=True)
+        t.start()
+        return {"success": True, "message": "Download started in background"}
 
     def copy_model_to_folder(self, source_path: str) -> Dict:
         """Copy a model file from user-selected path into models/ folder."""
@@ -671,6 +740,15 @@ class LLMEngine:
         if not binary:
             return {"installed": False, "error": "No binary configured"}
         search_paths = [binary]
+
+        # Add local project bin directory
+        project_root = Path(__file__).parent.parent.parent
+        project_bin = project_root / "bin"
+        if os.name == 'nt':
+            search_paths.append(str(project_bin / f"{binary}.exe"))
+        else:
+            search_paths.append(str(project_bin / binary))
+
         if os.name == 'nt':
             search_paths.extend([
                 os.path.expandvars(f"%USERPROFILE%\\AppData\\Local\\Programs\\{binary}.exe"),
@@ -739,10 +817,20 @@ class LLMEngine:
         if not start_cmd:
             return {"success": False, "error": "No start command configured"}
         cmd = list(start_cmd)
+
+        # Substitute absolute path if detected
+        detect = self.detect_local_llm(provider_id)
+        if detect.get("installed") and detect.get("path"):
+            cmd[0] = detect["path"]
+
         if provider_id == "llama_cpp" and model_path:
+            if not os.path.exists(model_path):
+                return {"success": False, "error": f"Model file not found: {model_path}"}
             cmd.extend(["--model", model_path])
         if provider_id == "app_llm" and model_path:
             full_path = str(self._models_dir / model_path) if not os.path.isabs(model_path) else model_path
+            if not os.path.exists(full_path):
+                return {"success": False, "error": f"Model file not found: {model_path}. Please download it first from settings."}
             cmd.extend(["--model", full_path])
         try:
             proc = subprocess.Popen(
@@ -767,7 +855,7 @@ class LLMEngine:
                 time.sleep(1)
             return {"success": True, "message": f"{provider.get('name')} starting", "pid": proc.pid}
         except FileNotFoundError:
-            return {"success": False, "error": f"{start_cmd[0]} not found. Install it first."}
+            return {"success": False, "error": f"{cmd[0]} not found. Install it first."}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

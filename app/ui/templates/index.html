@@ -1165,10 +1165,6 @@
         <div class="modal" style="max-width:85vw;width:85vw;max-height:88vh;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                 <h2 style="margin:0;">⚙️ Settings</h2>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn btn-primary" onclick="saveSettings()" id="save-settings-btn" style="padding:6px 14px;font-size:0.8rem;">Save Settings</button>
-                    <button class="btn btn-secondary" onclick="closeSettings()" style="padding:6px 12px;font-size:0.8rem;">Cancel</button>
-                </div>
             </div>
             <div style="max-height:calc(88vh - 90px);overflow-y:auto;padding-right:5px;margin-bottom:10px;">
                 <div style="display:flex;gap:15px;flex-wrap:wrap;">
@@ -1179,10 +1175,10 @@
                             <div class="form-group">
                                 <label class="form-label">Provider</label>
                                 <select class="form-select" id="llm-provider" onchange="onLLMProviderChange()">
+                                    <option value="app_llm">App LLM (Local - Project Model) [Recommended]</option>
                                     <option value="ollama">Ollama (Local)</option>
                                     <option value="lm_studio">LM Studio (Local)</option>
                                     <option value="llama_cpp">llama.cpp (Local)</option>
-                                    <option value="app_llm">App LLM (Local - Project Model)</option>
                                     <option value="openai">OpenAI</option>
                                     <option value="claude">Claude (Anthropic)</option>
                                     <option value="openrouter">OpenRouter</option>
@@ -1192,7 +1188,7 @@
                                 </select>
                             </div>
                             <div id="llm-local-fields">
-                                <div class="form-group">
+                                <div class="form-group" id="llm-host-group">
                                     <label class="form-label">Host</label>
                                     <input type="text" class="form-input" id="llm-host" value="http://localhost:11434" onchange="loadLLMModels()">
                                 </div>
@@ -1213,11 +1209,52 @@
                                     <div style="display:flex;gap:8px;">
                                         <input type="text" class="form-input" id="llm-models-path" placeholder="e.g. C:\Users\you\models" style="flex:1;">
                                         <button class="btn btn-secondary" onclick="document.getElementById('llm-models-path').value=prompt('Enter full path to your models folder:','C:\\');loadLLMModels();" style="padding:4px 10px;font-size:0.75rem;">📂 Browse</button>
-                                        <button class="btn btn-secondary" onclick="showModelDownloadOptions()" style="padding:4px 10px;font-size:0.75rem;">⬇ Download</button>
                                     </div>
                                 </div>
                                 <div id="llm-app-model-browser" style="display:none;">
-                                    <div style="border:1px solid var(--border-color);border-radius:8px;padding:12px;margin-bottom:12px;background:var(--bg-secondary);">
+                                    <!-- Gemma 4 Setup Widget -->
+                                    <div style="border:1px solid var(--accent-primary);border-radius:8px;padding:12px;margin-bottom:12px;background:rgba(231,60,60,0.03);position:relative;overflow:hidden;">
+                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                            <h4 style="color:var(--accent-primary);font-size:0.85rem;margin:0;display:flex;align-items:center;gap:6px;font-weight:700;">
+                                                <span>✨</span> Dedicated Gemma 4 Setup
+                                            </h4>
+                                            <span style="font-size:0.65rem;background:var(--accent-primary);color:#fff;padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.5px;">RECOMMENDED</span>
+                                        </div>
+                                        <p style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.4;">
+                                            Gemma 4 (Google DeepMind, April 2026) is the recommended local multimodal LLM for running entirely offline.
+                                        </p>
+                                        <div style="display:flex;gap:8px;flex-direction:column;margin-bottom:10px;">
+                                            <!-- E2B-it -->
+                                            <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);transition:border-color 0.2s;" onmouseenter="this.style.borderColor='var(--accent-primary)'" onmouseleave="this.style.borderColor='var(--border-color)'">
+                                                <div style="font-size:0.75rem;flex:1;">
+                                                    <div style="font-weight:600;color:var(--text-primary);">Gemma 4 E2B-it <span style="color:var(--accent-primary);font-size:0.7rem;margin-left:4px;font-weight:normal;">Lightweight</span></div>
+                                                    <div style="color:var(--text-secondary);font-size:0.65rem;margin-top:2px;">~2.5 GB • Ideal for Edge/Standard Laptops</div>
+                                                </div>
+                                                <button id="btn-download-gemma-e2b" class="btn btn-primary" onclick="downloadGemma4('E2B')" style="padding:4px 12px;font-size:0.7rem;font-weight:600;min-width:60px;">Get</button>
+                                            </div>
+                                            <!-- E4B-it -->
+                                            <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-tertiary);padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);transition:border-color 0.2s;" onmouseenter="this.style.borderColor='var(--accent-primary)'" onmouseleave="this.style.borderColor='var(--border-color)'">
+                                                <div style="font-size:0.75rem;flex:1;">
+                                                    <div style="font-weight:600;color:var(--text-primary);">Gemma 4 E4B-it <span style="color:var(--accent-primary);font-size:0.7rem;margin-left:4px;font-weight:normal;">Balanced</span></div>
+                                                    <div style="color:var(--text-secondary);font-size:0.65rem;margin-top:2px;">~3.8 GB • High Quality • Ideal for Workstations</div>
+                                                </div>
+                                                <button id="btn-download-gemma-e4b" class="btn btn-primary" onclick="downloadGemma4('E4B')" style="padding:4px 12px;font-size:0.7rem;font-weight:600;min-width:60px;">Get</button>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Download Progress Tracker -->
+                                        <div id="gemma-download-status-container" style="display:none;background:var(--bg-tertiary);padding:10px 12px;border-radius:6px;border:1px solid var(--border-color);margin-top:8px;box-shadow:inset 0 1px 3px rgba(0,0,0,0.3);">
+                                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:0.75rem;">
+                                                <span id="gemma-download-title" style="font-weight:600;color:var(--text-primary);">Downloading Gemma 4...</span>
+                                                <span id="gemma-download-percent" style="color:var(--accent-primary);font-weight:700;">0%</span>
+                                            </div>
+                                            <div style="background:var(--bg-primary);height:8px;border-radius:4px;overflow:hidden;border:1px solid var(--border-color);">
+                                                <div id="gemma-download-bar" style="background:var(--accent-primary);width:0%;height:100%;transition:width 0.3s ease;box-shadow:0 0 8px var(--accent-primary);"></div>
+                                            </div>
+                                            <div id="gemma-download-info" style="font-size:0.65rem;color:var(--text-secondary);margin-top:6px;font-family:monospace;letter-spacing:-0.2px;">Preparing download...</div>
+                                        </div>
+                                    </div>
+                                    <div id="llm-hf-advanced-search" style="display:none;border:1px solid var(--border-color);border-radius:8px;padding:12px;margin-bottom:12px;background:var(--bg-secondary);">
                                         <div style="display:flex;gap:8px;margin-bottom:10px;">
                                             <input type="text" class="form-input" id="llm-model-search" placeholder="Search HuggingFace for GGUF models..." style="flex:1;font-size:0.85rem;">
                                             <button class="btn btn-secondary" onclick="searchLLMModels()" style="padding:4px 12px;font-size:0.75rem;">🔍 Search</button>
@@ -1257,6 +1294,9 @@
                                             <div style="color:var(--text-secondary);padding:8px;text-align:center;">Loading...</div>
                                         </div>
                                         <input type="file" id="llm-file-picker" accept=".gguf,.bin,.pt,.pth,.safetensors" style="display:none" onchange="handleModelFilePick(event)">
+                                    </div>
+                                    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;margin-top:-6px;">
+                                        <button class="btn btn-secondary" onclick="toggleAdvancedHFSearch()" style="padding:4px 10px;font-size:0.72rem;background:transparent;border-color:var(--border-color);color:var(--text-secondary);">⚙️ Advanced HuggingFace Search</button>
                                     </div>
                                 </div>
                                 <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
@@ -1356,9 +1396,9 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div style="border-top:1px solid var(--border-color);padding-top:12px;margin-top:8px;margin-bottom:12px;">
+                                    <div id="comfyui-model-downloader-advanced" style="display:none;border:1px solid var(--border-color);border-radius:8px;padding:12px;margin-bottom:12px;background:var(--bg-secondary);">
                                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                                            <label class="form-label" style="margin:0;font-size:0.8rem;">⬇ Model Downloader</label>
+                                            <label class="form-label" style="margin:0;font-size:0.8rem;">⬇ ComfyUI Model Downloader</label>
                                         </div>
                                         <div style="display:flex;gap:6px;margin-bottom:6px;">
                                             <select class="form-select" id="comfyui-model-type-filter" style="font-size:0.75rem;padding:4px 8px;width:auto;" onchange="searchComfyUIModels()">
@@ -1377,6 +1417,9 @@
                                         <div id="comfyui-model-results" style="max-height:180px;overflow-y:auto;font-size:0.8rem;">
                                             <div style="color:var(--text-secondary);padding:8px;text-align:center;">Search for ComfyUI models above</div>
                                         </div>
+                                    </div>
+                                    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;margin-top:-6px;">
+                                        <button class="btn btn-secondary" onclick="toggleComfyUIModelDownloader()" style="padding:4px 10px;font-size:0.72rem;background:transparent;border-color:var(--border-color);color:var(--text-secondary);">⚙️ Advanced ComfyUI Downloader</button>
                                     </div>
                                 </div>
                                 <div id="comfyui-cloud-controls" style="display:none;">
@@ -1540,29 +1583,6 @@
         </div>
     </div>
 
-    <!-- Model Download Modal (legacy - use search UI instead) -->
-    <div class="modal-overlay" id="model-download-modal">
-        <div class="modal">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-                <h2 style="color:var(--accent-primary);margin:0;font-size:1.1rem;">⬇ Download Model from URL</h2>
-                <button class="btn btn-secondary" onclick="document.getElementById('model-download-modal').style.display='none'" style="padding:6px 12px;font-size:0.8rem;">✕</button>
-            </div>
-            <div class="form-group">
-                <label class="form-label">HuggingFace Repository URL</label>
-                <input type="text" class="form-input" id="hf-download-url" placeholder="https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3-GGUF">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Or use the search browser in Settings → App LLM</label>
-            </div>
-            <div>
-                <span id="hf-download-status" style="font-size:0.85rem;"></span>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-primary" onclick="downloadFromHF()" style="flex:1">Start Download</button>
-                <button class="btn btn-primary" onclick="document.getElementById('model-download-modal').style.display='none'" style="flex:1">Done</button>
-            </div>
-        </div>
-    </div>
 
     <!-- Genre Manager Modal -->
     <div class="modal-overlay" id="genre-manager-modal">
@@ -2140,7 +2160,8 @@
             const isAppLLM = provider === 'app_llm';
             document.getElementById('llm-local-fields').style.display = isLocal ? 'block' : 'none';
             document.getElementById('llm-cloud-fields').style.display = isLocal ? 'none' : 'block';
-            document.getElementById('llm-models-path-group').style.display = (provider === 'llama_cpp' || isAppLLM) ? 'block' : 'none';
+            document.getElementById('llm-models-path-group').style.display = (provider === 'llama_cpp') ? 'block' : 'none';
+            document.getElementById('llm-host-group').style.display = (provider === 'app_llm') ? 'none' : 'block';
             document.getElementById('llm-app-model-browser').style.display = isAppLLM ? 'block' : 'none';
             if (provider === 'ollama') {
                 document.getElementById('llm-host').value = 'http://localhost:11434';
@@ -2157,6 +2178,7 @@
             loadLLMModels();
             if (isAppLLM) {
                 loadInstalledModels();
+                checkActiveGemmaDownloads();
             }
         }
 
@@ -2258,35 +2280,6 @@
             }
         }
 
-        // Model download helpers
-        function showModelDownloadOptions() {
-            document.getElementById('model-download-modal').style.display = 'flex';
-        }
-
-        async function downloadFromHF() {
-            const url = document.getElementById('hf-download-url').value.trim();
-            const statusEl = document.getElementById('hf-download-status');
-            if (!url) { statusEl.textContent = 'Please enter a HuggingFace URL'; return; }
-            if (!url.includes('huggingface.co')) { statusEl.textContent = 'URL must be from huggingface.co'; return; }
-            const modelsPath = document.getElementById('llm-models-path').value;
-            if (!modelsPath) { statusEl.textContent = '⚠ Set Models Folder first in LLM settings'; return; }
-            statusEl.textContent = '⏳ Starting download... (check console for progress)';
-            try {
-                const res = await fetch('/api/llm/download-model', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({url, models_path: modelsPath})
-                });
-                const data = await res.json();
-                if (data.success) {
-                    statusEl.textContent = '✅ ' + (data.message || 'Model downloaded');
-                    loadLLMModels();
-                } else {
-                    statusEl.textContent = '✗ ' + (data.error || 'Download failed');
-                }
-            } catch(e) {
-                statusEl.textContent = '✗ Connection error';
-            }
-        }
 
         async function toggleLocalLLM() {
             const provider = document.getElementById('llm-provider').value;
@@ -2393,6 +2386,145 @@
                 resultsEl.innerHTML = html;
             } catch(e) {
                 resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:#f87171;">Search failed: ' + e.message + '</div>';
+            }
+        }
+
+        let gemmaDownloadInterval = null;
+        async function downloadGemma4(size) {
+            let repo = "";
+            let filename = "";
+            if (size === 'E2B') {
+                repo = "unsloth/gemma-4-E2B-it-GGUF";
+                filename = "gemma-4-E2B-it-Q4_K_M.gguf";
+            } else if (size === 'E4B') {
+                repo = "unsloth/gemma-4-E4B-it-GGUF";
+                filename = "gemma-4-E4B-it-Q4_K_M.gguf";
+            }
+            
+            const btnId = size === 'E2B' ? 'btn-download-gemma-e2b' : 'btn-download-gemma-e4b';
+            const btn = document.getElementById(btnId);
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳';
+            }
+            
+            try {
+                const res = await fetch('/api/llm/download-model-hf', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({repo, filename})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Download Started', 'Downloading Gemma 4 ' + size + ' in the background.');
+                    showGemmaDownloadProgress(filename, size);
+                } else {
+                    notify('Download Error', data.error || 'Failed to start download');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Get';
+                    }
+                }
+            } catch(e) {
+                notify('Download Error', e.message);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Get';
+                }
+            }
+        }
+        
+        function showGemmaDownloadProgress(filename, size) {
+            const container = document.getElementById('gemma-download-status-container');
+            const title = document.getElementById('gemma-download-title');
+            const percent = document.getElementById('gemma-download-percent');
+            const bar = document.getElementById('gemma-download-bar');
+            const info = document.getElementById('gemma-download-info');
+            
+            if (container) container.style.display = 'block';
+            if (title) title.textContent = 'Downloading Gemma 4 ' + size + '...';
+            
+            if (gemmaDownloadInterval) clearInterval(gemmaDownloadInterval);
+            
+            gemmaDownloadInterval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/llm/download-progress?filename=' + encodeURIComponent(filename));
+                    const data = await res.json();
+                    
+                    if (data.status === 'downloading') {
+                        const pct = data.progress || 0;
+                        const dl = (data.downloaded_bytes / (1024*1024)).toFixed(1);
+                        const tot = (data.total_bytes / (1024*1024)).toFixed(1);
+                        if (percent) percent.textContent = pct + '%';
+                        if (bar) bar.style.width = pct + '%';
+                        if (info) info.textContent = `Downloaded ${dl} MB of ${tot} MB`;
+                    } else if (data.status === 'completed') {
+                        if (percent) percent.textContent = '100%';
+                        if (bar) bar.style.width = '100%';
+                        if (info) info.textContent = 'Download completed! Selected Gemma 4 model.';
+                        clearInterval(gemmaDownloadInterval);
+                        gemmaDownloadInterval = null;
+                        
+                        const btn2b = document.getElementById('btn-download-gemma-e2b');
+                        if (btn2b) { btn2b.disabled = false; btn2b.textContent = 'Get'; }
+                        const btn4b = document.getElementById('btn-download-gemma-e4b');
+                        if (btn4b) { btn4b.disabled = false; btn4b.textContent = 'Get'; }
+                        
+                        loadInstalledModels();
+                        await loadLLMModels();
+                        
+                        const llmModelDropdown = document.getElementById('llm-model');
+                        if (llmModelDropdown) {
+                            llmModelDropdown.value = filename;
+                        }
+                        
+                        notify('Download Finished', 'Gemma 4 ' + size + ' downloaded successfully.');
+                    } else if (data.status === 'failed') {
+                        if (info) info.textContent = 'Download failed: ' + (data.error || 'Unknown error');
+                        clearInterval(gemmaDownloadInterval);
+                        gemmaDownloadInterval = null;
+                        
+                        const btn2b = document.getElementById('btn-download-gemma-e2b');
+                        if (btn2b) { btn2b.disabled = false; btn2b.textContent = 'Get'; }
+                        const btn4b = document.getElementById('btn-download-gemma-e4b');
+                        if (btn4b) { btn4b.disabled = false; btn4b.textContent = 'Get'; }
+                    }
+                } catch(e) {
+                    console.error('Error polling download progress:', e);
+                }
+            }, 1500);
+        }
+
+        async function checkActiveGemmaDownloads() {
+            try {
+                const res2b = await fetch('/api/llm/download-progress?filename=gemma-4-E2B-it-Q4_K_M.gguf');
+                const data2b = await res2b.json();
+                if (data2b.status === 'downloading') {
+                    showGemmaDownloadProgress('gemma-4-E2B-it-Q4_K_M.gguf', 'E2B');
+                    return;
+                }
+                const res4b = await fetch('/api/llm/download-progress?filename=gemma-4-E4B-it-Q4_K_M.gguf');
+                const data4b = await res4b.json();
+                if (data4b.status === 'downloading') {
+                    showGemmaDownloadProgress('gemma-4-E4B-it-Q4_K_M.gguf', 'E4B');
+                    return;
+                }
+            } catch(e) {
+                console.error('Error checking active downloads:', e);
+            }
+        }
+
+        function toggleAdvancedHFSearch() {
+            const el = document.getElementById('llm-hf-advanced-search');
+            if (el) {
+                el.style.display = el.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+
+        function toggleComfyUIModelDownloader() {
+            const el = document.getElementById('comfyui-model-downloader-advanced');
+            if (el) {
+                el.style.display = el.style.display === 'none' ? 'block' : 'none';
             }
         }
 
@@ -2574,6 +2706,7 @@
             const modelSelect = getLLMModelSelect();
             const countLabel = document.getElementById('llm-model-count');
 
+            const savedValue = modelSelect.value;
             modelSelect.innerHTML = '<option value="">Loading models...</option>';
             countLabel.textContent = 'Fetching...';
 
@@ -2596,6 +2729,18 @@
                         modelSelect.appendChild(opt);
                     });
                     countLabel.textContent = data.models.length + ' model(s) available';
+
+                    if (savedValue && data.models.includes(savedValue)) {
+                        modelSelect.value = savedValue;
+                    } else if (provider === 'app_llm') {
+                        if (data.models.includes('gemma-4-E2B-it-Q4_K_M.gguf')) {
+                            modelSelect.value = 'gemma-4-E2B-it-Q4_K_M.gguf';
+                        } else if (data.models.includes('gemma-4-E4B-it-Q4_K_M.gguf')) {
+                            modelSelect.value = 'gemma-4-E4B-it-Q4_K_M.gguf';
+                        } else {
+                            modelSelect.value = data.models[0];
+                        }
+                    }
                 } else {
                     countLabel.textContent = 'No models found. Is the provider running?';
                 }
@@ -2618,8 +2763,8 @@
                 const res = await fetch('/api/settings');
                 const s = await res.json();
                 if (s.llm) {
-                    safeSetValue('llm-provider', s.llm.provider || 'ollama');
-                    safeSetValue('llm-host', s.llm.host || 'http://localhost:11434');
+                    safeSetValue('llm-provider', s.llm.provider || 'app_llm');
+                    safeSetValue('llm-host', s.llm.host || 'http://localhost:8081');
                     safeSetValue('llm-apikey', s.llm.apiKey);
                     safeSetChecked('llm-auto-start', s.llm.auto_start);
                     safeSetValue('llm-models-path', s.llm.models_path);
@@ -8360,11 +8505,13 @@ The video prompt must describe: camera movement, character actions, timing, ligh
                 });
             }
             // Auto-start local engines if enabled
-            if (s.llm && s.llm.auto_start && s.llm.provider && ['ollama','lm_studio','llama_cpp'].includes(s.llm.provider)) {
+            if (s.llm && s.llm.auto_start && s.llm.provider && ['ollama','lm_studio','llama_cpp','app_llm'].includes(s.llm.provider)) {
                 const body = {provider: s.llm.provider};
                 if (s.llm.provider === 'llama_cpp' && s.llm.model) {
                     const mp = s.llm.models_path || '';
                     body.model_path = mp ? mp.replace(/\\/g,'/') + '/' + s.llm.model.replace(/\\/g,'/') : s.llm.model;
+                } else if (s.llm.provider === 'app_llm' && s.llm.model) {
+                    body.model_path = s.llm.model;
                 }
                 fetch('/api/llm/start', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},

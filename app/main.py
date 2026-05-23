@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import platform
+import logging
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -9,6 +10,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(Path(__file__).parent / "app.log", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger("film-studio")
 
 try:
     from core.template_manager import TemplateManager
@@ -29,9 +40,56 @@ async def shutdown_event():
     if llm_engine:
         llm_engine.cleanup_subprocesses()
 
+# Initialize default settings and auto-start local LLM on startup
+@app.on_event("startup")
+async def startup_event():
+    try:
+        settings = load_settings()
+        changed = False
+        if "llm" not in settings:
+            settings["llm"] = {
+                "provider": "app_llm",
+                "model": "gemma-4-E2B-it-Q4_K_M.gguf",
+                "host": "http://localhost:8081",
+                "apiKey": "",
+                "auto_start": True
+            }
+            changed = True
+        else:
+            llm_settings = settings["llm"]
+            if not llm_settings.get("provider"):
+                llm_settings["provider"] = "app_llm"
+                llm_settings["host"] = "http://localhost:8081"
+                changed = True
+            if "auto_start" not in llm_settings:
+                llm_settings["auto_start"] = True
+                changed = True
+        
+        if changed:
+            save_settings(settings)
+            
+        llm_settings = settings.get("llm", {})
+        if llm_settings.get("auto_start", True) and llm_engine:
+            provider = llm_settings.get("provider")
+            model = llm_settings.get("model", "")
+            if provider in ("llama_cpp", "app_llm"):
+                logger.info(f"Auto-starting local LLM provider: {provider} with model {model}...")
+                if not model:
+                    installed = llm_engine.get_models(provider)
+                    if installed:
+                        model = installed[0]
+                if model:
+                    res = llm_engine.launch_local_llm(provider, model)
+                    logger.info(f"Auto-launch local LLM status: {res}")
+                else:
+                    logger.warning(f"No installed models found for {provider}. Please download or copy one from settings UI.")
+    except Exception as e:
+        logger.error(f"Error during auto-start of local LLM: {e}", exc_info=True)
+
 # Global exception handler - always return JSON
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
+    logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, str(exc), exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"success": False, "message": str(exc) if str(exc) else "Internal server error"}
@@ -186,9 +244,13 @@ def generate(request: GenerateRequest):
     if not llm_engine:
         return {"success": False, "error": "LLM engine not available"}
 
+    provider_id = request.provider or request.app_provider or "app_llm"
+    default_model = "gemma-4-E2B-it-Q4_K_M.gguf" if provider_id == "app_llm" else "llama3.1"
+    model = request.model or default_model
+
     result = llm_engine.generate(
-        provider_id=request.provider or request.app_provider or "ollama",
-        model=request.model or "llama3.1",
+        provider_id=provider_id,
+        model=model,
         prompt=request.prompt or "",
         system_prompt=system_prompt or request.system_prompt or "",
     )
@@ -250,6 +312,13 @@ async def download_llm_model(data: dict):
         return {"success": False, "error": "repo and filename required"}
     return llm_engine.download_model_from_hf(repo, filename)
 
+@app.get("/api/llm/download-progress")
+async def get_llm_download_progress(filename: str):
+    """Get status of an active model download."""
+    if not llm_engine:
+        return {"status": "failed", "error": "LLM engine not available"}
+    return llm_engine.get_download_status(filename)
+
 @app.post("/api/llm/copy-model")
 async def copy_llm_model(data: dict):
     """Copy a model file from user path into models/ folder."""
@@ -305,32 +374,6 @@ async def get_comfyui_model_types():
     for key, info in comfyui_client.COMFYUI_MODEL_TYPES.items():
         types[key] = info["folder"]
     return {"types": types}
-
-@app.post("/api/comfyui/external-path")
-async def set_comfyui_external_path(data: dict):
-    """Set external ComfyUI models folder path."""
-    if not comfyui_client:
-        return {"success": False, "error": "ComfyUI client not available"}
-    path = data.get("path", "")
-    if not path:
-        return comfyui_client.clear_external_models_path()
-    return comfyui_client.set_external_models_path(path)
-
-@app.get("/api/comfyui/external-path")
-async def get_comfyui_external_path():
-    """Get current external ComfyUI models path."""
-    if not comfyui_client:
-        return {"path": None}
-    path = comfyui_client.get_external_models_path()
-    return {"path": path}
-
-@app.post("/api/comfyui/install")
-async def install_comfyui(data: dict = None):
-    """Install ComfyUI via git clone."""
-    if not comfyui_client:
-        return {"success": False, "error": "ComfyUI client not available"}
-    target = data.get("target") if data else None
-    return comfyui_client.install_comfyui(target_dir=target)
 
 @app.post("/api/comfyui/update")
 async def update_comfyui():
@@ -477,18 +520,22 @@ async def get_locks():
 
 @app.post("/api/orchestrator/approve-characters")
 async def approve_characters(data: dict = None):
-    """Approve characters, enabling storyboard generation."""
+    """Approve characters, enabling storyboard generation. Auto-locks image_prompt."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.approve_characters(data or {})
+    if result.get("success"):
+        _save_orchestrator_state()
     return result
 
 @app.post("/api/orchestrator/approve-locations")
 async def approve_locations(data: dict = None):
-    """Approve locations, enabling storyboard generation."""
+    """Approve locations, enabling storyboard generation. Auto-locks image_prompt."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.approve_locations(data or {})
+    if result.get("success"):
+        _save_orchestrator_state()
     return result
 
 @app.get("/api/orchestrator/approvals")
@@ -504,6 +551,8 @@ def generate_turnaround(data: dict):
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.generate_turnaround(data)
+    if result.get("success"):
+        _save_orchestrator_state()
     return result
 
 @app.get("/api/orchestrator/asset-studio")
@@ -565,15 +614,50 @@ def sync_bibles(data: dict):
         location_bible=data.get("location_bible"),
     )
 
+def _save_orchestrator_state():
+    """Persist orchestrator memory to disk immediately (no debounce)."""
+    if not orchestrator or not project_manager.current_project:
+        return
+    try:
+        name = project_manager.current_project
+        proj_path = project_manager.projects_dir / name
+        if not proj_path.exists():
+            return
+        state = project_manager.load_project_state(name, str(proj_path))
+        if state is None:
+            state = {}
+        state["_orchestrator_memory"] = orchestrator.to_dict()
+        project_manager.save_project_state(name, state, str(proj_path))
+    except Exception:
+        pass
+
 @app.post("/api/orchestrator/generate-asset-prompt")
 def generate_asset_prompt(data: dict):
     """Generate image_prompt for a character or location using LLM."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
-    return orchestrator.generate_asset_prompt(
+    result = orchestrator.generate_asset_prompt(
         asset_type=data.get("type", ""),
         asset=data.get("asset", {}),
     )
+    if result.get("success"):
+        _save_orchestrator_state()
+    return result
+
+@app.post("/api/orchestrator/generate-variant")
+def generate_asset_variant(data: dict):
+    """Generate 3 variant prompts for an asset."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    result = orchestrator.generate_asset_variant(
+        asset_type=data.get("type", ""),
+        asset=data.get("asset", {}),
+        current_image=data.get("current_image", ""),
+        variant_instruction=data.get("instruction", ""),
+    )
+    if result.get("success"):
+        _save_orchestrator_state()
+    return result
 
 # === V2.0: Shot-level endpoints ===
 
@@ -692,26 +776,10 @@ def generate_video_endpoint(data: dict):
 
 # === ComfyUI Subprocess Management ===
 
-@app.post("/api/comfyui/detect")
-async def detect_comfyui():
-    """Detect local ComfyUI installation."""
-    return comfyui_client.detect_comfyui()
-
 @app.get("/api/comfyui/status")
 async def get_comfyui_status():
     """Check if ComfyUI is running."""
     return comfyui_client.get_comfyui_status()
-
-@app.post("/api/comfyui/start")
-async def start_comfyui(data: dict = None):
-    """Launch ComfyUI as a subprocess."""
-    path = data.get("path") if data else None
-    return comfyui_client.launch_comfyui(path=path)
-
-@app.post("/api/comfyui/stop")
-async def stop_comfyui():
-    """Stop ComfyUI subprocess."""
-    return comfyui_client.stop_comfyui()
 
 @app.get("/api/comfyui/categories")
 async def get_comfyui_categories():
@@ -1276,6 +1344,13 @@ async def get_llm_models(provider: str, host: str = None, models_path: str = Non
                 for m in local_models:
                     if m not in models:
                         models.append(m)
+    elif provider == "app_llm":
+        if llm_engine:
+            models = llm_engine.get_models("app_llm")
+        else:
+            models_dir = Path(__file__).parent.parent / "models"
+            if models_dir.exists():
+                models = sorted(f.name for f in models_dir.iterdir() if f.suffix.lower() in (".gguf", ".bin"))
     return {"models": models}
 
 @app.post("/api/llm/test")
@@ -1385,18 +1460,10 @@ async def save_settings_endpoint(data: dict):
         data["image_gen"] = existing.get("image_gen", {"provider": "comfyui", "model": "", "host": "http://localhost:8188", "apiKey": ""})
     # Ensure llm auto_start flag
     if "llm" not in data:
-        data["llm"] = existing.get("llm", {"provider": "ollama", "model": "", "host": "http://localhost:11434", "apiKey": "", "auto_start": False})
+        data["llm"] = existing.get("llm", {"provider": "app_llm", "model": "gemma-4-E2B-it-Q4_K_M.gguf", "host": "http://localhost:8081", "apiKey": "", "auto_start": True})
     save_settings(data)
     if data.get("comfyui", {}).get("url"):
         comfyui_client.set_host(data["comfyui"]["url"])
-    if data.get("comfyui", {}).get("path"):
-        comfyui_client.set_comfyui_path(data["comfyui"]["path"])
-    # Auto-start ComfyUI if enabled
-    if data.get("comfyui", {}).get("auto_start", False):
-        try:
-            comfyui_client.launch_comfyui()
-        except Exception:
-            pass
     # Auto-start local LLM if enabled
     if data.get("llm", {}).get("auto_start", False) and llm_engine:
         try:
@@ -1503,8 +1570,11 @@ async def list_visual_styles():
     settings = load_settings()
     styles = settings.get("visual_styles", [])
     for s in styles:
-        img_path = VISUAL_STYLES_DIR / s["image"]
-        s["has_image"] = img_path.exists()
+        if s.get("image"):
+            img_path = VISUAL_STYLES_DIR / s["image"]
+            s["has_image"] = img_path.exists()
+        else:
+            s["has_image"] = False
     return {"styles": styles}
 
 @app.post("/api/visual-styles")
@@ -1579,8 +1649,11 @@ async def list_film_aesthetics():
     settings = load_settings()
     aesthetics = settings.get("film_aesthetics", [])
     for a in aesthetics:
-        img_path = FILM_AESTHETICS_DIR / a["image"]
-        a["has_image"] = img_path.exists()
+        if a.get("image"):
+            img_path = FILM_AESTHETICS_DIR / a["image"]
+            a["has_image"] = img_path.exists()
+        else:
+            a["has_image"] = False
     return {"aesthetics": aesthetics}
 
 @app.post("/api/film-aesthetics")
