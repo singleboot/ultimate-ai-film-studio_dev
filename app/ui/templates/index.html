@@ -5997,8 +5997,8 @@ Project visual language: ${projVL}`;
                     setAssetProgress(100, `All ${label} images generated!`);
                     notify('Done', `All ${label} images generated`, '✅');
                 } else if (successCount === 0) {
-                    setAssetProgress(0, `All ${label} images failed — check ComfyUI`);
-                    notify('ComfyUI Offline', 'Start ComfyUI and try again', '❌');
+                    setAssetProgress(0, `All ${label} images failed`);
+                    notify('Failed', `All ${label} images failed`, '❌');
                 } else {
                     setAssetProgress(100, `${successCount}/${done} ${label} images generated, ${failCount} failed`);
                     notify('Partial', `${successCount} images OK, ${failCount} failed`, '⚠️');
@@ -6091,12 +6091,7 @@ Project visual language: ${projVL}`;
                     }
                     notify('Generated', 'Image ready for approval', '✅');
                 } else {
-                    const errMsg = data.error || 'Generation failed';
-                    if (errMsg.includes('ComfyUI')) {
-                        notify('ComfyUI Offline', 'Start ComfyUI and try again', '❌');
-                    } else {
-                        notify('Failed', errMsg, '❌');
-                    }
+                    notify('Failed', data.error || 'Generation failed', '❌');
                 }
             } catch (e) {
                 if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }

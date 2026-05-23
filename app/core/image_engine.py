@@ -167,14 +167,6 @@ class ImageEngine:
         if host:
             self.comfyui.set_host(host)
 
-        # Test connection before spawning threads or starting work
-        try:
-            conn_test = self.comfyui.test_connection()
-            if not conn_test.get("success"):
-                return {"success": False, "error": "ComfyUI is not running. Please start ComfyUI and try again."}
-        except Exception:
-            return {"success": False, "error": "ComfyUI is not running. Please start ComfyUI and try again."}
-
         self._update_gen_progress(0, "running", "Starting generation...")
 
         _stop_polling = False
