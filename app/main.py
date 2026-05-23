@@ -513,6 +513,27 @@ async def get_asset_studio():
         return {"success": False, "error": "Orchestrator not available"}
     return orchestrator.get_asset_studio_state()
 
+@app.post("/api/orchestrator/save-character-sheet")
+def save_character_sheet(data: dict):
+    """Save/update character sheet state in project_graph."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    character_id = data.get("character_id", "")
+    sheet_image = data.get("sheet_image", "")
+    approved = data.get("approved", False)
+    if not character_id:
+        return {"success": False, "error": "character_id required"}
+    pg = orchestrator.memory.project_graph
+    sheets = pg.setdefault("character_sheets", {})
+    entry = sheets.get(character_id, {"character_id": character_id, "generation_history": []})
+    if sheet_image:
+        entry["sheet_image"] = sheet_image
+        entry["generation_history"] = entry.get("generation_history", []) + [sheet_image]
+    if approved:
+        entry["approved"] = True
+    sheets[character_id] = entry
+    return {"success": True, "character_sheets": sheets}
+
 # === V2.0: Shot-level endpoints ===
 
 @app.get("/api/orchestrator/shot/{shot_id}")
@@ -830,6 +851,41 @@ async def save_project_image(request: Request):
         project_manager.load_project(project_name)
         result = project_manager.save_approved_output(stage, save_name, resp.content)
         return result
+    return {"success": False, "error": "No project specified"}
+
+@app.post("/api/assets/upload-image")
+async def upload_asset_image(project_name: str = Form(""), project_path: str = Form(""), asset_type: str = Form(...), asset_id: str = Form(...), file: UploadFile = File(...)):
+    """Upload a character/location image from drag-drop or file picker."""
+    if not file.filename:
+        return {"success": False, "error": "No file provided"}
+    ext = Path(file.filename).suffix or ".png"
+    folder = f"{asset_type}s"  # e.g. "characters" or "locations"
+    save_name = f"{asset_id}{ext}"
+    content = await file.read()
+    if project_path:
+        stage_dir = Path(project_path) / folder
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        dest = stage_dir / save_name
+        dest.write_bytes(content)
+        # Update orchestrator project_graph
+        if orchestrator:
+            pg = orchestrator.memory.project_graph
+            if asset_type == "character":
+                key = "character_assets"
+            else:
+                key = "location_assets"
+            if asset_id not in pg.get(key, {}):
+                pg.setdefault(key, {})[asset_id] = {}
+            pg[key][asset_id]["approved_image"] = f"{folder}/{save_name}"
+            pg[key][asset_id]["approved"] = True
+        return {"success": True, "path": f"{folder}/{save_name}"}
+    elif project_name:
+        project_manager.load_project(project_name)
+        stage_dir = project_manager.projects_dir / project_name / folder
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        dest = stage_dir / save_name
+        dest.write_bytes(content)
+        return {"success": True, "path": f"{folder}/{save_name}"}
     return {"success": False, "error": "No project specified"}
 
 @app.post("/api/projects/save-video")

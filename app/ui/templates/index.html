@@ -919,6 +919,22 @@
                 </div>
             </div>
 
+            <!-- Character Turnaround Sheets Section -->
+            <div id="character-sheet-section" style="margin-top:24px;display:none;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <h3 style="margin:0;font-size:0.95rem;">📋 Character Turnaround Sheets</h3>
+                    <span style="font-size:0.75rem;color:var(--text-secondary);">I2I from approved character images</span>
+                </div>
+                <p style="font-size:0.75rem;color:var(--text-secondary);margin:0 0 12px 0;">
+                    Generate a four-panel turnaround sheet for each approved character.
+                    Approved sheets become I2I reference images in the Storyboard module.
+                </p>
+                <div id="character-sheet-container" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+                <div id="character-sheet-empty" style="display:none;text-align:center;padding:30px;color:var(--text-secondary);font-size:0.85rem;">
+                    Approve a character image above first, then generate their turnaround sheet here.
+                </div>
+            </div>
+
             <div style="display:flex;gap:10px;margin-top:20px;justify-content:space-between;">
                 <button class="btn btn-secondary" onclick="navigateToWorkflow('screenplay')" style="padding:8px 20px;">← Back to Screenplay</button>
                 <button class="btn btn-primary" onclick="proceedToStoryboard()" id="proceed-to-storyboard-btn" style="padding:8px 20px;" disabled>📋 Continue to Storyboard →</button>
@@ -1745,6 +1761,11 @@
                 notify('Navigation Error', e.message, '⚠️');
                 console.error('navigateToWorkflow error:', e);
             }
+        }
+
+        function proceedToAssetStudio() {
+            loadAssetStudioData();
+            showPage('asset-studio');
         }
 
         function showPage(page) {
@@ -4849,7 +4870,7 @@
         }
 
         // === Asset Studio State ===
-        let _assetStudioData = { characters: [], locations: [], assets: {}, approvals: {}, locks: {} };
+        let _assetStudioData = { characters: [], locations: [], assets: {}, approvals: {}, locks: {}, character_sheets: {} };
         window._currentAssetExpandId = null;
         window._currentAssetExpandType = null;
         window._assetStudioApprovals = { characters: false, locations: false };
@@ -4886,6 +4907,7 @@
                 };
                 renderAssetStudio();
                 _updateApprovalUI();
+                renderCharacterSheets();
             } catch (e) {
                 console.error('Failed to load asset studio data:', e);
             }
@@ -4900,10 +4922,46 @@
             renderLocationAssets(locBible);
         }
 
+        function getAssetImageSrc(path) {
+            if (!path) return '';
+            if (path.startsWith('http')) return path;
+            if (path.startsWith('/api/')) return path;
+            return '/api/projects/' + (currentProject?.name || '') + '/saved-image/' + path;
+        }
+
+        async function uploadCharacterImage(cid, file) {
+            const formData = new FormData();
+            formData.append('project_name', currentProject?.name || '');
+            formData.append('project_path', currentProject?.path || '');
+            formData.append('asset_type', 'character');
+            formData.append('asset_id', cid);
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/assets/upload-image', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    if (!_assetStudioData.character_assets) _assetStudioData.character_assets = {};
+                    if (!_assetStudioData.character_assets[cid]) _assetStudioData.character_assets[cid] = {};
+                    _assetStudioData.character_assets[cid].approved_image = data.path;
+                    _assetStudioData.character_assets[cid].approved = true;
+                    renderCharacterAssets(_assetStudioData.character_bible || []);
+                    notify('Imported', 'Character image saved', '📷');
+                    scheduleSaveState();
+                } else {
+                    notify('Upload Failed', data.error || 'Upload error', '❌');
+                }
+            } catch(e) {
+                notify('Upload Error', e.message, '❌');
+            }
+        }
+
         function renderCharacterAssets(bible) {
             const container = document.getElementById('char-asset-container');
             const empty = document.getElementById('char-asset-empty');
             container.innerHTML = '';
+            container.style.display = 'flex';
+            container.style.flexWrap = 'wrap';
+            container.style.gap = '10px';
             if (!bible || !bible.length) { empty.style.display = 'block'; return; }
             empty.style.display = 'none';
             bible.forEach(ch => {
@@ -4912,32 +4970,194 @@
                 const locked = assetInfo.locked || false;
                 const approved = assetInfo.approved || false;
                 const approvedImg = assetInfo.approved_image || '';
+                const hasImage = !!approvedImg;
                 const card = document.createElement('div');
-                card.className = 'asset-card';
-                card.style.cssText = 'background:var(--bg-secondary);border-radius:8px;overflow:hidden;border:1px solid var(--border-color);cursor:pointer;';
+                card.style.cssText = 'width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;cursor:pointer;';
                 card.innerHTML = `
-                    <div style="padding:8px 12px;background:var(--bg-tertiary);display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-weight:600;font-size:0.85rem;">${cid} · ${ch.full_name || ch.character_name || 'Unknown'}</span>
-                        <span style="font-size:0.7rem;padding:2px 6px;border-radius:3px;background:${approved ? '#4caf50' : '#555'};color:#fff;">${approved ? 'Approved' : (locked ? 'Locked' : 'Pending')}</span>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${cid}</span>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);">${ch.role || ''}</span>
+                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${approved ? '#4caf50' : '#555'};color:#fff;">${approved ? 'Approved' : (locked ? 'Locked' : 'Pending')}</span>
                     </div>
-                    <div style="padding:10px;min-height:180px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);">
-                        ${approvedImg ? `<img src="${approvedImg}" style="max-width:100%;max-height:180px;border-radius:4px;">` : `<span style="color:var(--text-secondary);font-size:0.8rem;">${ch.role || 'No image'}</span>`}
+                    <div class="char-img-zone" data-cid="${cid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
+                        ${hasImage
+                            ? `<img src="${getAssetImageSrc(approvedImg)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">${ch.image_prompt ? '🎨 ' + ch.image_prompt.substring(0, 100) + '…' : (ch.role || 'Drop image or click to import')}</span>`
+                        }
                     </div>
-                    <div style="padding:8px 12px;font-size:0.75rem;color:var(--text-secondary);line-height:1.5;">
-                        ${ch.personality ? `<div>🧠 ${ch.personality.substring(0, 80)}${ch.personality.length > 80 ? '...' : ''}</div>` : ''}
-                        ${ch.physical_appearance ? `<div>👁 ${ch.physical_appearance.substring(0, 80)}${ch.physical_appearance.length > 80 ? '...' : ''}</div>` : ''}
+                    <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
+                        ${!hasImage && ch.image_prompt ? `<div style="color:var(--accent-secondary);font-size:0.6rem;">🎨 ${ch.image_prompt.substring(0, 100)}${ch.image_prompt.length > 100 ? '…' : ''}</div>` : ''}
+                        ${ch.physical_appearance ? `<div style="color:var(--text-secondary);font-size:0.6rem;">👁 ${ch.physical_appearance.substring(0, 80)}${ch.physical_appearance.length > 80 ? '…' : ''}</div>` : ''}
+                        ${ch.personality ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🧠 ${ch.personality.substring(0, 80)}${ch.personality.length > 80 ? '…' : ''}</div>` : ''}
                     </div>
-                    <div style="padding:8px 12px;display:flex;gap:4px;flex-wrap:wrap;border-top:1px solid var(--border-color);">
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('char','${cid}')" style="padding:3px 8px;font-size:0.7rem;">⛶ Expand</button>
-                        <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${cid}','char')" style="padding:3px 8px;font-size:0.7rem;">🎨 Gen</button>
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${cid}','char')" style="padding:3px 8px;font-size:0.7rem;">✏️ Var</button>
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetToggleLock('${cid}','char')" style="padding:3px 8px;font-size:0.7rem;">${locked ? '🔓' : '🔒'}</button>
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${cid}','char')" style="padding:3px 8px;font-size:0.7rem;">✅</button>
+                    <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('char','${cid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                        <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Generate with T2I">🎨 Gen</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetToggleLock('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="${locked ? 'Unlock' : 'Lock'}">${locked ? '🔓' : '🔒'}</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Approve">✅</button>
                     </div>
                 `;
                 card.onclick = () => expandAssetItem('char', cid);
+                const imgZone = card.querySelector('.char-img-zone');
+                imgZone.ondragover = function(e) { e.preventDefault(); this.style.borderColor = '#4ade80'; this.style.background = 'rgba(74,222,128,0.08)'; };
+                imgZone.ondragleave = function(e) { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; };
+                imgZone.ondrop = function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    this.style.borderColor = 'var(--border-color)';
+                    this.style.background = 'transparent';
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) uploadCharacterImage(cid, file);
+                };
+                imgZone.onclick = function(e) {
+                    e.stopPropagation();
+                    const input = document.getElementById('char-file-input') || (function() {
+                        const el = document.createElement('input');
+                        el.id = 'char-file-input'; el.type = 'file'; el.accept = 'image/*';
+                        el.style.display = 'none'; document.body.appendChild(el);
+                        return el;
+                    })();
+                    input.onchange = () => {
+                        if (input.files[0]) uploadCharacterImage(cid, input.files[0]);
+                        input.value = '';
+                    };
+                    input.click();
+                };
                 container.appendChild(card);
             });
+        }
+
+        function renderCharacterSheets() {
+            const container = document.getElementById('character-sheet-container');
+            const empty = document.getElementById('character-sheet-empty');
+            const section = document.getElementById('character-sheet-section');
+            container.innerHTML = '';
+            const sheets = _assetStudioData.character_sheets || {};
+            const bible = _assetStudioData.character_bible || [];
+            const eligible = bible.filter(ch => {
+                const cid = ch.character_id || ch.id || '';
+                const info = (_assetStudioData.character_assets || {})[cid] || {};
+                return info.approved_image && info.approved;
+            });
+            if (!eligible.length) { section.style.display = 'none'; return; }
+            section.style.display = 'block';
+            eligible.forEach(ch => {
+                const cid = ch.character_id || ch.id || '';
+                const sheetInfo = sheets[cid] || {};
+                const sheetApproved = sheetInfo.approved || false;
+                const sheetImage = sheetInfo.sheet_image || '';
+                const hasSheet = !!sheetImage;
+                const card = document.createElement('div');
+                card.style.cssText = 'width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;';
+                card.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${cid}</span>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);">${ch.full_name || ch.character_name || ''}</span>
+                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${sheetApproved ? '#4caf50' : '#555'};color:#fff;">${sheetApproved ? 'Approved' : 'Pending'}</span>
+                    </div>
+                    <div style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;">
+                        ${hasSheet
+                            ? `<img src="${getAssetImageSrc(sheetImage)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">Click "Generate Sheet" to create a four-panel turnaround</span>`
+                        }
+                    </div>
+                    <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;">
+                        <div style="color:var(--text-secondary);font-size:0.6rem;">${ch.role || ''} · ${ch.full_name || ch.character_name || ''}</div>
+                        <div style="color:var(--text-secondary);font-size:0.55rem;margin-top:2px;">I2I input: approved character image → turnaround sheet</div>
+                    </div>
+                    <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                        <button class="btn btn-primary" onclick="generateCharacterSheet('${cid}')" id="cs-gen-${cid}" style="padding:2px 4px;font-size:0.5rem;" ${hasSheet ? 'disabled' : ''}>${hasSheet ? '✅ Generated' : '🎨 Generate Sheet'}</button>
+                        <button class="btn btn-secondary" onclick="approveCharacterSheet('${cid}')" id="cs-approve-${cid}" style="padding:2px 4px;font-size:0.5rem;" ${hasSheet && !sheetApproved ? '' : 'disabled'}>${sheetApproved ? '✅ Approved' : '✅ Approve'}</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        async function generateCharacterSheet(charId) {
+            const genBtn = document.getElementById('cs-gen-' + charId);
+            if (!genBtn || genBtn.disabled) return;
+            genBtn.disabled = true;
+            genBtn.textContent = '⏳ Generating...';
+            const assetInfo = (_assetStudioData.character_assets || {})[charId] || {};
+            const approvedImg = assetInfo.approved_image || '';
+            if (!approvedImg) {
+                notify('No Image', 'No approved character image found', '❌');
+                genBtn.disabled = false; genBtn.textContent = '🎨 Generate Sheet';
+                return;
+            }
+            const fixedPrompt = 'Transform the input reference image into a clean four-panel character turnaround sheet on a neutral studio background. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits back and front view. Maintain consistent identity, hairstyle, facial features, body proportions, clothing details, and textures across every panel. The subject stands naturally with relaxed posture and neutral expression. Soft diffused studio lighting with subtle shadows creates a professional reference-sheet appearance. Minimal composition, balanced spacing, highly detailed realistic rendering, modern studio presentation.';
+            const seed = Math.floor(Math.random() * 999999999) + 1;
+            try {
+                const res = await fetch('/api/comfyui/generate/i2i', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: fixedPrompt, seed: seed,
+                        project_path: currentProject?.path || '',
+                        input_images: [approvedImg],
+                        aspect_ratio: '1:1', resolution: '1024x1024'
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: 'character_sheets',
+                            filename: data.filename,
+                            card_name: charId
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const sheetPath = 'character_sheets/' + charId + '.png';
+                        await fetch('/api/orchestrator/save-character-sheet', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                character_id: charId, sheet_image: sheetPath, approved: false
+                            })
+                        });
+                        await loadAssetStudioData();
+                        notify('Sheet Generated', 'Turnaround sheet for ' + charId, '📋');
+                    } else {
+                        notify('Save Failed', saveData.error || 'Save error', '❌');
+                        genBtn.disabled = false; genBtn.textContent = '🎨 Generate Sheet';
+                    }
+                } else {
+                    notify('Generation Failed', data.error || 'I2I error', '❌');
+                    genBtn.disabled = false; genBtn.textContent = '🎨 Generate Sheet';
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+                genBtn.disabled = false; genBtn.textContent = '🎨 Generate Sheet';
+            }
+        }
+
+        async function approveCharacterSheet(charId) {
+            const approveBtn = document.getElementById('cs-approve-' + charId);
+            if (approveBtn) { approveBtn.disabled = true; approveBtn.textContent = '⏳ Approving...'; }
+            const sheets = _assetStudioData.character_sheets || {};
+            const sheetInfo = sheets[charId] || {};
+            const sheetImage = sheetInfo.sheet_image || '';
+            if (!sheetImage) {
+                notify('No Sheet', 'Generate a sheet first', '❌');
+                if (approveBtn) { approveBtn.disabled = false; approveBtn.textContent = '✅ Approve'; }
+                return;
+            }
+            try {
+                await fetch('/api/orchestrator/save-character-sheet', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ character_id: charId, sheet_image: sheetImage, approved: true })
+                });
+                await loadAssetStudioData();
+                notify('Sheet Approved', charId + ' turnaround approved', '✅');
+                scheduleSaveState();
+            } catch(e) {
+                notify('Error', e.message, '❌');
+                if (approveBtn) { approveBtn.disabled = false; approveBtn.textContent = '✅ Approve'; }
+            }
         }
 
         function renderLocationAssets(bible) {
@@ -5257,6 +5477,12 @@
             const paths = [];
             locationData.filter(l => l.savedImage).forEach(l => paths.push('locations/' + l.savedImage.replace(/\s+/g, '_') + '.png'));
             charData.filter(c => c.savedImage).forEach(c => paths.push('characters/' + c.savedImage.replace(/\s+/g, '_') + '.png'));
+            // Add approved character sheet images for I2I reference
+            if (_assetStudioData && _assetStudioData.character_sheets) {
+                Object.entries(_assetStudioData.character_sheets).forEach(([id, s]) => {
+                    if (s.approved && s.sheet_image) paths.push(s.sheet_image);
+                });
+            }
             return paths;
         }
 

@@ -59,6 +59,7 @@ class CinematicMemory:
             "approvals": {"characters_approved": False, "locations_approved": False},
             "character_assets": {},
             "location_assets": {},
+            "character_sheets": {},
         }
 
     @property
@@ -1511,6 +1512,7 @@ Each variant must be meaningfully different from the original and from each othe
             "location_bible": pg.get("location_bible", []),
             "character_assets": pg.get("character_assets", {}),
             "location_assets": pg.get("location_assets", {}),
+            "character_sheets": pg.get("character_sheets", {}),
             "approvals": pg.get("approvals", {}),
             "locks": pg.get("locks", {}),
         }
