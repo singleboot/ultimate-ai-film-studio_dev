@@ -728,7 +728,7 @@
                 </div>
             </div>
 
-            <button class="btn btn-primary" type="button" onclick="generateIdeas()" style="margin-top:10px;width:100%;">🚀 Generate Ideas</button>
+            <button class="btn btn-primary" type="button" onclick="generateIdeas()" id="generate-ideas-btn" style="margin-top:10px;width:100%;">🚀 Generate Ideas</button>
 
             <!-- Generated Ideas -->
             <div id="ideas-container" style="margin-top:20px;"></div>
@@ -834,7 +834,6 @@
                 <div style="display:flex;gap:6px;">
                     <button class="btn btn-secondary" onclick="siCreateVariant()" id="si-variant-btn" style="padding:4px 10px;font-size:0.7rem;">✏️ Variant</button>
                     <button class="btn btn-secondary" onclick="siRegenerate()" id="si-regen-btn" style="padding:4px 10px;font-size:0.7rem;">🔄 Regen</button>
-                    <button class="btn btn-secondary" onclick="siToggleLock()" id="si-lock-btn" style="padding:4px 10px;font-size:0.7rem;">🔒 Lock</button>
                     <button class="btn btn-primary" onclick="siApprove()" id="si-approve-btn" style="padding:4px 10px;font-size:0.7rem;">✅ Approve</button>
                     <button class="btn btn-secondary" onclick="closeShotInspector()" style="padding:4px 10px;font-size:0.75rem;">✕</button>
                 </div>
@@ -851,7 +850,7 @@
                 </div>
                 <div id="si-variant-input-area" style="display:none;margin-top:10px;">
                     <textarea id="si-variant-instruction" style="width:100%;min-height:50px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;padding:6px;font-size:0.75rem;" placeholder="Describe cinematic change..."></textarea>
-                    <button class="btn btn-primary" onclick="siSubmitVariant()" style="padding:4px 10px;font-size:0.7rem;margin-top:4px;">Generate 3 Variants</button>
+                    <button class="btn btn-primary" onclick="siSubmitVariant()" id="si-submit-variant-btn" style="padding:4px 10px;font-size:0.7rem;margin-top:4px;">Generate 3 Variants</button>
                 </div>
             </div>
         </div>
@@ -1107,7 +1106,7 @@
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                 <h2 style="margin:0;">⚙️ Settings</h2>
                 <div style="display:flex;gap:8px;">
-                    <button class="btn btn-primary" onclick="saveSettings()" style="padding:6px 14px;font-size:0.8rem;">Save Settings</button>
+                    <button class="btn btn-primary" onclick="saveSettings()" id="save-settings-btn" style="padding:6px 14px;font-size:0.8rem;">Save Settings</button>
                     <button class="btn btn-secondary" onclick="closeSettings()" style="padding:6px 12px;font-size:0.8rem;">Cancel</button>
                 </div>
             </div>
@@ -1412,7 +1411,7 @@
                 </div>
             </div>
             <div class="modal-actions" style="border-top:1px solid var(--border-color);padding-top:10px;">
-                <button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>
+                <button class="btn btn-primary" onclick="saveSettings()" id="save-settings-btn-2" style="flex:1">Save Settings</button>
                 <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
             </div>
         </div>
@@ -1647,7 +1646,7 @@
                 <label class="form-label">What would you like to change?</label>
                 <textarea class="form-textarea" id="variant-change-input-popup" rows="3" placeholder="e.g. Make it a comedy, change the setting to space..."></textarea>
             </div>
-            <button class="btn btn-primary" onclick="generateVariantsPopup()" style="padding:6px 14px;font-size:0.8rem;">🚀 Generate Variants</button>
+            <button class="btn btn-primary" onclick="generateVariantsPopup()" id="generate-variants-popup-btn" style="padding:6px 14px;font-size:0.8rem;">🚀 Generate Variants</button>
             <div id="variant-results-popup" style="margin-top:15px;"></div>
         </div>
     </div>
@@ -1769,7 +1768,12 @@
         }
 
         function openProjectWorkspace(name, path) {
+            if (currentProject && currentProject.name !== name) {
+                saveProjectState();
+            }
             currentProject = { name, path };
+            localStorage.setItem('lastProjectName', name);
+            localStorage.setItem('lastProjectPath', path);
             document.getElementById('project-label').textContent = name;
             document.getElementById('status-text').textContent = 'Project: ' + name;
             showPage('ideas');
@@ -1787,12 +1791,12 @@
                 selectedVisualStyle,
                 selectedFilmAesthetic,
                 screenplayData: screenplayData,
-                charData: charData.map(c => ({ name: c.name, description: c.description, imagePrompt: c.imagePrompt, savedImage: c.savedImage })),
-                locationData: locationData.map(l => ({ name: l.name, type: l.type, details: l.details, imagePrompt: l.imagePrompt, savedImage: l.savedImage })),
+                charData: charData.map(c => ({ ...c })),
+                locationData: locationData.map(l => ({ ...l })),
                 sceneData: sceneData.slice(),
                 imagePromptData: imagePromptData.slice(),
                 videoPromptData: videoPromptData.slice(),
-                sceneVideoData: sceneVideoData.map(s => ({ savedVideo: s.savedVideo })),
+                sceneVideoData: sceneVideoData.map(s => ({ savedVideo: s.savedVideo, genFilename: s.genFilename, genSubfolder: s.genSubfolder })),
                 sceneImageData: sceneImageData.map(s => ({ prompt: s.prompt, savedImage: s.savedImage })),
                 savedAssets: savedAssets.slice(),
                 sidebarExpanded: !document.getElementById('sidebar').classList.contains('collapsed'),
@@ -1800,6 +1804,9 @@
                 charactersCount: window.charactersCount || 0,
                 projectSettings: currentProject?.settings || null,
                 _assetStudioApprovals: window._assetStudioApprovals || { characters: false, locations: false },
+                currentAssetFilter: currentAssetFilter,
+                selectedAspectRatio: selectedAspectRatio,
+                selectedDialogue: selectedDialogue,
             };
         }
 
@@ -1811,12 +1818,12 @@
             selectedGenres = state.selectedGenres || [];
             selectedVisualStyle = state.selectedVisualStyle || null;
             selectedFilmAesthetic = state.selectedFilmAesthetic || null;
-            charData = (state.charData || []).map(c => ({ name: c.name, description: c.description, imagePrompt: c.imagePrompt, savedImage: c.savedImage }));
-            locationData = (state.locationData || []).map(l => ({ name: l.name, type: l.type, details: l.details, imagePrompt: l.imagePrompt, savedImage: l.savedImage }));
+            charData = (state.charData || []).map(c => ({ ...c }));
+            locationData = (state.locationData || []).map(l => ({ ...l }));
             sceneData = state.sceneData ? state.sceneData.slice() : [];
             imagePromptData = state.imagePromptData ? state.imagePromptData.slice() : [];
             videoPromptData = state.videoPromptData ? state.videoPromptData.slice() : [];
-            sceneVideoData = (state.sceneVideoData || []).map(s => ({ savedVideo: s.savedVideo }));
+            sceneVideoData = (state.sceneVideoData || []).map(s => ({ savedVideo: s.savedVideo, genFilename: s.genFilename, genSubfolder: s.genSubfolder }));
             sceneImageData = (state.sceneImageData || []).map(s => ({ prompt: s.prompt, savedImage: s.savedImage, savedPath: s.savedPath }));
             savedAssets = state.savedAssets ? state.savedAssets.slice() : [];
             window.scenesCount = state.scenesCount || 0;
@@ -1828,6 +1835,9 @@
                 if (!currentProject) currentProject = {};
                 currentProject.settings = state.projectSettings;
             }
+            if (state.currentAssetFilter !== undefined) currentAssetFilter = state.currentAssetFilter;
+            if (state.selectedAspectRatio !== undefined) selectedAspectRatio = state.selectedAspectRatio;
+            if (state.selectedDialogue !== undefined) selectedDialogue = state.selectedDialogue;
             // Update selection UI labels
             const vsLabel = document.getElementById('selected-visual-style');
             if (vsLabel) vsLabel.textContent = selectedVisualStyle ? '🎨 ' + selectedVisualStyle : 'None selected';
@@ -1906,6 +1916,15 @@
                     // Refresh screenplay display
                     if (screenplayData && typeof renderScreenplay === 'function') {
                         renderScreenplay();
+                    }
+                    // Sync screenplay shots to orchestrator so approve/lock endpoints find them
+                    if (screenplayData) {
+                        try {
+                            await fetch('/api/orchestrator/sync-shots', {
+                                method: 'POST', headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ screenplay: screenplayData })
+                            });
+                        } catch(e) {}
                     }
                 }
             } catch(e) {
@@ -2581,6 +2600,9 @@
         }
 
         async function saveSettings() {
+            const btn1 = document.getElementById('save-settings-btn');
+            const btn2 = document.getElementById('save-settings-btn-2');
+            [btn1, btn2].forEach(b => { if (b) { b.disabled = true; b.textContent = '⏳ Saving...'; } });
             const modelSelect = getLLMModelSelect();
             const externalPathEl = document.getElementById('comfyui-external-path');
             const settings = {
@@ -2626,6 +2648,7 @@
             } catch(e) {
                 notify('Error', 'Could not save settings');
             }
+            [btn1, btn2].forEach(b => { if (b) { b.disabled = false; b.textContent = 'Save Settings'; } });
         }
 
         async function testLLM() {
@@ -2984,6 +3007,8 @@
         }
 
         async function generateIdeas() {
+            const ideasBtn = document.getElementById('generate-ideas-btn');
+            if (ideasBtn) { ideasBtn.disabled = true; ideasBtn.textContent = '⏳ Generating...'; }
             const checkedSources = Array.from(document.querySelectorAll('.src-chk:checked')).map(cb => cb.value);
             if (checkedSources.length === 0 && selectedGenres.length === 0) {
                 notify('No Sources', 'Select a genre or check a source'); return;
@@ -3142,6 +3167,7 @@
                 if (progressInterval) clearInterval(progressInterval);
                 if (!ideasCancel) { hideProgress(); notify('Error', e.message); }
             }
+            if (ideasBtn) { ideasBtn.disabled = false; ideasBtn.textContent = '🚀 Generate Ideas'; }
         }
 
         function renderIdeas() {
@@ -3436,6 +3462,8 @@
             if (!idea) return;
             const userChange = document.getElementById('variant-change-input-popup').value.trim();
             if (!userChange) { notify('Input Required', 'Describe what you want to change'); return; }
+            const btn = document.getElementById('generate-variants-popup-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
             const resultsEl = document.getElementById('variant-results-popup');
             resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">⏳ Generating variants...</div>';
             try {
@@ -3463,6 +3491,7 @@
             } catch(e) {
                 resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + e.message + '</div>';
             }
+            if (btn) { btn.disabled = false; btn.textContent = '🚀 Generate Variants'; }
         }
 
         function selectVariantPopup(idx) {
@@ -3554,6 +3583,8 @@
         }
 
         async function generateScreenplay() {
+            const scrBtn = document.getElementById('generate-screenplay-btn');
+            if (scrBtn) { scrBtn.disabled = true; scrBtn.textContent = '⏳ Generating...'; }
             if (!topicIdeas.length) {
                 notify('No Ideas', 'Generate story ideas first on the Ideas page');
                 return;
@@ -3596,6 +3627,7 @@
                 } else {
                     stopProgressPolling(false, data.error || 'Generation failed');
                     notify('Screenplay Failed', data.error || 'Generation failed. Check LLM connection.');
+                    if (scrBtn) { scrBtn.disabled = false; scrBtn.textContent = '📜 Generate/Regenerate'; }
                     return;
                 }
             } catch(e) {
@@ -3603,6 +3635,7 @@
                 stopProgressPolling(false, e.message);
                 notify('Error', e.message);
             }
+            if (scrBtn) { scrBtn.disabled = false; scrBtn.textContent = '📜 Generate/Regenerate'; }
         }
 
         let _siShotId = null; // currently open shot inspector shot_id
@@ -3611,7 +3644,6 @@
         let _psSceneIdx = -1; // scene index for placeholder shot modal
         let _psShotNum = -1; // shot number within scene for placeholder modal
         let _psResults = []; // array of 3 variant objects from placeholder modal
-        let _siLockState = {}; // current lock state for the open shot inspector
         let _currentAbortController = null; // for cancelling generation requests
 
         function renderScreenplay() {
@@ -3699,7 +3731,6 @@
                     s.shots.forEach(sh => {
                         const status = sh.storyboard_status || 'pending';
                         const statusColor = status === 'approved' ? '#4caf50' : (status === 'enriched' || status === 'regenerated' ? '#ff9800' : '#555');
-                        const locked = false;
                         const lighting = (sh.lighting_language || '').toLowerCase();
                         const todIcon = (lighting.includes('night') || lighting.includes('dark') || lighting.includes('moon') || lighting.includes('shadow')) ? '🌙' : '☀️';
                         function _str(v) { return Array.isArray(v) ? v.join(', ') : (v || ''); }
@@ -3728,7 +3759,6 @@
                                     <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect shot details">⛶</button>
                                     <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}');setTimeout(()=>siShowVariantInput('${sh.shot_id}'),300)" style="padding:2px 4px;font-size:0.5rem;" title="Generate shot variants">✏️</button>
                                     <button class="btn btn-secondary" onclick="shotRegenerate('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;" title="Regenerate with continuity">🔄</button>
-                                    <button class="btn btn-secondary" onclick="shotToggleLock('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;" title="Lock/unlock composition">${locked ? '🔓' : '🔒'}</button>
                                     <button class="btn btn-secondary" onclick="shotApprove('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;" title="Approve for timeline">✅</button>
                                 </div>
                             </div>`;
@@ -3879,11 +3909,6 @@
                     renderShotVariantCards(gallery, variants);
                 }
 
-                // Update lock button
-                _siLockState = data.locks || {};
-                const hasLocks = Object.values(_siLockState).some(v => v === true);
-                const lockBtn = document.getElementById('si-lock-btn');
-                lockBtn.textContent = hasLocks ? '🔓 Unlock' : '🔒 Lock';
             } catch(e) {
                 // Silently fall back to local data
             }
@@ -3932,6 +3957,8 @@
         async function siSubmitVariant(shotId) {
             const id = shotId || _siShotId;
             if (!id) return;
+            const btn = document.getElementById('si-submit-variant-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
             const instruction = document.getElementById('si-variant-instruction').value.trim() || 'Generate 3 creative alternative versions';
             const gallery = document.getElementById('si-variant-gallery');
             gallery.innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">⏳ Generating 3 variants...</span>';
@@ -3960,11 +3987,14 @@
                 stopProgressPolling(false, e.message);
                 document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:#f87171;">Error: ' + e.message + '</span>';
             }
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate 3 Variants'; }
             document.getElementById('si-variant-input-area').style.display = 'none';
         }
 
         async function siRegenerate() {
             if (!_siShotId) return;
+            const regenBtn = document.getElementById('si-regen-btn');
+            if (regenBtn) { regenBtn.disabled = true; regenBtn.textContent = '⏳ Regen...'; }
             startProgressPolling();
             _currentAbortController = new AbortController();
             try {
@@ -3993,6 +4023,7 @@
                     }
                     openShotInspector(_siShotId);
                     renderScreenplay();
+                    scheduleSaveState();
                 } else {
                     stopProgressPolling(false, data.error || 'Regeneration failed');
                     notify('Failed', data.error || 'Regeneration failed', '❌');
@@ -4002,27 +4033,7 @@
                 stopProgressPolling(false, e.message);
                 notify('Error', e.message, '❌');
             }
-        }
-
-        async function siToggleLock() {
-            if (!_siShotId) return;
-            const currentlyLocked = Object.values(_siLockState).some(v => v === true);
-            const newLocked = !currentlyLocked;
-            try {
-                const res = await fetch('/api/orchestrator/asset-lock', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ category: 'shots', item_id: _siShotId, field: 'composition', locked: newLocked }),
-                });
-                const data = await res.json();
-                if (data.success) {
-                    _siLockState = { composition: newLocked };
-                    const btn = document.getElementById('si-lock-btn');
-                    btn.textContent = newLocked ? '🔓 Unlock' : '🔒 Lock';
-                    notify(newLocked ? 'Locked' : 'Unlocked', `${_siShotId} composition ${newLocked ? 'locked' : 'unlocked'}`, newLocked ? '🔒' : '🔓');
-                }
-            } catch(e) {
-                notify('Error', e.message, '❌');
-            }
+            if (regenBtn) { regenBtn.disabled = false; regenBtn.textContent = '🔄 Regen'; }
         }
 
         async function siApprove() {
@@ -4054,6 +4065,7 @@
                         }
                     }
                     renderScreenplay();
+                    scheduleSaveState();
                 } else {
                     notify('Failed', data.error || 'Approval failed', '❌');
                 }
@@ -4066,11 +4078,6 @@
         async function shotRegenerate(shotId) {
             _siShotId = shotId;
             await siRegenerate();
-        }
-
-        async function shotToggleLock(shotId) {
-            _siShotId = shotId;
-            await siToggleLock();
         }
 
         async function shotApprove(shotId) {
@@ -4281,6 +4288,13 @@
             renderScreenplay();
             closePlaceholderShotModal();
             scheduleSaveState();
+            // Sync the new shot to orchestrator for approve/lock
+            try {
+                fetch('/api/orchestrator/sync-shots', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ screenplay: screenplayData })
+                });
+            } catch(e) {}
             notify('Kept', `Shot ${shotId} created from variant`, '✓');
         }
 
@@ -4447,7 +4461,7 @@
         async function approveAllShots() {
             if (!screenplayData || !screenplayData.scenes) return;
             const btn = document.getElementById('approve-all-shots-btn');
-            if (btn) btn.disabled = true;
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Approving...'; }
             const pb = document.getElementById('screenplay-progress');
             const bar = document.getElementById('screenplay-progress-bar');
             const pct = document.getElementById('screenplay-progress-pct');
@@ -4473,7 +4487,7 @@
                 bar.style.width = '100%';
                 notify('All Approved', 'No unapproved shots found', '✅');
                 setTimeout(() => { pb.style.display = 'none'; }, 1500);
-                if (btn) btn.disabled = false;
+                if (btn) { btn.disabled = false; btn.textContent = '✅ Approve All'; }
                 return;
             }
 
@@ -4509,7 +4523,8 @@
             subEl.textContent = failed > 0 ? `${failed} failed` : '';
             if (approved > 0) notify('Approved', `${approved} shots approved${failed ? `, ${failed} failed` : ''}`, '✅');
             else notify('Failed', 'All approvals failed', '❌');
-            if (btn) btn.disabled = false;
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve All'; }
+            scheduleSaveState();
             setTimeout(() => { pb.style.display = 'none'; }, 2000);
         }
 
@@ -5037,13 +5052,15 @@
             id = id || window._currentAssetExpandId;
             type = type || window._currentAssetExpandType;
             if (!id) return;
+            const btn = document.getElementById('asset-gen-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
             const bible = type === 'char'
                 ? (_assetStudioData.character_bible || [])
                 : (_assetStudioData.location_bible || []);
             const asset = bible.find(x => (x.character_id || x.id || x.location_id) === id);
-            if (!asset) return;
+            if (!asset) { if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate Image'; } return; }
             const prompt = asset.image_prompt || '';
-            if (!prompt) { notify('No Prompt', 'No image prompt available for this asset', '⚠️'); return; }
+            if (!prompt) { if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate Image'; } notify('No Prompt', 'No image prompt available for this asset', '⚠️'); return; }
             // Use settings to get the image provider
             const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
             const imgSettings = settings.image_gen || {};
@@ -5076,6 +5093,7 @@
             } catch (e) {
                 notify('Error', e.message, '❌');
             }
+            if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate Image'; }
         }
 
         function showAssetVariantInput(id, type) {
@@ -5131,6 +5149,7 @@
                 if (data.success) {
                     notify('Locked', `Asset ${id} locked`, '🔒');
                     loadAssetStudioData();
+                    scheduleSaveState();
                 }
             } catch (e) {
                 notify('Error', e.message, '❌');
@@ -5154,25 +5173,36 @@
             }
             notify('Approved', `${id} approved`, '✅');
             loadAssetStudioData();
+            scheduleSaveState();
         }
 
         async function approveAllCharacters() {
+            const btn = document.getElementById('approve-chars-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Approving...'; }
             await fetch('/api/orchestrator/approve-characters', { method: 'POST' });
             window._assetStudioApprovals.characters = true;
             _updateApprovalUI();
             notify('Characters Approved', 'All characters approved', '✅');
+            scheduleSaveState();
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve Characters'; }
         }
 
         async function approveAllLocations() {
+            const btn = document.getElementById('approve-locs-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Approving...'; }
             await fetch('/api/orchestrator/approve-locations', { method: 'POST' });
             window._assetStudioApprovals.locations = true;
             _updateApprovalUI();
             notify('Locations Approved', 'All locations approved', '✅');
+            scheduleSaveState();
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve Locations'; }
         }
 
         async function assetGenerateTurnaround() {
             const id = window._currentAssetExpandId;
             if (!id) return;
+            const btn = document.getElementById('asset-turnaround-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
             try {
                 const res = await fetch('/api/orchestrator/generate-turnaround', {
                     method: 'POST',
@@ -5188,6 +5218,7 @@
             } catch (e) {
                 notify('Error', e.message, '❌');
             }
+            if (btn) { btn.disabled = false; btn.textContent = '📋 Turnaround'; }
         }
 
         function _updateApprovalUI() {
@@ -7273,6 +7304,12 @@ The video prompt must describe: camera movement, character actions, timing, ligh
                 sidebar.style.transition = 'none';
                 e.preventDefault();
             });
+            // Auto-restore last project on page load
+            const lastProjectName = localStorage.getItem('lastProjectName');
+            const lastProjectPath = localStorage.getItem('lastProjectPath');
+            if (lastProjectName && lastProjectPath) {
+                setTimeout(() => openProjectWorkspace(lastProjectName, lastProjectPath), 100);
+            }
         });
 
         document.addEventListener('mousemove', function(e) {
@@ -7336,8 +7373,10 @@ The video prompt must describe: camera movement, character actions, timing, ligh
             if (_saveTimer) clearTimeout(_saveTimer);
             const state = collectProjectState();
             try {
-                const blob = new Blob([JSON.stringify({ state, project_path: currentProject.path })], { type: 'application/json' });
-                navigator.sendBeacon('/api/projects/' + encodeURIComponent(currentProject.name) + '/state', blob);
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/projects/' + encodeURIComponent(currentProject.name) + '/state', false);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.send(JSON.stringify({ state, project_path: currentProject.path }));
             } catch(e) {}
         });
     </script>

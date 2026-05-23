@@ -536,6 +536,13 @@ def approve_shot(data: dict):
         return {"success": False, "error": "Orchestrator not available"}
     return orchestrator.approve_shot(data)
 
+@app.post("/api/orchestrator/sync-shots")
+def sync_shots(data: dict):
+    """Sync screenplay shots into orchestrator project_graph for approve/lock."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.sync_shots_from_screenplay(data.get("screenplay", {}))
+
 @app.post("/api/orchestrator/generate-shot-image")
 def generate_shot_image(data: dict):
     """Generate storyboard image prompt for a shot."""

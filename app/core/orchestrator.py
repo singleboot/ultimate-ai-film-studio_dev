@@ -1959,6 +1959,18 @@ Example:
             if not sh.get("storyboard_status"):
                 sh["storyboard_status"] = "pending"
 
+        # Persist to project_graph for cross-refresh survival
+        pg = self.memory.project_graph
+        if scene_id and shots:
+            for sh in shots:
+                pg["shots"][sh.get("shot_id")] = sh
+            for si, sc in enumerate(pg.get("scene_graph", [])):
+                if sc.get("scene_id") == scene_id:
+                    pg["scene_graph"][si]["shots"] = shots
+                    break
+            else:
+                pg["scene_graph"].append({"scene_id": scene_id, "shots": shots})
+
         self.set_progress(100, "Scene shots generated!")
         return {"success": True, "shots": shots}
 
@@ -1971,3 +1983,30 @@ Example:
 
     def from_dict(self, data: Dict):
         self.memory.from_dict(data)
+
+    def sync_shots_from_screenplay(self, screenplay: Dict) -> Dict:
+        """Sync screenplayData shots into project_graph so approve/lock endpoints find them."""
+        scenes = screenplay.get("scenes", []) if isinstance(screenplay, dict) else []
+        if not scenes:
+            return {"success": False, "error": "No scenes in screenplay"}
+        pg = self.memory.project_graph
+        count = 0
+        for s in scenes:
+            sid = s.get("scene_id")
+            if not sid:
+                continue
+            for sh in s.get("shots", []):
+                sid2 = sh.get("shot_id")
+                if sid2:
+                    pg["shots"][sid2] = sh
+                    count += 1
+            # Update scene_graph
+            found = False
+            for si, sc in enumerate(pg.get("scene_graph", [])):
+                if sc.get("scene_id") == sid:
+                    pg["scene_graph"][si]["shots"] = s.get("shots", [])
+                    found = True
+                    break
+            if not found:
+                pg["scene_graph"].append({"scene_id": sid, "shots": s.get("shots", [])})
+        return {"success": True, "count": count}
