@@ -534,6 +534,37 @@ def save_character_sheet(data: dict):
     sheets[character_id] = entry
     return {"success": True, "character_sheets": sheets}
 
+@app.post("/api/orchestrator/save-location-sheet")
+def save_location_sheet(data: dict):
+    """Save/update location sheet state in project_graph."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    location_id = data.get("location_id", "")
+    sheet_image = data.get("sheet_image", "")
+    approved = data.get("approved", False)
+    if not location_id:
+        return {"success": False, "error": "location_id required"}
+    pg = orchestrator.memory.project_graph
+    sheets = pg.setdefault("location_sheets", {})
+    entry = sheets.get(location_id, {"location_id": location_id, "generation_history": []})
+    if sheet_image:
+        entry["sheet_image"] = sheet_image
+        entry["generation_history"] = entry.get("generation_history", []) + [sheet_image]
+    if approved:
+        entry["approved"] = True
+    sheets[location_id] = entry
+    return {"success": True, "location_sheets": sheets}
+
+@app.post("/api/orchestrator/sync-bibles")
+def sync_bibles(data: dict):
+    """Sync frontend character/location bible data into orchestrator project_graph."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.sync_bibles_from_frontend(
+        character_bible=data.get("character_bible"),
+        location_bible=data.get("location_bible"),
+    )
+
 # === V2.0: Shot-level endpoints ===
 
 @app.get("/api/orchestrator/shot/{shot_id}")

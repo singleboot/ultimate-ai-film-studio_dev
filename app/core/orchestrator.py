@@ -60,6 +60,7 @@ class CinematicMemory:
             "character_assets": {},
             "location_assets": {},
             "character_sheets": {},
+            "location_sheets": {},
         }
 
     @property
@@ -1513,6 +1514,7 @@ Each variant must be meaningfully different from the original and from each othe
             "character_assets": pg.get("character_assets", {}),
             "location_assets": pg.get("location_assets", {}),
             "character_sheets": pg.get("character_sheets", {}),
+            "location_sheets": pg.get("location_sheets", {}),
             "approvals": pg.get("approvals", {}),
             "locks": pg.get("locks", {}),
         }
@@ -2012,3 +2014,18 @@ Example:
             if not found:
                 pg["scene_graph"].append({"scene_id": sid, "shots": s.get("shots", [])})
         return {"success": True, "count": count}
+
+    def sync_bibles_from_frontend(self, character_bible: List = None, location_bible: List = None) -> Dict:
+        """Sync frontend character/location bible data into project_graph when backend memory is empty."""
+        pg = self.memory.project_graph
+        if character_bible and len(character_bible) > 0:
+            if not pg.get("character_bible") or len(pg["character_bible"]) == 0:
+                pg["character_bible"] = character_bible
+        if location_bible and len(location_bible) > 0:
+            if not pg.get("location_bible") or len(pg["location_bible"]) == 0:
+                pg["location_bible"] = location_bible
+        return {
+            "success": True,
+            "character_bible": pg.get("character_bible", []),
+            "location_bible": pg.get("location_bible", []),
+        }

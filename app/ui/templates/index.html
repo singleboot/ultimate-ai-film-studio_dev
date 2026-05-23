@@ -873,6 +873,16 @@
                 <h2 style="color:var(--accent-primary);margin:0;">🎬 Character & Location Asset Studio</h2>
             </div>
 
+            <!-- Casting Board strip -->
+            <div id="casting-board" style="display:none;position:sticky;top:0;z-index:10;background:var(--bg-secondary);border-radius:8px;margin-bottom:12px;padding:8px 12px;border:1px solid var(--border-color);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-weight:600;font-size:0.8rem;color:var(--accent-primary);">◈ CASTING BOARD — Quick Access</span>
+                    <span style="font-size:0.65rem;color:var(--text-secondary);">Click any slot to inspect · Drag to upload</span>
+                </div>
+                <div id="casting-char-row" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:4px;min-height:100px;"></div>
+                <div id="casting-loc-row" style="display:flex;gap:6px;overflow-x:auto;min-height:100px;"></div>
+            </div>
+
             <!-- Tabs -->
             <div style="display:flex;gap:8px;margin-bottom:15px;border-bottom:1px solid var(--border-color);padding-bottom:8px;">
                 <button class="btn btn-primary" onclick="switchAssetTab('characters')" id="tab-chars-btn" style="padding:8px 18px;">👤 Characters (<span id="asset-char-count">0</span>)</button>
@@ -908,10 +918,20 @@
 
             <!-- Approval Bar -->
             <div id="asset-approval-bar" style="margin-top:20px;padding:12px;background:var(--bg-secondary);border-radius:8px;display:flex;align-items:center;justify-content:space-between;">
-                <div style="display:flex;gap:12px;align-items:center;">
-                    <span style="font-weight:600;">Approvals:</span>
-                    <span id="asset-char-approval-badge" style="padding:3px 8px;border-radius:4px;font-size:0.8rem;background:#555;color:#fff;">👤 Characters: Pending</span>
-                    <span id="asset-loc-approval-badge" style="padding:3px 8px;border-radius:4px;font-size:0.8rem;background:#555;color:#fff;">🏠 Locations: Pending</span>
+                <div style="display:flex;gap:16px;align-items:center;">
+                    <span style="font-weight:600;font-size:0.8rem;">Approvals:</span>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <span style="font-size:0.75rem;color:var(--text-secondary);">👤 Characters:</span>
+                        <span id="asset-char-pending-badge" style="padding:2px 5px;border-radius:3px;background:#555;color:#fff;font-size:0.65rem;">⏳ Pending(0)</span>
+                        <span id="asset-char-approved-badge" style="padding:2px 5px;border-radius:3px;background:#4caf50;color:#fff;font-size:0.65rem;">✅ Approved(0)</span>
+                        <span id="asset-char-locked-badge" style="padding:2px 5px;border-radius:3px;background:#ff9800;color:#fff;font-size:0.65rem;">🔒 Locked(0)</span>
+                    </div>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <span style="font-size:0.75rem;color:var(--text-secondary);">🏠 Locations:</span>
+                        <span id="asset-loc-pending-badge" style="padding:2px 5px;border-radius:3px;background:#555;color:#fff;font-size:0.65rem;">⏳ Pending(0)</span>
+                        <span id="asset-loc-approved-badge" style="padding:2px 5px;border-radius:3px;background:#4caf50;color:#fff;font-size:0.65rem;">✅ Approved(0)</span>
+                        <span id="asset-loc-locked-badge" style="padding:2px 5px;border-radius:3px;background:#ff9800;color:#fff;font-size:0.65rem;">🔒 Locked(0)</span>
+                    </div>
                 </div>
                 <div style="display:flex;gap:8px;">
                     <button class="btn btn-secondary" onclick="approveAllCharacters()" id="approve-chars-btn" style="padding:6px 14px;font-size:0.8rem;">✅ Approve Characters</button>
@@ -919,19 +939,42 @@
                 </div>
             </div>
 
-            <!-- Character Turnaround Sheets Section -->
-            <div id="character-sheet-section" style="margin-top:24px;display:none;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                    <h3 style="margin:0;font-size:0.95rem;">📋 Character Turnaround Sheets</h3>
-                    <span style="font-size:0.75rem;color:var(--text-secondary);">I2I from approved character images</span>
+            <!-- Reference Sheet Generation Bar -->
+            <div id="sheet-generation-bar" style="margin-top:20px;padding:12px;background:var(--bg-secondary);border-radius:8px;display:flex;align-items:center;justify-content:space-between;">
+                <div style="display:flex;gap:16px;align-items:center;">
+                    <span style="font-weight:600;font-size:0.8rem;">📋 Reference Sheets:</span>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <span style="font-size:0.75rem;color:var(--text-secondary);">👤 Characters:</span>
+                        <span id="cs-pending-count" style="padding:2px 5px;border-radius:3px;background:#555;color:#fff;font-size:0.65rem;">⏳ Pending(0)</span>
+                        <span id="cs-generated-count" style="padding:2px 5px;border-radius:3px;background:#ff9800;color:#fff;font-size:0.65rem;">🖼 Generated(0)</span>
+                        <span id="cs-approved-count" style="padding:2px 5px;border-radius:3px;background:#4caf50;color:#fff;font-size:0.65rem;">✅ Approved(0)</span>
+                    </div>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <span style="font-size:0.75rem;color:var(--text-secondary);">🏠 Locations:</span>
+                        <span id="ls-pending-count" style="padding:2px 5px;border-radius:3px;background:#555;color:#fff;font-size:0.65rem;">⏳ Pending(0)</span>
+                        <span id="ls-generated-count" style="padding:2px 5px;border-radius:3px;background:#ff9800;color:#fff;font-size:0.65rem;">🖼 Generated(0)</span>
+                        <span id="ls-approved-count" style="padding:2px 5px;border-radius:3px;background:#4caf50;color:#fff;font-size:0.65rem;">✅ Approved(0)</span>
+                    </div>
                 </div>
-                <p style="font-size:0.75rem;color:var(--text-secondary);margin:0 0 12px 0;">
-                    Generate a four-panel turnaround sheet for each approved character.
-                    Approved sheets become I2I reference images in the Storyboard module.
-                </p>
-                <div id="character-sheet-container" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-secondary" onclick="generateAllCharacterSheets()" id="gen-all-cs-btn" style="padding:6px 14px;font-size:0.8rem;">📋 Generate Character Sheets</button>
+                    <button class="btn btn-secondary" onclick="generateAllLocationSheets()" id="gen-all-ls-btn" style="padding:6px 14px;font-size:0.8rem;">🏠 Generate Location Sheets</button>
+                </div>
+            </div>
+
+            <!-- Character Sheets Container -->
+            <div id="character-sheet-section" style="margin-top:16px;display:none;">
+                <div id="character-sheet-container" style="display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;"></div>
                 <div id="character-sheet-empty" style="display:none;text-align:center;padding:30px;color:var(--text-secondary);font-size:0.85rem;">
-                    Approve a character image above first, then generate their turnaround sheet here.
+                    Approve a character image first, then generate their turnaround sheet.
+                </div>
+            </div>
+
+            <!-- Location Sheets Container -->
+            <div id="location-sheet-section" style="margin-top:16px;display:none;">
+                <div id="location-sheet-container" style="display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;"></div>
+                <div id="location-sheet-empty" style="display:none;text-align:center;padding:30px;color:var(--text-secondary);font-size:0.85rem;">
+                    Approve a location image first, then generate their reference board.
                 </div>
             </div>
 
@@ -944,16 +987,22 @@
 
     <!-- Asset Studio Expand Modal -->
     <div class="modal-overlay" id="asset-expand-modal" style="display:none;">
-        <div class="modal" style="max-width:90vw;width:1200px;height:85vh;display:flex;flex-direction:column;">
+        <div class="modal" id="asset-expand-modal-inner" style="max-width:90vw;width:1200px;height:85vh;display:flex;flex-direction:column;">
             <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-color);">
                 <h3 style="margin:0;" id="asset-expand-title">Asset</h3>
-                <button class="btn btn-secondary" onclick="closeAssetExpand()" style="padding:4px 12px;">✕</button>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn btn-secondary" onclick="toggleAssetFullscreen()" id="asset-fullscreen-btn" style="padding:4px 10px;font-size:0.75rem;">⛶ Fullscreen</button>
+                    <button class="btn btn-secondary" onclick="closeAssetExpand()" style="padding:4px 12px;">✕</button>
+                </div>
             </div>
             <div style="display:flex;flex:1;gap:20px;overflow:hidden;padding-top:15px;">
                 <!-- Left: Image -->
                 <div style="flex:1;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
-                    <div id="asset-expand-image-area" style="flex:1;background:var(--bg-secondary);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:300px;">
+                    <div id="asset-expand-image-area" style="flex:1;background:var(--bg-secondary);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:300px;overflow:hidden;">
                         <span style="color:var(--text-secondary);">Generate an image to preview</span>
+                    </div>
+                    <div id="asset-expand-history" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 8px;background:var(--bg-secondary);border-radius:8px;min-height:40px;">
+                        <span style="color:var(--text-secondary);font-size:0.7rem;">Generation history will appear here</span>
                     </div>
                     <div id="asset-expand-variant-gallery" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px;background:var(--bg-secondary);border-radius:8px;min-height:60px;">
                         <span style="color:var(--text-secondary);font-size:0.8rem;">Variants will appear here</span>
@@ -964,8 +1013,9 @@
                     <div id="asset-expand-metadata" style="flex:1;font-size:0.85rem;line-height:1.6;"></div>
                     <div style="display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--border-color);padding-top:10px;">
                         <button class="btn btn-primary" onclick="assetGenerateImage()" id="asset-gen-btn" style="padding:6px 12px;font-size:0.8rem;">🎨 Generate</button>
-                        <button class="btn btn-secondary" onclick="assetCreateVariant()" id="asset-variant-btn" style="padding:6px 12px;font-size:0.8rem;">✏️ Variant</button>
+                        <button class="btn btn-secondary" onclick="showAssetVariantInput()" id="asset-variant-btn" style="padding:6px 12px;font-size:0.8rem;">✏️ Variant</button>
                         <button class="btn btn-secondary" onclick="assetGenerateTurnaround()" id="asset-turnaround-btn" style="padding:6px 12px;font-size:0.8rem;display:none;">📋 Turnaround</button>
+                        <button class="btn btn-secondary" onclick="assetUploadFromModal()" id="asset-upload-btn" style="padding:6px 12px;font-size:0.8rem;">📁 Upload</button>
                         <button class="btn btn-secondary" onclick="assetToggleLock()" id="asset-lock-btn" style="padding:6px 12px;font-size:0.8rem;">🔒 Lock</button>
                         <button class="btn btn-secondary" onclick="assetApprove()" id="asset-approve-btn" style="padding:6px 12px;font-size:0.8rem;">✅ Approve</button>
                     </div>
@@ -4870,16 +4920,26 @@
         }
 
         // === Asset Studio State ===
-        let _assetStudioData = { characters: [], locations: [], assets: {}, approvals: {}, locks: {}, character_sheets: {} };
+        let _assetStudioData = { characters: [], locations: [], assets: {}, approvals: {}, locks: {}, character_sheets: {}, location_sheets: {} };
         window._currentAssetExpandId = null;
         window._currentAssetExpandType = null;
         window._assetStudioApprovals = { characters: false, locations: false };
 
         async function loadAssetStudioData() {
             try {
-                const res = await fetch('/api/orchestrator/asset-studio');
-                const data = await res.json();
+                let res = await fetch('/api/orchestrator/asset-studio');
+                let data = await res.json();
                 if (!data.success) return;
+                // Auto-sync: if backend bible is empty but frontend has charData/locationData (e.g. after server restart)
+                if ((!data.character_bible || !data.character_bible.length) && charData && charData.length) {
+                    await fetch('/api/orchestrator/sync-bibles', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ character_bible: charData, location_bible: locationData })
+                    });
+                    res = await fetch('/api/orchestrator/asset-studio');
+                    data = await res.json();
+                    if (!data.success) return;
+                }
                 _assetStudioData = data;
                 // Also populate charData / locationData from bible for backward compat
                 if (data.character_bible && data.character_bible.length) {
@@ -4908,6 +4968,8 @@
                 renderAssetStudio();
                 _updateApprovalUI();
                 renderCharacterSheets();
+                renderLocationSheets();
+                _updateSheetUI();
             } catch (e) {
                 console.error('Failed to load asset studio data:', e);
             }
@@ -4918,8 +4980,64 @@
             const locBible = _assetStudioData.location_bible || [];
             document.getElementById('asset-char-count').textContent = charBible.length;
             document.getElementById('asset-loc-count').textContent = locBible.length;
+            renderCastingBoard(charBible, locBible);
             renderCharacterAssets(charBible);
             renderLocationAssets(locBible);
+        }
+
+        function renderCastingBoard(charBible, locBible) {
+            const board = document.getElementById('casting-board');
+            const charRow = document.getElementById('casting-char-row');
+            const locRow = document.getElementById('casting-loc-row');
+            charRow.innerHTML = '';
+            locRow.innerHTML = '';
+            const total = (charBible?.length || 0) + (locBible?.length || 0);
+            if (!total) { board.style.display = 'none'; return; }
+            board.style.display = 'block';
+
+            // Quick slot helper
+            function makeSlot(item, type) {
+                const id = item.character_id || item.location_id || item.id || '';
+                const assets = type === 'char' ? (_assetStudioData.character_assets || {}) : (_assetStudioData.location_assets || {});
+                const info = assets[id] || {};
+                const hasImg = !!info.approved_image;
+                const status = info.approved ? 'Approved' : (info.locked ? 'Locked' : 'Pending');
+                const statusColor = info.approved ? '#4caf50' : (info.locked ? '#ff9800' : '#555');
+                const slot = document.createElement('div');
+                slot.style.cssText = 'width:100px;height:100px;flex-shrink:0;background:var(--bg-primary);border-radius:4px;border:1px solid var(--border-color);display:flex;flex-direction:column;cursor:pointer;overflow:hidden;position:relative;';
+                slot.innerHTML = `
+                    <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--bg-tertiary);">
+                        ${hasImg
+                            ? `<img src="${getAssetImageSrc(info.approved_image)}" style="width:100%;height:100%;object-fit:cover;">`
+                            : `<span style="font-size:0.5rem;color:var(--text-secondary);text-align:center;padding:4px;">Drop<br>image</span>`
+                        }
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:1px 4px;background:var(--bg-secondary);flex-shrink:0;">
+                        <span style="font-size:0.45rem;color:var(--accent-primary);font-weight:600;max-width:55px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${id}</span>
+                        <span style="font-size:0.4rem;padding:0 3px;border-radius:2px;background:${statusColor};color:#fff;line-height:1.4;">${status}</span>
+                    </div>
+                `;
+                slot.onclick = () => {
+                    switchAssetTab(type === 'char' ? 'characters' : 'locations');
+                    expandAssetItem(type, id);
+                };
+                // Drag-drop support
+                slot.ondragover = function(e) { e.preventDefault(); this.style.borderColor = '#4ade80'; };
+                slot.ondragleave = function(e) { this.style.borderColor = 'var(--border-color)'; };
+                slot.ondrop = function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    this.style.borderColor = 'var(--border-color)';
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) {
+                        if (type === 'char') uploadCharacterImage(id, file);
+                        else uploadLocationImage(id, file);
+                    }
+                };
+                return slot;
+            }
+
+            (charBible || []).forEach(ch => charRow.appendChild(makeSlot(ch, 'char')));
+            (locBible || []).forEach(loc => locRow.appendChild(makeSlot(loc, 'loc')));
         }
 
         function getAssetImageSrc(path) {
@@ -4942,16 +5060,21 @@
                 if (data.success) {
                     if (!_assetStudioData.character_assets) _assetStudioData.character_assets = {};
                     if (!_assetStudioData.character_assets[cid]) _assetStudioData.character_assets[cid] = {};
+                    if (!_assetStudioData.character_assets[cid].generation_history) _assetStudioData.character_assets[cid].generation_history = [];
+                    _assetStudioData.character_assets[cid].generation_history.push(data.path);
                     _assetStudioData.character_assets[cid].approved_image = data.path;
                     _assetStudioData.character_assets[cid].approved = true;
                     renderCharacterAssets(_assetStudioData.character_bible || []);
                     notify('Imported', 'Character image saved', '📷');
                     scheduleSaveState();
+                    return true;
                 } else {
                     notify('Upload Failed', data.error || 'Upload error', '❌');
+                    return false;
                 }
             } catch(e) {
                 notify('Upload Error', e.message, '❌');
+                return false;
             }
         }
 
@@ -4961,7 +5084,8 @@
             container.innerHTML = '';
             container.style.display = 'flex';
             container.style.flexWrap = 'wrap';
-            container.style.gap = '10px';
+            container.style.gap = '6px';
+            container.style.alignContent = 'flex-start';
             if (!bible || !bible.length) { empty.style.display = 'block'; return; }
             empty.style.display = 'none';
             bible.forEach(ch => {
@@ -5074,6 +5198,53 @@
             });
         }
 
+        function renderLocationSheets() {
+            const container = document.getElementById('location-sheet-container');
+            const empty = document.getElementById('location-sheet-empty');
+            const section = document.getElementById('location-sheet-section');
+            container.innerHTML = '';
+            const sheets = _assetStudioData.location_sheets || {};
+            const bible = _assetStudioData.location_bible || [];
+            const eligible = bible.filter(loc => {
+                const lid = loc.location_id || loc.id || '';
+                const info = (_assetStudioData.location_assets || {})[lid] || {};
+                return info.approved_image && info.approved;
+            });
+            if (!eligible.length) { section.style.display = 'none'; return; }
+            section.style.display = 'block';
+            eligible.forEach(loc => {
+                const lid = loc.location_id || loc.id || '';
+                const sheetInfo = sheets[lid] || {};
+                const sheetApproved = sheetInfo.approved || false;
+                const sheetImage = sheetInfo.sheet_image || '';
+                const hasSheet = !!sheetImage;
+                const card = document.createElement('div');
+                card.style.cssText = 'width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;';
+                card.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${lid}</span>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);">${loc.location_name || loc.environment_type || ''}</span>
+                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${sheetApproved ? '#4caf50' : '#555'};color:#fff;">${sheetApproved ? 'Approved' : 'Pending'}</span>
+                    </div>
+                    <div style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;">
+                        ${hasSheet
+                            ? `<img src="${getAssetImageSrc(sheetImage)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">Click "Generate Sheet" to create a multi-lighting reference board</span>`
+                        }
+                    </div>
+                    <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;">
+                        <div style="color:var(--text-secondary);font-size:0.6rem;">${loc.environment_type || ''} · ${loc.mood || ''}</div>
+                        <div style="color:var(--text-secondary);font-size:0.55rem;margin-top:2px;">I2I input: approved location image → reference board</div>
+                    </div>
+                    <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                        <button class="btn btn-primary" onclick="generateLocationSheet('${lid}')" id="ls-gen-${lid}" style="padding:2px 4px;font-size:0.5rem;" ${hasSheet ? 'disabled' : ''}>${hasSheet ? '✅ Generated' : '🎨 Generate Sheet'}</button>
+                        <button class="btn btn-secondary" onclick="approveLocationSheet('${lid}')" id="ls-approve-${lid}" style="padding:2px 4px;font-size:0.5rem;" ${hasSheet && !sheetApproved ? '' : 'disabled'}>${sheetApproved ? '✅ Approved' : '✅ Approve'}</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
         async function generateCharacterSheet(charId) {
             const genBtn = document.getElementById('cs-gen-' + charId);
             if (!genBtn || genBtn.disabled) return;
@@ -5160,10 +5331,200 @@
             }
         }
 
+        async function generateLocationSheet(locId) {
+            const genBtn = document.getElementById('ls-gen-' + locId);
+            if (!genBtn || genBtn.disabled) return;
+            genBtn.disabled = true;
+            genBtn.textContent = '⏳ Generating...';
+            const assetInfo = (_assetStudioData.location_assets || {})[locId] || {};
+            const approvedImg = assetInfo.approved_image || '';
+            if (!approvedImg) {
+                notify('No Image', 'No approved location image found', '❌');
+                genBtn.disabled = false; genBtn.textContent = '🎨 Generate Sheet';
+                return;
+            }
+            const fixedPrompt = 'Transform the input reference image into a comprehensive location reference board on a clean grid background. The layout contains multiple panels showing: wide establishing shot, moody low-key lighting variation, warm golden-hour version, and a detailed architectural feature close-up. Maintain consistent environment identity, spatial layout, key landmarks, and color palette across all panels. Professional cinematic presentation, soft atmospheric transitions between panels, studio-quality reference composition.';
+            const seed = Math.floor(Math.random() * 999999999) + 1;
+            try {
+                const res = await fetch('/api/comfyui/generate/i2i', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: fixedPrompt, seed: seed,
+                        project_path: currentProject?.path || '',
+                        input_images: [approvedImg],
+                        aspect_ratio: '1:1', resolution: '1024x1024'
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: 'location_sheets',
+                            filename: data.filename,
+                            card_name: locId
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const sheetPath = 'location_sheets/' + locId + '.png';
+                        await fetch('/api/orchestrator/save-location-sheet', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                location_id: locId, sheet_image: sheetPath, approved: false
+                            })
+                        });
+                        await loadAssetStudioData();
+                        notify('Sheet Generated', 'Reference board for ' + locId, '📋');
+                    } else {
+                        notify('Save Failed', saveData.error || 'Save error', '❌');
+                        genBtn.disabled = false; genBtn.textContent = '🎨 Generate Sheet';
+                    }
+                } else {
+                    notify('Generation Failed', data.error || 'I2I error', '❌');
+                    genBtn.disabled = false; genBtn.textContent = '🎨 Generate Sheet';
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+                genBtn.disabled = false; genBtn.textContent = '🎨 Generate Sheet';
+            }
+        }
+
+        async function approveLocationSheet(locId) {
+            const approveBtn = document.getElementById('ls-approve-' + locId);
+            if (approveBtn) { approveBtn.disabled = true; approveBtn.textContent = '⏳ Approving...'; }
+            const sheets = _assetStudioData.location_sheets || {};
+            const sheetInfo = sheets[locId] || {};
+            const sheetImage = sheetInfo.sheet_image || '';
+            if (!sheetImage) {
+                notify('No Sheet', 'Generate a sheet first', '❌');
+                if (approveBtn) { approveBtn.disabled = false; approveBtn.textContent = '✅ Approve'; }
+                return;
+            }
+            try {
+                await fetch('/api/orchestrator/save-location-sheet', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ location_id: locId, sheet_image: sheetImage, approved: true })
+                });
+                await loadAssetStudioData();
+                notify('Sheet Approved', locId + ' reference board approved', '✅');
+                scheduleSaveState();
+            } catch(e) {
+                notify('Error', e.message, '❌');
+                if (approveBtn) { approveBtn.disabled = false; approveBtn.textContent = '✅ Approve'; }
+            }
+        }
+
+        async function generateAllCharacterSheets() {
+            const btn = document.getElementById('gen-all-cs-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            const bible = _assetStudioData.character_bible || [];
+            const assets = _assetStudioData.character_assets || {};
+            for (const ch of bible) {
+                const id = ch.character_id || ch.id || '';
+                const info = assets[id] || {};
+                if (info.approved_image && info.approved) {
+                    await generateCharacterSheet(id);
+                }
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '📋 Generate Character Sheets'; }
+            notify('Done', 'Character sheet generation complete', '✅');
+        }
+
+        async function generateAllLocationSheets() {
+            const btn = document.getElementById('gen-all-ls-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            const bible = _assetStudioData.location_bible || [];
+            const assets = _assetStudioData.location_assets || {};
+            for (const loc of bible) {
+                const id = loc.location_id || loc.id || '';
+                const info = assets[id] || {};
+                if (info.approved_image && info.approved) {
+                    await generateLocationSheet(id);
+                }
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🏠 Generate Location Sheets'; }
+            notify('Done', 'Location sheet generation complete', '✅');
+        }
+
+        function _updateSheetUI() {
+            const charBible = _assetStudioData?.character_bible || [];
+            const locBible = _assetStudioData?.location_bible || [];
+            const charAssets = _assetStudioData?.character_assets || {};
+            const locAssets = _assetStudioData?.location_assets || {};
+            const charSheets = _assetStudioData?.character_sheets || {};
+            const locSheets = _assetStudioData?.location_sheets || {};
+
+            let csPending = 0, csGenerated = 0, csApproved = 0;
+            charBible.forEach(ch => {
+                const id = ch.character_id || ch.id || '';
+                const info = charAssets[id] || {};
+                if (!info.approved_image || !info.approved) return;
+                const sheet = charSheets[id] || {};
+                if (sheet.approved) csApproved++;
+                else if (sheet.sheet_image) csGenerated++;
+                else csPending++;
+            });
+            document.getElementById('cs-pending-count').textContent = `⏳ Pending(${csPending})`;
+            document.getElementById('cs-generated-count').textContent = `🖼 Generated(${csGenerated})`;
+            document.getElementById('cs-approved-count').textContent = `✅ Approved(${csApproved})`;
+
+            let lsPending = 0, lsGenerated = 0, lsApproved = 0;
+            locBible.forEach(loc => {
+                const id = loc.location_id || loc.id || '';
+                const info = locAssets[id] || {};
+                if (!info.approved_image || !info.approved) return;
+                const sheet = locSheets[id] || {};
+                if (sheet.approved) lsApproved++;
+                else if (sheet.sheet_image) lsGenerated++;
+                else lsPending++;
+            });
+            document.getElementById('ls-pending-count').textContent = `⏳ Pending(${lsPending})`;
+            document.getElementById('ls-generated-count').textContent = `🖼 Generated(${lsGenerated})`;
+            document.getElementById('ls-approved-count').textContent = `✅ Approved(${lsApproved})`;
+        }
+
+        async function uploadLocationImage(lid, file) {
+            const formData = new FormData();
+            formData.append('project_name', currentProject?.name || '');
+            formData.append('project_path', currentProject?.path || '');
+            formData.append('asset_type', 'location');
+            formData.append('asset_id', lid);
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/assets/upload-image', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    if (!_assetStudioData.location_assets) _assetStudioData.location_assets = {};
+                    if (!_assetStudioData.location_assets[lid]) _assetStudioData.location_assets[lid] = {};
+                    if (!_assetStudioData.location_assets[lid].generation_history) _assetStudioData.location_assets[lid].generation_history = [];
+                    _assetStudioData.location_assets[lid].generation_history.push(data.path);
+                    _assetStudioData.location_assets[lid].approved_image = data.path;
+                    _assetStudioData.location_assets[lid].approved = true;
+                    renderLocationAssets(_assetStudioData.location_bible || []);
+                    notify('Imported', 'Location image saved', '📷');
+                    scheduleSaveState();
+                    return true;
+                } else {
+                    notify('Upload Failed', data.error || 'Upload error', '❌');
+                    return false;
+                }
+            } catch(e) {
+                notify('Upload Error', e.message, '❌');
+                return false;
+            }
+        }
+
         function renderLocationAssets(bible) {
             const container = document.getElementById('loc-asset-container');
             const empty = document.getElementById('loc-asset-empty');
             container.innerHTML = '';
+            container.style.display = 'flex';
+            container.style.flexWrap = 'wrap';
+            container.style.gap = '6px';
+            container.style.alignContent = 'flex-start';
             if (!bible || !bible.length) { empty.style.display = 'block'; return; }
             empty.style.display = 'none';
             bible.forEach(loc => {
@@ -5172,30 +5533,60 @@
                 const locked = assetInfo.locked || false;
                 const approved = assetInfo.approved || false;
                 const approvedImg = assetInfo.approved_image || '';
+                const hasImage = !!approvedImg;
                 const card = document.createElement('div');
-                card.className = 'asset-card';
-                card.style.cssText = 'background:var(--bg-secondary);border-radius:8px;overflow:hidden;border:1px solid var(--border-color);cursor:pointer;';
+                card.style.cssText = 'width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;cursor:pointer;';
                 card.innerHTML = `
-                    <div style="padding:8px 12px;background:var(--bg-tertiary);display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-weight:600;font-size:0.85rem;">${lid} · ${loc.location_name || 'Unknown'}</span>
-                        <span style="font-size:0.7rem;padding:2px 6px;border-radius:3px;background:${approved ? '#4caf50' : '#555'};color:#fff;">${approved ? 'Approved' : (locked ? 'Locked' : 'Pending')}</span>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${lid}</span>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);">${loc.location_name || loc.environment_type || ''}</span>
+                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${approved ? '#4caf50' : '#555'};color:#fff;">${approved ? 'Approved' : (locked ? 'Locked' : 'Pending')}</span>
                     </div>
-                    <div style="padding:10px;min-height:180px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);">
-                        ${approvedImg ? `<img src="${approvedImg}" style="max-width:100%;max-height:180px;border-radius:4px;">` : `<span style="color:var(--text-secondary);font-size:0.8rem;">${loc.environment_type || 'No image'}</span>`}
+                    <div class="loc-img-zone" data-lid="${lid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
+                        ${hasImage
+                            ? `<img src="${getAssetImageSrc(approvedImg)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">${loc.environment_type ? '🏠 ' + loc.environment_type : 'Drop image or click to import'}</span>`
+                        }
                     </div>
-                    <div style="padding:8px 12px;font-size:0.75rem;color:var(--text-secondary);line-height:1.5;">
-                        ${loc.architecture_style ? `<div>🏛 ${loc.architecture_style.substring(0, 80)}</div>` : ''}
-                        ${loc.mood ? `<div>🎭 ${loc.mood.substring(0, 80)}</div>` : ''}
+                    <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
+                        ${!hasImage && loc.image_prompt ? `<div style="color:var(--accent-secondary);font-size:0.6rem;">🎨 ${loc.image_prompt.substring(0, 100)}${loc.image_prompt.length > 100 ? '…' : ''}</div>` : ''}
+                        ${loc.architecture_style ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🏛 ${loc.architecture_style.substring(0, 80)}${loc.architecture_style.length > 80 ? '…' : ''}</div>` : ''}
+                        ${loc.mood ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🎭 ${loc.mood.substring(0, 80)}${loc.mood.length > 80 ? '…' : ''}</div>` : ''}
+                        ${loc.lighting_style ? `<div style="color:var(--text-secondary);font-size:0.6rem;">💡 ${loc.lighting_style.substring(0, 80)}${loc.lighting_style.length > 80 ? '…' : ''}</div>` : ''}
                     </div>
-                    <div style="padding:8px 12px;display:flex;gap:4px;flex-wrap:wrap;border-top:1px solid var(--border-color);">
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('loc','${lid}')" style="padding:3px 8px;font-size:0.7rem;">⛶ Expand</button>
-                        <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${lid}','loc')" style="padding:3px 8px;font-size:0.7rem;">🎨 Gen</button>
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${lid}','loc')" style="padding:3px 8px;font-size:0.7rem;">✏️ Var</button>
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetToggleLock('${lid}','loc')" style="padding:3px 8px;font-size:0.7rem;">${locked ? '🔓' : '🔒'}</button>
-                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${lid}','loc')" style="padding:3px 8px;font-size:0.7rem;">✅</button>
+                    <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('loc','${lid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                        <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Generate with T2I">🎨 Gen</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetToggleLock('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="${locked ? 'Unlock' : 'Lock'}">${locked ? '🔓' : '🔒'}</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Approve">✅</button>
                     </div>
                 `;
                 card.onclick = () => expandAssetItem('loc', lid);
+                const imgZone = card.querySelector('.loc-img-zone');
+                imgZone.ondragover = function(e) { e.preventDefault(); this.style.borderColor = '#4ade80'; this.style.background = 'rgba(74,222,128,0.08)'; };
+                imgZone.ondragleave = function(e) { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; };
+                imgZone.ondrop = function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    this.style.borderColor = 'var(--border-color)';
+                    this.style.background = 'transparent';
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) uploadLocationImage(lid, file);
+                };
+                imgZone.onclick = function(e) {
+                    e.stopPropagation();
+                    const input = document.getElementById('loc-file-input') || (function() {
+                        const el = document.createElement('input');
+                        el.id = 'loc-file-input'; el.type = 'file'; el.accept = 'image/*';
+                        el.style.display = 'none'; document.body.appendChild(el);
+                        return el;
+                    })();
+                    input.onchange = () => {
+                        if (input.files[0]) uploadLocationImage(lid, input.files[0]);
+                        input.value = '';
+                    };
+                    input.click();
+                };
                 container.appendChild(card);
             });
         }
@@ -5255,9 +5646,21 @@
                 : (_assetStudioData.location_assets || {});
             const info = assets[id] || {};
             if (info.approved_image) {
-                imgArea.innerHTML = `<img src="${info.approved_image}" style="max-width:100%;max-height:100%;border-radius:4px;">`;
+                imgArea.innerHTML = `<img src="${getAssetImageSrc(info.approved_image)}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
             } else {
                 imgArea.innerHTML = '<span style="color:var(--text-secondary);">Generate an image to preview</span>';
+            }
+            // Generation history
+            const historyEl = document.getElementById('asset-expand-history');
+            const history = info.generation_history || [];
+            if (history.length) {
+                historyEl.innerHTML = history.map((h, i) => `
+                    <div style="width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === info.approved_image ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="assetSetActiveFromHistory(${i})" title="Click to set as active">
+                        <img src="${getAssetImageSrc(h)}" style="width:100%;height:100%;object-fit:cover;">
+                    </div>
+                `).join('');
+            } else {
+                historyEl.innerHTML = '<span style="color:var(--text-secondary);font-size:0.7rem;">Generation history will appear here</span>';
             }
             document.getElementById('asset-expand-modal').style.display = 'flex';
         }
@@ -5266,6 +5669,61 @@
             document.getElementById('asset-expand-modal').style.display = 'none';
             window._currentAssetExpandId = null;
             window._currentAssetExpandType = null;
+        }
+
+        function toggleAssetFullscreen() {
+            const inner = document.getElementById('asset-expand-modal-inner');
+            const btn = document.getElementById('asset-fullscreen-btn');
+            if (inner.style.maxWidth === 'none') {
+                inner.style.maxWidth = '90vw';
+                inner.style.width = '1200px';
+                inner.style.height = '85vh';
+                btn.textContent = '⛶ Fullscreen';
+            } else {
+                inner.style.maxWidth = 'none';
+                inner.style.width = '100vw';
+                inner.style.height = '100vh';
+                btn.textContent = '⛶ Exit Fullscreen';
+            }
+        }
+
+        function assetSetActiveFromHistory(index) {
+            const id = window._currentAssetExpandId;
+            const type = window._currentAssetExpandType;
+            if (!id) return;
+            const assets = type === 'char'
+                ? (_assetStudioData.character_assets || {})
+                : (_assetStudioData.location_assets || {});
+            const info = assets[id] || {};
+            const history = info.generation_history || [];
+            if (history[index]) {
+                info.approved_image = history[index];
+                expandAssetItem(type, id);
+                scheduleSaveState();
+                notify('Set Active', 'Image ' + (index + 1) + ' set as active', '📷');
+            }
+        }
+
+        function assetUploadFromModal() {
+            const id = window._currentAssetExpandId;
+            const type = window._currentAssetExpandType;
+            if (!id) return;
+            const input = document.getElementById('modal-file-input') || (function() {
+                const el = document.createElement('input');
+                el.id = 'modal-file-input'; el.type = 'file'; el.accept = 'image/*';
+                el.style.display = 'none'; document.body.appendChild(el);
+                return el;
+            })();
+            input.onchange = () => {
+                if (input.files[0]) {
+                    const fn = type === 'char' ? uploadCharacterImage : uploadLocationImage;
+                    fn(id, input.files[0]).then(() => {
+                        setTimeout(() => expandAssetItem(type, id), 300);
+                    });
+                }
+                input.value = '';
+            };
+            input.click();
         }
 
         async function assetGenerateImage(id, type) {
@@ -5298,7 +5756,7 @@
                 const data = await res.json();
                 if (data.success && data.image_url) {
                     const imgArea = document.getElementById('asset-expand-image-area');
-                    imgArea.innerHTML = `<img src="${data.image_url}" style="max-width:100%;max-height:100%;border-radius:4px;">`;
+                    imgArea.innerHTML = `<img src="${getAssetImageSrc(data.image_url)}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
                     // Save to asset
                     const assets = type === 'char'
                         ? (_assetStudioData.character_assets || {})
@@ -5306,6 +5764,15 @@
                     if (!assets[id]) assets[id] = {};
                     if (!assets[id].generation_history) assets[id].generation_history = [];
                     assets[id].generation_history.push(data.image_url);
+                    assets[id].approved_image = data.image_url;
+                    // Refresh history in modal
+                    const historyEl = document.getElementById('asset-expand-history');
+                    const history = assets[id].generation_history;
+                    historyEl.innerHTML = history.map((h, i) => `
+                        <div style="width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === data.image_url ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="assetSetActiveFromHistory(${i})" title="Click to set as active">
+                            <img src="${getAssetImageSrc(h)}" style="width:100%;height:100%;object-fit:cover;">
+                        </div>
+                    `).join('');
                     notify('Generated', 'Image ready for approval', '✅');
                 } else {
                     notify('Failed', data.error || 'Generation failed', '❌');
@@ -5443,10 +5910,33 @@
 
         function _updateApprovalUI() {
             const ap = window._assetStudioApprovals || {};
-            document.getElementById('asset-char-approval-badge').style.background = ap.characters ? '#4caf50' : '#555';
-            document.getElementById('asset-char-approval-badge').textContent = ap.characters ? '✅ Characters: Approved' : '👤 Characters: Pending';
-            document.getElementById('asset-loc-approval-badge').style.background = ap.locations ? '#4caf50' : '#555';
-            document.getElementById('asset-loc-approval-badge').textContent = ap.locations ? '✅ Locations: Approved' : '🏠 Locations: Pending';
+            // Compute per-type counts
+            const charBible = _assetStudioData?.character_bible || [];
+            const locBible = _assetStudioData?.location_bible || [];
+            const charAssets = _assetStudioData?.character_assets || {};
+            const locAssets = _assetStudioData?.location_assets || {};
+            let charPending = 0, charApproved = 0, charLocked = 0;
+            charBible.forEach(ch => {
+                const id = ch.character_id || ch.id || '';
+                const info = charAssets[id] || {};
+                if (info.approved) charApproved++;
+                else if (info.locked) charLocked++;
+                else charPending++;
+            });
+            let locPending = 0, locApproved = 0, locLocked = 0;
+            locBible.forEach(loc => {
+                const id = loc.location_id || loc.id || '';
+                const info = locAssets[id] || {};
+                if (info.approved) locApproved++;
+                else if (info.locked) locLocked++;
+                else locPending++;
+            });
+            document.getElementById('asset-char-pending-badge').textContent = `⏳ Pending(${charPending})`;
+            document.getElementById('asset-char-approved-badge').textContent = `✅ Approved(${charApproved})`;
+            document.getElementById('asset-char-locked-badge').textContent = `🔒 Locked(${charLocked})`;
+            document.getElementById('asset-loc-pending-badge').textContent = `⏳ Pending(${locPending})`;
+            document.getElementById('asset-loc-approved-badge').textContent = `✅ Approved(${locApproved})`;
+            document.getElementById('asset-loc-locked-badge').textContent = `🔒 Locked(${locLocked})`;
             const proceedBtn = document.getElementById('proceed-to-storyboard-btn');
             if (ap.characters && ap.locations) {
                 proceedBtn.disabled = false;
@@ -5471,15 +5961,18 @@
             if (!videoPromptData.length) setTimeout(() => generateVideoPrompts(), 300);
         }
 
-        function proceedToStoryboard() { navigateToWorkflow('storyboard'); }
-
         function getSavedInputImages() {
             const paths = [];
             locationData.filter(l => l.savedImage).forEach(l => paths.push('locations/' + l.savedImage.replace(/\s+/g, '_') + '.png'));
             charData.filter(c => c.savedImage).forEach(c => paths.push('characters/' + c.savedImage.replace(/\s+/g, '_') + '.png'));
-            // Add approved character sheet images for I2I reference
+            // Add approved character/location sheet images for I2I reference
             if (_assetStudioData && _assetStudioData.character_sheets) {
                 Object.entries(_assetStudioData.character_sheets).forEach(([id, s]) => {
+                    if (s.approved && s.sheet_image) paths.push(s.sheet_image);
+                });
+            }
+            if (_assetStudioData && _assetStudioData.location_sheets) {
+                Object.entries(_assetStudioData.location_sheets).forEach(([id, s]) => {
                     if (s.approved && s.sheet_image) paths.push(s.sheet_image);
                 });
             }
