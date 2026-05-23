@@ -5890,7 +5890,7 @@ Project visual language: ${projVL}`;
             if (!items.length) { notify('Nothing', `No ${label} found`, '⚠️'); return; }
             const btn = document.getElementById(btnId);
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
-            let done = 0;
+            let done = 0, successCount = 0, failCount = 0;
             for (const item of items) {
                 if (ac.signal.aborted) break;
                 done++;
@@ -5904,10 +5904,13 @@ Project visual language: ${projVL}`;
                     const data = await res.json();
                     if (data.success && data.prompt) {
                         item.asset.image_prompt = data.prompt;
+                        successCount++;
                     } else {
-                        notify('Prompt Failed', data.error || 'No prompt returned', '⚠️');
+                        failCount++;
+                        if (data.error && data.error.includes('LLM')) notify('Prompt Failed', data.error, '⚠️');
                     }
                 } catch(e) {
+                    failCount++;
                     if (e.name !== 'AbortError') notify('Prompt Error', e.message, '⚠️');
                 }
                 setAssetCardSpinner(item.id, type, false);
@@ -5921,9 +5924,17 @@ Project visual language: ${projVL}`;
                     if (activeTab.id === 'asset-chars-tab') renderCharacterAssets(_assetStudioData.character_bible || []);
                     else renderLocationAssets(_assetStudioData.location_bible || []);
                 }
-                setAssetProgress(100, `All ${label} prompts generated!`);
-                notify('Done', `All ${label} prompts generated`, '✅');
-                setTimeout(hideAssetProgress, 3000);
+                if (failCount === 0) {
+                    setAssetProgress(100, `All ${label} prompts generated!`);
+                    notify('Done', `All ${label} prompts generated`, '✅');
+                } else if (successCount === 0) {
+                    setAssetProgress(0, `All ${label} prompts failed — check LLM connection`);
+                    notify('LLM Error', `All ${label} prompts failed`, '❌');
+                } else {
+                    setAssetProgress(100, `${successCount}/${done} ${label} prompts OK, ${failCount} failed`);
+                    notify('Partial', `${successCount} prompts OK, ${failCount} failed`, '⚠️');
+                }
+                setTimeout(hideAssetProgress, 5000);
             } else {
                 hideAssetProgress();
             }
@@ -5950,7 +5961,7 @@ Project visual language: ${projVL}`;
             if (!items.length) { notify('Nothing', `No ${label} found`, '⚠️'); return; }
             const btn = document.getElementById(btnId);
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
-            let done = 0;
+            let done = 0, successCount = 0, failCount = 0;
             for (const item of items) {
                 if (ac.signal.aborted) break;
                 done++;
@@ -5964,7 +5975,12 @@ Project visual language: ${projVL}`;
                 }
                 if (!ac.signal.aborted) {
                     const newImg = (assetStore[item.id] || {}).approved_image;
-                    if (newImg && newImg !== oldImg) updateAssetCardImage(item.id, item.type, newImg);
+                    if (newImg && newImg !== oldImg) {
+                        updateAssetCardImage(item.id, item.type, newImg);
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
                 }
             }
             window._assetBatchAbortController = null;
@@ -5975,9 +5991,17 @@ Project visual language: ${projVL}`;
                     if (activeTab.id === 'asset-chars-tab') renderCharacterAssets(_assetStudioData.character_bible || []);
                     else renderLocationAssets(_assetStudioData.location_bible || []);
                 }
-                setAssetProgress(100, `All ${label} images generated!`);
-                notify('Done', `All ${label} images generated`, '✅');
-                setTimeout(hideAssetProgress, 3000);
+                if (failCount === 0) {
+                    setAssetProgress(100, `All ${label} images generated!`);
+                    notify('Done', `All ${label} images generated`, '✅');
+                } else if (successCount === 0) {
+                    setAssetProgress(0, `All ${label} images failed — check ComfyUI`);
+                    notify('ComfyUI Offline', 'Start ComfyUI and try again', '❌');
+                } else {
+                    setAssetProgress(100, `${successCount}/${done} ${label} images generated, ${failCount} failed`);
+                    notify('Partial', `${successCount} images OK, ${failCount} failed`, '⚠️');
+                }
+                setTimeout(hideAssetProgress, 5000);
             } else {
                 hideAssetProgress();
             }
@@ -6013,8 +6037,9 @@ Project visual language: ${projVL}`;
             const model = imgSettings.model || '';
             const host = imgSettings.host || '';
             const apiKey = imgSettings.apiKey || '';
+            const workflowName = settings.workflows?.t2i || '';
             notify('Generating', `Sending to ${provider}...`, '🎨');
-            // Start progress polling
+            // Start progress polling — only stop on 'done' or 'error', never on 'idle'
             let progressInterval = null;
             progressInterval = setInterval(async () => {
                 try {
@@ -6022,7 +6047,7 @@ Project visual language: ${projVL}`;
                     const p = await pRes.json();
                     if (p && p.pct !== undefined && p.status === 'running') {
                         setCardProgress(id, type, p.pct);
-                    } else if (p && (p.status === 'idle' || p.status === 'done' || p.status === 'error')) {
+                    } else if (p && (p.status === 'done' || p.status === 'error')) {
                         if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
                     }
                 } catch(e) {}
@@ -6031,16 +6056,17 @@ Project visual language: ${projVL}`;
                 const res = await fetch('/api/image/generate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ provider, model, prompt, host, api_key: apiKey, width: 1024, height: 1024 }),
+                    body: JSON.stringify({ provider, model, prompt, host, workflow_name: workflowName, api_key: apiKey, width: 1024, height: 1024 }),
                 });
                 const data = await res.json();
                 if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
                 setAssetCardSpinner(id, type, false);
-                if (data.success && data.image_url) {
+                if (data.success && (data.image_url || data.filename)) {
+                    const imgUrl = data.image_url || data.filename;
                     // Update expand modal image area if open for this asset
                     if (expandBtn && id === (window._currentAssetExpandId || '')) {
                         const imgArea = document.getElementById('asset-expand-image-area');
-                        if (imgArea) imgArea.innerHTML = `<img src="${getAssetImageSrc(data.image_url)}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
+                        if (imgArea) imgArea.innerHTML = `<img src="${getAssetImageSrc(imgUrl)}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
                     }
                     // Save to asset
                     const assets = type === 'char'
@@ -6048,21 +6074,26 @@ Project visual language: ${projVL}`;
                         : (_assetStudioData.location_assets || {});
                     if (!assets[id]) assets[id] = {};
                     if (!assets[id].generation_history) assets[id].generation_history = [];
-                    assets[id].generation_history.push(data.image_url);
-                    assets[id].approved_image = data.image_url;
+                    assets[id].generation_history.push(imgUrl);
+                    assets[id].approved_image = imgUrl;
                     // Refresh history in modal
                     const historyEl = document.getElementById('asset-expand-history');
                     if (historyEl) {
                         const history = assets[id].generation_history;
                         historyEl.innerHTML = history.map((h, i) => `
-                            <div style="width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === data.image_url ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="assetSetActiveFromHistory(${i})" title="Click to set as active">
+                            <div style="width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === imgUrl ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="assetSetActiveFromHistory(${i})" title="Click to set as active">
                                 <img src="${getAssetImageSrc(h)}" style="width:100%;height:100%;object-fit:cover;">
                             </div>
                         `).join('');
                     }
                     notify('Generated', 'Image ready for approval', '✅');
                 } else {
-                    notify('Failed', data.error || 'Generation failed', '❌');
+                    const errMsg = data.error || 'Generation failed';
+                    if (errMsg.includes('ComfyUI')) {
+                        notify('ComfyUI Offline', 'Start ComfyUI and try again', '❌');
+                    } else {
+                        notify('Failed', errMsg, '❌');
+                    }
                 }
             } catch (e) {
                 if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
