@@ -1287,25 +1287,17 @@
             </div>
 
             <!-- Header Controls -->
-            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;background:var(--bg-secondary);padding:10px;border-radius:8px;border:1px solid var(--border-color);">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div style="font-size:0.9rem;color:var(--text-secondary);" id="sb-description-container">
-                        <span id="storyboard-count-label">0</span> shots — generate images, then videos per shot
-                    </div>
-                    <div style="display:flex;gap:6px;">
-                        <button class="btn btn-secondary" type="button" onclick="generateStoryboardPromptsPhase()" style="padding:6px 14px;font-size:0.75rem;">✨ Generate All Prompts</button>
-                        <button class="btn btn-secondary" type="button" onclick="generateAllStoryboardVideoPrompts()" style="padding:6px 14px;font-size:0.75rem;">📝 Generate All Video Prompts</button>
-                        <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:6px 14px;font-size:0.75rem;">🎨 Generate All Images</button>
-                        <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:6px 14px;font-size:0.75rem;opacity:0.4;pointer-events:none;">🎥 Generate All Videos</button>
-                    </div>
-                </div>
-                <div style="display:flex;justify-content:flex-end;gap:6px;border-top:1px solid var(--border-color);padding-top:6px;">
-                    <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:4px 12px;font-size:0.7rem;">✅ Approve All Images</button>
-                    <button class="btn btn-success" type="button" onclick="approveAllVideos()" style="padding:4px 12px;font-size:0.7rem;">✅ Approve All Videos</button>
-                    <button class="btn btn-secondary" type="button" onclick="clearAllTempImages()" style="padding:4px 12px;font-size:0.7rem;color:var(--accent-danger);">🗑 Clear Images</button>
-                    <button class="btn btn-secondary" type="button" onclick="clearAllTempVideos()" style="padding:4px 12px;font-size:0.7rem;color:var(--accent-danger);">🗑 Clear Videos</button>
-                    <button class="btn btn-danger" type="button" id="scene-abort-btn" onclick="cancelSceneBatch()" style="padding:4px 12px;font-size:0.7rem;display:none;">✕ Abort</button>
-                </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;background:var(--bg-secondary);padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);flex-wrap:wrap;">
+                <span style="font-size:0.75rem;color:var(--text-secondary);white-space:nowrap;margin-right:auto;" id="sb-description-container"><span id="storyboard-count-label">0</span> shots</span>
+                <button class="btn btn-secondary" type="button" onclick="generateStoryboardPromptsPhase()" style="padding:2px 5px;font-size:0.5rem;" title="Generate all image prompts">🧠</button>
+                <button class="btn btn-secondary" type="button" onclick="generateAllStoryboardVideoPrompts()" style="padding:2px 5px;font-size:0.5rem;" title="Generate all video prompts">📝</button>
+                <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:2px 5px;font-size:0.5rem;" title="Generate all images">🎨</button>
+                <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:2px 5px;font-size:0.5rem;" title="Approve all images">✅</button>
+                <button class="btn btn-success" type="button" onclick="approveAllVideos()" style="padding:2px 5px;font-size:0.5rem;" title="Approve all videos" id="sb-approve-all-videos-btn">✔️</button>
+                <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:2px 5px;font-size:0.5rem;opacity:0.4;pointer-events:none;" title="Generate all videos">🎥</button>
+                <button class="btn btn-secondary" type="button" onclick="clearAllTempImages()" style="padding:2px 5px;font-size:0.5rem;color:var(--accent-danger);" title="Clear temp images">🗑</button>
+                <button class="btn btn-secondary" type="button" onclick="clearAllTempVideos()" style="padding:2px 5px;font-size:0.5rem;color:var(--accent-danger);" title="Clear temp videos">📹</button>
+                <button class="btn btn-danger" type="button" id="scene-abort-btn" onclick="cancelSceneBatch()" style="padding:2px 5px;font-size:0.5rem;display:none;" title="Abort">✕</button>
             </div>
 
             <!-- Container for Scene Rows -->
