@@ -1227,6 +1227,14 @@
                 <!-- Right: Metadata + Controls -->
                 <div style="width:360px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
                     <div id="storyboard-expand-metadata" style="font-size:0.85rem;line-height:1.6;"></div>
+                    <!-- Seed & Steps controls -->
+                    <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--border-color);">
+                        <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">Seed:</label>
+                        <input type="number" id="storyboard-expand-seed" style="width:90px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="random" min="0" step="1">
+                        <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">Steps:</label>
+                        <input type="number" id="storyboard-expand-steps" style="width:60px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="auto" min="1" max="150" value="20">
+                        <button class="btn btn-secondary" onclick="document.getElementById('storyboard-expand-seed').value='';document.getElementById('storyboard-expand-steps').value='20'" style="padding:2px 6px;font-size:0.5rem;">↺</button>
+                    </div>
                     <div style="border-top:1px solid var(--border-color);padding-top:10px;">
                         <label style="font-size:0.75rem;font-weight:600;color:var(--accent-primary);display:block;margin-bottom:4px;" id="storyboard-expand-prompt-label">Image Prompt:</label>
                         <div style="position:relative;">
@@ -1295,6 +1303,7 @@
                     <button class="btn btn-success" type="button" onclick="approveAllVideos()" style="padding:4px 12px;font-size:0.7rem;">✅ Approve All Videos</button>
                     <button class="btn btn-secondary" type="button" onclick="clearAllTempImages()" style="padding:4px 12px;font-size:0.7rem;color:var(--accent-danger);">🗑 Clear Images</button>
                     <button class="btn btn-secondary" type="button" onclick="clearAllTempVideos()" style="padding:4px 12px;font-size:0.7rem;color:var(--accent-danger);">🗑 Clear Videos</button>
+                    <button class="btn btn-danger" type="button" id="scene-abort-btn" onclick="cancelSceneBatch()" style="padding:4px 12px;font-size:0.7rem;display:none;">✕ Abort</button>
                 </div>
             </div>
 
@@ -3769,7 +3778,7 @@
             }
         }
 
-        async function generateFromLLM(prompt, images, systemSuffix) {
+        async function generateFromLLM(prompt, images, systemSuffix, signal) {
             const cfg = getLLMConfig();
             const host = document.getElementById('llm-host').value;
             const apiKey = document.getElementById('llm-apikey').value;
@@ -3784,6 +3793,7 @@
             if (images && images.length) body.images = images;
             const res = await fetch('/api/generate', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
+                signal,
                 body: JSON.stringify(body)
             });
             return await res.json();
@@ -7499,6 +7509,10 @@
                 scheduleSaveState();
             };
 
+            // Populate seed/steps from shot data
+            document.getElementById('storyboard-expand-seed').value = sh._genSeed || '';
+            document.getElementById('storyboard-expand-steps').value = sh._genSteps || 20;
+
             // Variant gallery
             const gallery = document.getElementById('storyboard-expand-variant-gallery');
             gallery.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem;">Variants will appear here</span>';
@@ -7583,6 +7597,13 @@
             if (sceneIdx == null || shotIdx == null) return;
             const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
             if (!sh) return;
+            // Read seed/steps from modal inputs
+            const seedVal = document.getElementById('storyboard-expand-seed')?.value;
+            const stepsVal = document.getElementById('storyboard-expand-steps')?.value;
+            if (seedVal) sh._genSeed = parseInt(seedVal);
+            else delete sh._genSeed;
+            if (stepsVal) sh._genSteps = parseInt(stepsVal);
+            else delete sh._genSteps;
             if (sh.storyboard_status === 'approved') {
                 await generateShotVideo(sceneIdx, shotIdx);
             } else {
@@ -9470,6 +9491,11 @@ Project visual language: ${projVL}`;
                             : tempImg 
                                 ? `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
                                 : null;
+                        const thumbUrl = savedImg 
+                            ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}${projectPathQuery ? '&' : '?'}thumbnail=true`
+                            : tempImg 
+                                ? `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}&thumbnail=true`
+                                : null;
 
                         // Video URLs
                         const savedVid = sh.video_clip;
@@ -9488,7 +9514,7 @@ Project visual language: ${projVL}`;
                         if (hasVideo) {
                             previewContent = `<video id="shot-preview-video-${sceneIdx}-${shotIdx}" src="${videoUrl}" controls autoplay loop muted style="width:100%;height:100%;object-fit:cover;"></video>`;
                         } else if (hasImage) {
-                            previewContent = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${imageUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage(this.src)" data-filename="${tempImg || ''}">`;
+                            previewContent = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${thumbUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage('${imageUrl}')" data-filename="${tempImg || ''}" loading="lazy">`;
                         } else {
                             previewContent = `<span style="color:var(--text-secondary);font-size:0.7rem;">No Image Generated</span>`;
                         }
@@ -9738,13 +9764,16 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
             const imgResEl = document.getElementById('sel-img-resolution');
             const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+            const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps || 20;
+            const seedOverride = sh._genSeed || seed;
 
             try {
                 const res = await fetch('/api/comfyui/generate/i2i', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         prompt: enrichedPrompt,
-                        seed: seed,
+                        seed: seedOverride,
+                        steps: stepsOverride,
                         project_path: currentProject?.path || '',
                         input_images: inputImages,
                         aspect_ratio: aspectRatio,
@@ -9783,6 +9812,11 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const pendingShots = s.shots.map((sh, i) => ({ sh, i })).filter(({ sh }) => !sh.storyboard_image && !sh._temp_storyboard_image);
             if (!pendingShots.length) { btn.style.display = 'none'; return; }
 
+            // Create abort controller
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
             btn.disabled = true;
             btn.textContent = `⏳ 0/${pendingShots.length}`;
             let completed = 0;
@@ -9792,6 +9826,8 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
 
             for (const { sh, i } of pendingShots) {
+                if (signal.aborted) break;
+                showShotSpinner(sceneIdx, i);
                 let enrichedPrompt = sh.storyboard_prompt || '';
                 const shotChars = sh.characters_present || s.characters_present || [];
                 const savedChars = charData.filter(c => c.savedImage && shotChars.includes(c.name)).map(c => {
@@ -9814,19 +9850,23 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 }
 
                 const seed = Math.floor(Math.random() * 999999999) + 1;
+                const stepsOverride = sh._genSteps || 20;
                 const inputImages = getSavedInputImages();
                 try {
                     const res = await fetch('/api/comfyui/generate/i2i', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal,
                         body: JSON.stringify({
                             prompt: enrichedPrompt,
                             seed: seed,
+                            steps: stepsOverride,
                             project_path: currentProject?.path || '',
                             input_images: inputImages,
                             aspect_ratio: aspectRatio,
                             resolution: imgResolution
                         })
                     });
+                    hideShotSpinner(sceneIdx, i);
                     const data = await res.json();
                     if (data.success) {
                         sh._temp_storyboard_image = data.filename;
@@ -9837,6 +9877,8 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         }
                     }
                 } catch(e) {
+                    hideShotSpinner(sceneIdx, i);
+                    if (e.name === 'AbortError') break;
                     notify('Error', `Shot ${sh.shot_id || i+1}: ${e.message}`);
                 }
                 completed++;
@@ -9845,6 +9887,8 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             btn.disabled = false;
             btn.textContent = '🎨';
+            window._sceneAbortController = null;
+            hideAbortButton();
             renderStoryboard();
         }
 
@@ -9857,17 +9901,24 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const pending = s.shots.filter(sh => sh._temp_storyboard_image);
             if (!pending.length) { btn.style.display = 'none'; return; }
 
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
             btn.disabled = true;
             btn.textContent = `⏳ 0/${pending.length}`;
             let completed = 0;
 
             for (const sh of pending) {
-                const tempFilename = sh._temp_storyboard_image;
+                if (signal.aborted) break;
                 const shotIdx = s.shots.indexOf(sh);
+                showShotSpinner(sceneIdx, shotIdx);
+                const tempFilename = sh._temp_storyboard_image;
                 const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
                 try {
                     const res = await fetch('/api/projects/save-image', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal,
                         body: JSON.stringify({
                             project_name: currentProject?.name || '',
                             project_path: currentProject?.path || '',
@@ -9877,6 +9928,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                             previous_file: sh.storyboard_image ? sh.storyboard_image : null
                         })
                     });
+                    hideShotSpinner(sceneIdx, shotIdx);
                     const data = await res.json();
                     if (data.success) {
                         const savedFilename = data.path.split(/[\\/]/).pop();
@@ -9893,6 +9945,8 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         notify('Save Failed', `Shot ${sh.shot_id}: ${data.error}`);
                     }
                 } catch(e) {
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    if (e.name === 'AbortError') break;
                     notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
                 }
                 completed++;
@@ -9901,8 +9955,30 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             btn.disabled = false;
             btn.textContent = '✅';
+            window._sceneAbortController = null;
+            hideAbortButton();
             renderStoryboard();
             scheduleSaveState();
+        }
+
+        async function cancelSceneBatch() {
+            if (window._sceneAbortController) {
+                window._sceneAbortController.abort();
+                window._sceneAbortController = null;
+            }
+            fetch('/api/image/interrupt', { method: 'POST' }).catch(() => {});
+            hideAbortButton();
+            notify('Cancelled', 'Scene batch cancelled', '✕');
+        }
+
+        function showAbortButton() {
+            const btn = document.getElementById('scene-abort-btn');
+            if (btn) btn.style.display = 'inline-block';
+        }
+
+        function hideAbortButton() {
+            const btn = document.getElementById('scene-abort-btn');
+            if (btn) btn.style.display = 'none';
         }
 
         async function regenerateScenePrompts(sceneIdx) {
@@ -9910,6 +9986,10 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             if (!s || !s.shots) return;
             const btn = document.getElementById(`scene-pr-btn-${sceneIdx}`);
             if (!btn) return;
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
 
             btn.disabled = true;
             btn.textContent = `⏳ 0/${s.shots.length}`;
@@ -9938,8 +10018,9 @@ ${locsText ? 'Location Bible:\n' + locsText : ''}
 Output format:
 Image Prompt: [cinematic details, framing, environment, lighting, character details, textures. ${selectedVisualStyle ? 'Style: ' + selectedVisualStyle : ''} ${selectedFilmAesthetic ? 'Aesthetic: ' + selectedFilmAesthetic : ''}]`;
 
+                if (signal.aborted) break;
                 try {
-                    const data = await generateFromLLM(prompt);
+                    const data = await generateFromLLM(prompt, signal);
                     if (data.success) {
                         const m = data.response.match(/Image Prompt:\s*([\s\S]+?)$/i);
                         if (m) {
@@ -9951,6 +10032,7 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                         notify('LLM Error', `Shot ${sh.shot_id}: ${data.error || 'Failed'}`);
                     }
                 } catch(e) {
+                    if (e.name === 'AbortError') break;
                     notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
                 }
                 completed++;
@@ -9959,6 +10041,8 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
 
             btn.disabled = false;
             btn.textContent = '🧠';
+            window._sceneAbortController = null;
+            hideAbortButton();
             renderStoryboard();
             scheduleSaveState();
         }
@@ -9972,16 +10056,24 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             const pending = s.shots.filter(sh => sh.storyboard_status === 'approved' && sh.storyboard_image && sh.video_prompt && sh.video_prompt.trim());
             if (!pending.length) { btn.style.display = 'none'; return; }
 
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
             btn.disabled = true;
             btn.textContent = `⏳ 0/${pending.length}`;
             let completed = 0;
 
             for (const sh of pending) {
+                if (signal.aborted) break;
+                const shotIdx = s.shots.indexOf(sh);
+                showShotSpinner(sceneIdx, shotIdx);
                 const inputImagePath = `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`;
                 const seed = Math.floor(Math.random() * 999999999) + 1;
                 try {
                     const res = await fetch('/api/comfyui/generate/i2v', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal,
                         body: JSON.stringify({
                             prompt: sh.video_prompt,
                             seed: seed,
@@ -9990,6 +10082,7 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                             scene_index: sceneIdx
                         })
                     });
+                    hideShotSpinner(sceneIdx, shotIdx);
                     const data = await res.json();
                     if (data.success) {
                         sh._temp_video_clip = data.filename;
@@ -9999,6 +10092,8 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                         notify('I2V Failed', `Shot ${sh.shot_id}: ${data.error || 'Generation failed'}`);
                     }
                 } catch(e) {
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    if (e.name === 'AbortError') break;
                     notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
                 }
                 completed++;
@@ -10007,6 +10102,8 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
 
             btn.disabled = false;
             btn.textContent = '🎥';
+            window._sceneAbortController = null;
+            hideAbortButton();
             renderStoryboard();
         }
 
@@ -10019,16 +10116,23 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             const pending = s.shots.filter(sh => sh._temp_video_clip);
             if (!pending.length) { btn.style.display = 'none'; return; }
 
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
             btn.disabled = true;
             btn.textContent = `⏳ 0/${pending.length}`;
             let completed = 0;
 
             for (const sh of pending) {
+                if (signal.aborted) break;
                 const shotIdx = s.shots.indexOf(sh);
+                showShotSpinner(sceneIdx, shotIdx);
                 const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
                 try {
                     const res = await fetch('/api/projects/save-video', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal,
                         body: JSON.stringify({
                             project_name: currentProject?.name || '',
                             project_path: currentProject?.path || '',
@@ -10037,6 +10141,7 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                             card_name: cardName
                         })
                     });
+                    hideShotSpinner(sceneIdx, shotIdx);
                     const data = await res.json();
                     if (data.success) {
                         const savedFilename = data.path.split(/[\\/]/).pop();
@@ -10050,6 +10155,8 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                         notify('Save Failed', `Shot ${sh.shot_id}: ${data.error}`);
                     }
                 } catch(e) {
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    if (e.name === 'AbortError') break;
                     notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
                 }
                 completed++;
@@ -10058,6 +10165,8 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
 
             btn.disabled = false;
             btn.textContent = '✔️';
+            window._sceneAbortController = null;
+            hideAbortButton();
             renderStoryboard();
             scheduleSaveState();
         }
@@ -10132,19 +10241,22 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             btn.disabled = true;
             btn.textContent = '⏳...';
             showShotSpinner(sceneIdx, shotIdx);
-            const seed = Math.floor(Math.random() * 999999999) + 1;
+            const seed = sh._genSeed || Math.floor(Math.random() * 999999999) + 1;
+            const stepsOverride = sh._genSteps;
             const inputImagePath = `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`;
 
             try {
+                const body = {
+                    prompt: prompt,
+                    seed: seed,
+                    project_path: currentProject?.path || '',
+                    input_image: inputImagePath,
+                    scene_index: sceneIdx
+                };
+                if (stepsOverride) body.steps = stepsOverride;
                 const res = await fetch('/api/comfyui/generate/i2v', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        prompt: prompt,
-                        seed: seed,
-                        project_path: currentProject?.path || '',
-                        input_image: inputImagePath,
-                        scene_index: sceneIdx
-                    })
+                    body: JSON.stringify(body)
                 });
                 const data = await res.json();
                 hideShotSpinner(sceneIdx, shotIdx);
