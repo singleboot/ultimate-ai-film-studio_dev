@@ -1294,6 +1294,7 @@
                     </div>
                     <div style="display:flex;gap:6px;">
                         <button class="btn btn-secondary" type="button" onclick="generateStoryboardPromptsPhase()" style="padding:6px 14px;font-size:0.75rem;">✨ Generate All Prompts</button>
+                        <button class="btn btn-secondary" type="button" onclick="generateAllStoryboardVideoPrompts()" style="padding:6px 14px;font-size:0.75rem;">📝 Generate All Video Prompts</button>
                         <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:6px 14px;font-size:0.75rem;">🎨 Generate All Images</button>
                         <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:6px 14px;font-size:0.75rem;opacity:0.4;pointer-events:none;">🎥 Generate All Videos</button>
                     </div>
@@ -9459,9 +9460,10 @@ Project visual language: ${projVL}`;
                             ${escapeHtml(s.synopsis || 'No synopsis.')}
                         </div>
                         ${s.shots && s.shots.length > 0 ? `<div style="display:flex;gap:2px;flex-wrap:wrap;">
-                            <button class="btn btn-secondary" onclick="event.stopPropagation();regenerateScenePrompts(${sceneIdx})" id="scene-pr-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Regenerate prompts">🧠</button>
+                            <button class="btn btn-secondary" onclick="event.stopPropagation();regenerateScenePrompts(${sceneIdx})" id="scene-pr-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Image prompts">🧠</button>
                             ${s.shots.some(sh => !sh.storyboard_image && !sh._temp_storyboard_image) ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate images">🎨</button>` : ''}
                             ${s.shots.some(sh => sh._temp_storyboard_image) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" id="scene-app-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Approve images">✅</button>` : ''}
+                            <button class="btn btn-secondary" onclick="event.stopPropagation();generateSceneVideoPrompts(${sceneIdx})" id="scene-vp-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Video prompts">📝</button>
                             ${s.shots.every(sh => sh.storyboard_status === 'approved') ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneVideos(${sceneIdx})" id="scene-vid-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate videos">🎥</button>` : ''}
                             ${s.shots.some(sh => sh._temp_video_clip) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneVideos(${sceneIdx})" id="scene-vapp-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Approve videos">✔️</button>` : ''}
                         </div>` : ''}
@@ -10047,13 +10049,42 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             scheduleSaveState();
         }
 
+        async function generateSceneVideoPrompts(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-vp-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${s.shots.length}`;
+            let completed = 0;
+
+            for (const sh of s.shots) {
+                if (signal.aborted) break;
+                btn.textContent = `⏳ ${completed}/${s.shots.length}`;
+                await regenerateShotVideoPrompt(sceneIdx, s.shots.indexOf(sh));
+                completed++;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '📝';
+            window._sceneAbortController = null;
+            hideAbortButton();
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
         async function generateSceneVideos(sceneIdx) {
             const s = screenplayData.scenes[sceneIdx];
             if (!s || !s.shots) return;
             const btn = document.getElementById(`scene-vid-btn-${sceneIdx}`);
             if (!btn) return;
 
-            const pending = s.shots.filter(sh => sh.storyboard_status === 'approved' && sh.storyboard_image && sh.video_prompt && sh.video_prompt.trim());
+            const pending = s.shots.filter(sh => sh.storyboard_status === 'approved' && sh.storyboard_image);
             if (!pending.length) { btn.style.display = 'none'; return; }
 
             window._sceneAbortController = new AbortController();
@@ -11573,6 +11604,21 @@ Raw JSON only, no markdown.`;
                     await generateShotVideo(sIdx, shIdx);
                 }
             }
+        }
+
+        async function generateAllStoryboardVideoPrompts() {
+            if (!screenplayData || !screenplayData.scenes) {
+                notify('No Screenplay', 'Please generate screenplay first.'); return;
+            }
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    await regenerateShotVideoPrompt(sIdx, shIdx);
+                }
+            }
+            renderStoryboard();
+            scheduleSaveState();
         }
 
         // ── Batch Approve / Clear ───────────────────────────────────
