@@ -368,6 +368,11 @@
         .asset-tab {
             min-height: 200px;
         }
+        .storyboard-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
         /* Small inline button spinner */
         .btn-spinner {
             display: inline-block; width: 14px; height: 14px;
@@ -1078,6 +1083,60 @@
         </div>
     </div>
 
+    <!-- Storyboard Expand Modal -->
+    <div class="modal-overlay" id="storyboard-expand-modal" style="display:none;">
+        <div class="modal" id="storyboard-expand-modal-inner" style="max-width:90vw;width:1200px;height:85vh;display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-color);">
+                <h3 style="margin:0;" id="storyboard-expand-title">Shot</h3>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn btn-secondary" onclick="toggleStoryboardFullscreen()" id="storyboard-fullscreen-btn" style="padding:4px 10px;font-size:0.75rem;">⛶ Fullscreen</button>
+                    <button class="btn btn-secondary" onclick="closeStoryboardExpand()" style="padding:4px 12px;">✕</button>
+                </div>
+            </div>
+            <div style="display:flex;flex:1;gap:20px;overflow:hidden;padding-top:15px;">
+                <!-- Left: Image + History + Variants -->
+                <div style="flex:1;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
+                    <div id="storyboard-expand-image-area" style="flex:1;background:var(--bg-secondary);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:300px;overflow:hidden;">
+                        <span style="color:var(--text-secondary);">Generate an image to preview</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;">
+                        <span style="font-size:0.75rem;font-weight:600;color:var(--accent-primary);">Generation History:</span>
+                        <button class="btn" onclick="storyboardClearHistory()" id="clear-storyboard-history-btn" style="padding:2px 8px;font-size:0.65rem;background:#d32f2f;color:#fff;border:none;border-radius:4px;cursor:pointer;display:none;">🗑 Delete All</button>
+                    </div>
+                    <div id="storyboard-expand-history" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 8px;background:var(--bg-secondary);border-radius:8px;min-height:40px;">
+                        <span style="color:var(--text-secondary);font-size:0.7rem;">Generation history will appear here</span>
+                    </div>
+                    <div id="storyboard-expand-variant-gallery" style="display:flex;gap:8px;flex-wrap:wrap;padding:8px;background:var(--bg-secondary);border-radius:8px;min-height:60px;">
+                        <span style="color:var(--text-secondary);font-size:0.8rem;">Variants will appear here</span>
+                    </div>
+                </div>
+                <!-- Right: Metadata + Controls -->
+                <div style="width:360px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
+                    <div id="storyboard-expand-metadata" style="font-size:0.85rem;line-height:1.6;"></div>
+                    <div style="border-top:1px solid var(--border-color);padding-top:10px;">
+                        <label style="font-size:0.75rem;font-weight:600;color:var(--accent-primary);display:block;margin-bottom:4px;" id="storyboard-expand-prompt-label">Image Prompt:</label>
+                        <div style="position:relative;">
+                            <textarea id="storyboard-expand-prompt" style="width:100%;min-height:80px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;padding:8px;font-size:0.8rem;resize:vertical;" placeholder="Write or generate image prompt..."></textarea>
+                            <button type="button" onclick="openModalPromptExpand('storyboard-expand-prompt')" style="position:absolute;right:4px;top:4px;padding:2px 6px;font-size:0.7rem;cursor:pointer;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);z-index:1;" title="Edit prompt fullscreen">⤢</button>
+                        </div>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--border-color);padding-top:10px;">
+                        <button class="btn btn-primary" onclick="storyboardExpandGenerate()" id="storyboard-expand-gen-btn" style="padding:6px 12px;font-size:0.8rem;">🎨 Generate</button>
+                        <button class="btn btn-secondary" onclick="storyboardExpandRegenPrompt()" id="storyboard-expand-regen-prompt-btn" style="padding:6px 12px;font-size:0.8rem;">🔄 Regen Prompt</button>
+                        <button class="btn btn-secondary" onclick="showStoryboardVariantInput()" id="storyboard-expand-variant-btn" style="padding:6px 12px;font-size:0.8rem;">✏️ Variant</button>
+                        <button class="btn btn-success" onclick="storyboardExpandApprove()" id="storyboard-expand-approve-btn" style="padding:6px 12px;font-size:0.8rem;">✅ Approve</button>
+                    </div>
+                    <!-- Variant creation input (hidden by default) -->
+                    <div id="storyboard-variant-input-area" style="display:none;border-top:1px solid var(--border-color);padding-top:10px;background:rgba(255,255,255,0.02);padding:10px;border-radius:6px;margin-top:10px;">
+                        <label style="font-size:0.75rem;font-weight:600;color:var(--accent-primary);display:block;margin-bottom:4px;">✏️ Describe Variant Changes (e.g. "wider shot", "add snow"):</label>
+                        <textarea id="storyboard-variant-instruction" style="width:100%;min-height:60px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;padding:8px;font-size:0.8rem;resize:vertical;" placeholder="Describe what you want to modify..."></textarea>
+                        <button class="btn btn-primary" onclick="storyboardSubmitVariant()" style="padding:6px 12px;font-size:0.8rem;margin-top:6px;width:100%;">✏️ Generate Variant Prompts</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- PAGE: Storyboard & Video Studio -->
     <div class="page" id="page-storyboard">
         <div class="container">
@@ -1094,13 +1153,7 @@
                 <h2 style="color:var(--accent-primary);margin:0;">📋 Storyboard & Video Studio</h2>
             </div>
 
-            <!-- Global Phase Toggle -->
-            <div style="display:flex;justify-content:center;margin-bottom:20px;background:var(--bg-secondary);padding:6px;border-radius:10px;border:1px solid var(--border-color);max-width:550px;margin-left:auto;margin-right:auto;">
-                <button class="btn btn-primary" id="sb-phase-1-btn" onclick="switchStoryboardPhase(1)" style="flex:1;padding:6px 12px;font-size:0.8rem;border-radius:6px;transition:0.2s;">Phase 1: Storyboard Images 📷</button>
-                <button class="btn btn-secondary" id="sb-phase-2-btn" onclick="switchStoryboardPhase(2)" style="flex:1;padding:6px 12px;font-size:0.8rem;border-radius:6px;transition:0.2s;margin-left:4px;">Phase 2: Scene Video Studio 🎥</button>
-            </div>
-
-            <!-- Unified Progress Bar -->
+            <!-- Progress Bar -->
             <div id="storyboard-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                     <span style="font-weight:600;" id="sb-progress-title">Generating...</span>
@@ -1112,13 +1165,22 @@
             </div>
 
             <!-- Header Controls -->
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;background:var(--bg-secondary);padding:10px;border-radius:8px;border:1px solid var(--border-color);">
-                <div style="font-size:0.9rem;color:var(--text-secondary);" id="sb-description-container">
-                    <span id="storyboard-count-label">0</span> shots — generate images for each shot
+            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;background:var(--bg-secondary);padding:10px;border-radius:8px;border:1px solid var(--border-color);">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div style="font-size:0.9rem;color:var(--text-secondary);" id="sb-description-container">
+                        <span id="storyboard-count-label">0</span> shots — generate images, then videos per shot
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn btn-secondary" type="button" onclick="generateStoryboardPromptsPhase()" style="padding:6px 14px;font-size:0.75rem;">✨ Generate All Prompts</button>
+                        <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:6px 14px;font-size:0.75rem;">🎨 Generate All Images</button>
+                        <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:6px 14px;font-size:0.75rem;opacity:0.4;pointer-events:none;">🎥 Generate All Videos</button>
+                    </div>
                 </div>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn btn-secondary" type="button" id="sb-generate-prompts-btn" onclick="generateStoryboardPromptsPhase()" style="padding:8px 18px;">✨ Generate Image Prompts</button>
-                    <button class="btn btn-primary" type="button" id="sb-generate-all-btn" onclick="generateAllStoryboardPhase()" style="padding:8px 18px;">🎨 Generate All</button>
+                <div style="display:flex;justify-content:flex-end;gap:6px;border-top:1px solid var(--border-color);padding-top:6px;">
+                    <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:4px 12px;font-size:0.7rem;">✅ Approve All Images</button>
+                    <button class="btn btn-success" type="button" onclick="approveAllVideos()" style="padding:4px 12px;font-size:0.7rem;">✅ Approve All Videos</button>
+                    <button class="btn btn-secondary" type="button" onclick="clearAllTempImages()" style="padding:4px 12px;font-size:0.7rem;color:var(--accent-danger);">🗑 Clear Images</button>
+                    <button class="btn btn-secondary" type="button" onclick="clearAllTempVideos()" style="padding:4px 12px;font-size:0.7rem;color:var(--accent-danger);">🗑 Clear Videos</button>
                 </div>
             </div>
 
@@ -1944,7 +2006,6 @@
         function navigateToWorkflow(step) {
             try {
                 if (step === 'video-prompts') {
-                    window._currentStoryboardPhase = 2;
                     step = 'storyboard';
                 }
                 const built = { ideas: 1, screenplay: 1, 'asset-studio': 1, storyboard: 1, videos: 1 };
@@ -7254,6 +7315,374 @@
             }
         }
 
+        // ── Storyboard Expand / Inspect ──────────────────────────────
+        function expandStoryboardShot(sceneIdx, shotIdx) {
+            window._currentSbSceneIdx = sceneIdx;
+            window._currentSbShotIdx = shotIdx;
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            if (!sh) return;
+
+            document.getElementById('storyboard-expand-title').textContent =
+                `${s.scene_id || 'Scene ' + (sceneIdx+1)} — ${sh.shot_id || 'Shot ' + (shotIdx+1)}`;
+
+            // Metadata — show both image and video status
+            const metaDiv = document.getElementById('storyboard-expand-metadata');
+            const chars = (sh.characters_present || s.characters_present || []).join(', ') || '—';
+            metaDiv.innerHTML = `
+                <b>Shot ID:</b> ${sh.shot_id || '—'}<br>
+                <b>Shot Type:</b> ${sh.shot_type || '—'}<br>
+                <b>Scene:</b> ${s.scene_title || s.scene_id || ''}<br>
+                <b>Location:</b> ${s.location_id || '—'}<br>
+                <b>Characters:</b> ${chars}<br>
+                <b>Time:</b> ${s.time_of_day || 'Day'}<br>
+                <b>Tone:</b> ${s.emotional_tone || '—'}<br>
+                <b>Image Status:</b> ${sh.storyboard_status || 'pending'}<br>
+                <b>Video Status:</b> ${sh.video_status || 'pending'}<br>
+                ${sh.storyboard_image ? `<b>Saved Image:</b> ${sh.storyboard_image}<br>` : ''}
+                ${sh.video_clip ? `<b>Saved Video:</b> ${sh.video_clip}` : ''}
+            `;
+
+            // Image + Video preview area (stacked)
+            const imgArea = document.getElementById('storyboard-expand-image-area');
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+
+            const savedImg = sh.storyboard_image;
+            const tempImg = sh._temp_storyboard_image;
+            const savedVid = sh.video_clip;
+            const tempVid = sh._temp_video_clip;
+            const tempSub = sh._temp_video_subfolder;
+
+            const imageUrl = savedImg
+                ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
+                : tempImg
+                    ? `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
+                    : null;
+            const videoUrl = savedVid
+                ? `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(savedVid)}${projectPathQuery}`
+                : tempVid
+                    ? `/api/comfyui/view?filename=${encodeURIComponent(tempVid)}${tempSub ? '&subfolder=' + encodeURIComponent(tempSub) : ''}`
+                    : null;
+
+            let previewHtml = '';
+            if (videoUrl) {
+                previewHtml = `<video src="${videoUrl}" controls autoplay loop muted style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;"></video>`;
+            } else if (imageUrl) {
+                previewHtml = `<img src="${imageUrl}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
+            } else {
+                previewHtml = '<span style="color:var(--text-secondary);">No image generated yet</span>';
+            }
+            imgArea.innerHTML = previewHtml;
+
+            // Prompt textarea — show image prompt, with toggle to video prompt
+            const promptTA = document.getElementById('storyboard-expand-prompt');
+            const promptLabel = document.getElementById('storyboard-expand-prompt-label');
+            promptLabel.textContent = 'Image Prompt:';
+            promptTA.value = sh.storyboard_prompt || sh.image_prompt || '';
+            promptTA.oninput = function() {
+                sh.storyboard_prompt = this.value;
+                scheduleSaveState();
+            };
+
+            // Variant gallery
+            const gallery = document.getElementById('storyboard-expand-variant-gallery');
+            gallery.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem;">Variants will appear here</span>';
+
+            // Generation history with thumbnails
+            const historyEl = document.getElementById('storyboard-expand-history');
+            const clearBtn = document.getElementById('clear-storyboard-history-btn');
+            const storyHistory = sh.storyboard_history || [];
+            const activeImg = sh.storyboard_image || sh._temp_storyboard_image || '';
+            if (storyHistory.length) {
+                if (clearBtn) clearBtn.style.display = 'inline-block';
+                historyEl.innerHTML = storyHistory.map((h, i) => `
+                    <div style="position:relative;width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === activeImg ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="storyboardSetActiveFromHistory(${sceneIdx}, ${shotIdx}, ${i})" title="Click to set as active">
+                        <img src="${getHistoryImageSrc(h)}" style="width:100%;height:100%;object-fit:cover;">
+                        <div style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:bold;cursor:pointer;" onclick="event.stopPropagation(); storyboardDeleteHistoryItem(${sceneIdx}, ${shotIdx}, ${i})" title="Delete this variant">✕</div>
+                    </div>
+                `).join('');
+            } else {
+                if (clearBtn) clearBtn.style.display = 'none';
+                historyEl.innerHTML = '<span style="color:var(--text-secondary);font-size:0.7rem;">Generation history will appear here</span>';
+            }
+
+            // Reset variant input
+            document.getElementById('storyboard-variant-input-area').style.display = 'none';
+            const mainPromptContainer = document.getElementById('storyboard-expand-prompt')?.parentElement;
+            if (mainPromptContainer) mainPromptContainer.style.display = 'block';
+
+            // Update button states to match current shot status
+            const genBtn = document.getElementById('storyboard-expand-gen-btn');
+            const approveBtn = document.getElementById('storyboard-expand-approve-btn');
+            if (genBtn) {
+                if (sh.storyboard_status === 'approved') {
+                    genBtn.textContent = '🎥 Generate Video';
+                } else {
+                    genBtn.textContent = '🎨 Generate';
+                }
+            }
+            if (approveBtn) {
+                if (sh.storyboard_status === 'approved') {
+                    approveBtn.textContent = '✅ Approved';
+                    approveBtn.disabled = true;
+                    approveBtn.className = 'btn btn-success';
+                } else if (sh._temp_storyboard_image || sh._temp_video_clip) {
+                    approveBtn.textContent = '✅ Approve';
+                    approveBtn.disabled = false;
+                    approveBtn.className = 'btn btn-success';
+                } else {
+                    approveBtn.textContent = '✅ Approve';
+                    approveBtn.disabled = true;
+                    approveBtn.className = 'btn btn-secondary';
+                }
+            }
+
+            document.getElementById('storyboard-expand-modal').style.display = 'flex';
+        }
+
+        function closeStoryboardExpand() {
+            document.getElementById('storyboard-expand-modal').style.display = 'none';
+            window._currentSbSceneIdx = null;
+            window._currentSbShotIdx = null;
+        }
+
+        function toggleStoryboardFullscreen() {
+            const inner = document.getElementById('storyboard-expand-modal-inner');
+            const btn = document.getElementById('storyboard-fullscreen-btn');
+            if (inner.style.maxWidth === 'none') {
+                inner.style.maxWidth = '90vw';
+                inner.style.width = '1200px';
+                inner.style.height = '85vh';
+                btn.textContent = '⛶ Fullscreen';
+            } else {
+                inner.style.maxWidth = 'none';
+                inner.style.width = '100vw';
+                inner.style.height = '100vh';
+                btn.textContent = '⛶ Exit Fullscreen';
+            }
+        }
+
+        async function storyboardExpandGenerate() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            if (sh.storyboard_status === 'approved') {
+                await generateShotVideo(sceneIdx, shotIdx);
+            } else {
+                await generateShotImage(sceneIdx, shotIdx);
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+        }
+
+        async function storyboardExpandApprove() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            if (sh._temp_storyboard_image && !sh.storyboard_image) {
+                await approveShotImage(sceneIdx, shotIdx);
+            } else if (sh._temp_video_clip && !sh.video_clip) {
+                await approveShotVideo(sceneIdx, shotIdx);
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+        }
+
+        async function storyboardExpandRegenPrompt() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const btn = document.getElementById('storyboard-expand-regen-prompt-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+            await regenerateShotPrompt(sceneIdx, shotIdx);
+            expandStoryboardShot(sceneIdx, shotIdx);
+            if (btn) { btn.disabled = false; btn.textContent = '🔄 Regen Prompt'; }
+        }
+
+        function showStoryboardVariantInput(sceneIdx, shotIdx) {
+            // If called without args, try to get from current expand context
+            if (sceneIdx === undefined) sceneIdx = window._currentSbSceneIdx;
+            if (shotIdx === undefined) shotIdx = window._currentSbShotIdx;
+            // Open the expand modal first if it is not open
+            const modal = document.getElementById('storyboard-expand-modal');
+            if (modal.style.display !== 'flex' && sceneIdx != null && shotIdx != null) {
+                expandStoryboardShot(sceneIdx, shotIdx);
+            }
+            const area = document.getElementById('storyboard-variant-input-area');
+            const mainPromptContainer = document.getElementById('storyboard-expand-prompt')?.parentElement;
+            if (area.style.display === 'block') {
+                area.style.display = 'none';
+                if (mainPromptContainer) mainPromptContainer.style.display = 'block';
+            } else {
+                area.style.display = 'block';
+                if (mainPromptContainer) mainPromptContainer.style.display = 'none';
+                const textarea = document.getElementById('storyboard-variant-instruction');
+                if (textarea) {
+                    textarea.value = '';
+                    textarea.focus();
+                }
+                area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        async function storyboardSubmitVariant() {
+            const instruction = document.getElementById('storyboard-variant-instruction').value.trim();
+            if (!instruction) return;
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+
+            const submitBtn = document.querySelector('#storyboard-variant-input-area button');
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ Generating variant prompts...'; }
+
+            try {
+                const res = await fetch('/api/orchestrator/generate-variant', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        type: 'storyboard_shot',
+                        asset: {
+                            shot_id: sh.shot_id,
+                            shot_type: sh.shot_type,
+                            storyboard_prompt: sh.storyboard_prompt || sh.image_prompt || '',
+                            action: sh.action,
+                            camera_language: sh.camera_language,
+                            lighting_language: sh.lighting_language,
+                            emotion: sh.emotion,
+                            scene_synopsis: s.synopsis,
+                        },
+                        current_image: sh.storyboard_image || '',
+                        instruction: instruction
+                    }),
+                });
+                const data = await res.json();
+                if (data.success && data.variants && data.variants.length) {
+                    notify('Variants Generated', 'Prompts generated successfully', '✅');
+                    const gallery = document.getElementById('storyboard-expand-variant-gallery');
+                    gallery.innerHTML = '';
+                    gallery.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:8px;width:100%;';
+                    const header = document.createElement('div');
+                    header.style.cssText = 'font-size:0.75rem;font-weight:600;color:var(--accent-primary);margin-bottom:4px;';
+                    header.textContent = 'Select a variant option to generate:';
+                    gallery.appendChild(header);
+                    data.variants.forEach((promptText, i) => {
+                        const card = document.createElement('div');
+                        card.style.cssText = 'padding:10px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;gap:6px;';
+                        card.innerHTML = `
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span style="font-size:0.7rem;font-weight:700;color:var(--accent-success);">OPTION ${i+1}</span>
+                                <span style="font-size:0.6rem;color:var(--text-secondary);">Click to generate</span>
+                            </div>
+                            <div style="font-size:0.75rem;color:var(--text-primary);line-height:1.4;font-style:italic;">"${promptText}"</div>
+                        `;
+                        card.onmouseover = function() { this.style.borderColor = 'var(--accent-primary)'; this.style.transform = 'translateY(-1px)'; };
+                        card.onmouseout = function() { this.style.borderColor = 'var(--border-color)'; this.style.transform = 'none'; };
+                        card.onclick = async () => {
+                            const promptTA = document.getElementById('storyboard-expand-prompt');
+                            if (promptTA) {
+                                promptTA.value = promptText;
+                                promptTA.dispatchEvent(new Event('input'));
+                            }
+                            document.getElementById('storyboard-variant-input-area').style.display = 'none';
+                            const mainContainer = document.getElementById('storyboard-expand-prompt')?.parentElement;
+                            if (mainContainer) mainContainer.style.display = 'block';
+                            if (sh.storyboard_status === 'approved') {
+                                sh.video_prompt = promptText;
+                                await generateShotVideo(sceneIdx, shotIdx);
+                            } else {
+                                sh.storyboard_prompt = promptText;
+                                await generateShotImage(sceneIdx, shotIdx);
+                            }
+                            expandStoryboardShot(sceneIdx, shotIdx);
+                        };
+                        gallery.appendChild(card);
+                    });
+                } else {
+                    notify('Failed', data.error || 'Variant generation failed', '❌');
+                }
+            } catch (e) {
+                notify('Error', e.message, '❌');
+            }
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '✏️ Generate Variant Prompts'; }
+            document.getElementById('storyboard-variant-instruction').value = '';
+        }
+        // ── Storyboard History Management ─────────────────────────────
+        function getHistoryImageSrc(filename) {
+            if (!filename) return '';
+            if (filename.startsWith('http')) return filename;
+            if (filename.startsWith('/api/')) return filename;
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? (`?path=${encodeURIComponent(currentProject.path)}`) : '';
+            // Saved images have paths like "scenes/filename.png"
+            if (filename.includes('/')) {
+                return `/api/projects/${encodeURIComponent(projName)}/saved-image/${filename}${projectPathQuery}&t=${Date.now()}`;
+            }
+            return `/api/comfyui/view?filename=${encodeURIComponent(filename)}&t=${Date.now()}`;
+        }
+
+        function storyboardSetActiveFromHistory(sceneIdx, shotIdx, index) {
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            const history = sh.storyboard_history || [];
+            if (!history[index]) return;
+            const filename = history[index];
+            // If it's a saved image (contains path separator), restore as approved
+            if (filename.includes('/')) {
+                sh.storyboard_image = filename.split('/').pop();
+                sh.storyboard_status = 'approved';
+            } else {
+                sh._temp_storyboard_image = filename;
+                sh.storyboard_status = 'generated';
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+            renderStoryboard();
+            scheduleSaveState();
+            notify('Set Active', 'Image ' + (index + 1) + ' set as active', '📷');
+        }
+
+        function storyboardDeleteHistoryItem(sceneIdx, shotIdx, index) {
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            const history = sh.storyboard_history || [];
+            if (!history[index]) return;
+            const filename = history[index];
+            sh.storyboard_history.splice(index, 1);
+            if (sh._temp_storyboard_image === filename) {
+                sh._temp_storyboard_image = sh.storyboard_history.length > 0
+                    ? sh.storyboard_history[sh.storyboard_history.length - 1]
+                    : null;
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        async function storyboardClearHistory() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            const confirmed = await showConfirm('Clear History', 'Are you sure you want to clear all generated images from the history? This only removes them from the list.');
+            if (!confirmed) return;
+            sh.storyboard_history = [];
+            sh._temp_storyboard_image = null;
+            if (sh.storyboard_status !== 'approved') {
+                sh.storyboard_image = null;
+                sh.storyboard_status = 'pending';
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+            renderStoryboard();
+            scheduleSaveState();
+            notify('Cleared', 'All variants for this shot removed', '🗑');
+        }
+        // ── End Storyboard Expand ────────────────────────────────────
+
         function assetSetActiveFromHistory(index) {
             const id = window._currentAssetExpandId;
             const type = window._currentAssetExpandType;
@@ -8796,30 +9225,6 @@ Project visual language: ${projVL}`;
         }
 
 
-        function switchStoryboardPhase(phase) {
-            window._currentStoryboardPhase = phase;
-            const btn1 = document.getElementById('sb-phase-1-btn');
-            const btn2 = document.getElementById('sb-phase-2-btn');
-            const descEl = document.getElementById('sb-description-container');
-            const genPromptsBtn = document.getElementById('sb-generate-prompts-btn');
-            const genAllBtn = document.getElementById('sb-generate-all-btn');
-
-            if (phase === 1) {
-                if (btn1) { btn1.className = 'btn btn-primary'; btn1.style.background = 'var(--accent-primary)'; }
-                if (btn2) { btn2.className = 'btn btn-secondary'; btn2.style.background = ''; }
-                if (descEl) { descEl.innerHTML = '<span id="storyboard-count-label">0</span> shots — generate images for each shot'; }
-                if (genPromptsBtn) { genPromptsBtn.textContent = '✨ Generate Image Prompts'; }
-                if (genAllBtn) { genAllBtn.innerHTML = '🎨 Generate All'; }
-            } else {
-                if (btn1) { btn1.className = 'btn btn-secondary'; btn1.style.background = ''; }
-                if (btn2) { btn2.className = 'btn btn-primary'; btn2.style.background = 'var(--accent-primary)'; }
-                if (descEl) { descEl.innerHTML = '<span id="storyboard-count-label">0</span> shots — generate videos for each shot'; }
-                if (genPromptsBtn) { genPromptsBtn.textContent = '✨ Generate Video Prompts'; }
-                if (genAllBtn) { genAllBtn.innerHTML = '🎥 Generate All'; }
-            }
-            renderStoryboard();
-        }
-
         function renderStoryboard() {
             const container = document.getElementById('storyboard-container');
             if (!container) return;
@@ -8869,19 +9274,21 @@ Project visual language: ${projVL}`;
                         </div>
                     </div>`;
 
-                // === RIGHT: Shot Cards Grid (flex-wrap) ===
-                html += `<div style="flex:1;display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start;">`;
+                // === RIGHT: Shot Cards Grid (CSS Grid matching asset studio) ===
+                html += `<div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">`;
 
                 if (s.shots && s.shots.length > 0) {
                     s.shots.forEach((sh, shotIdx) => {
                         const shotKey = `${sceneIdx}_${shotIdx}`;
-                        const isPhase1 = window._currentStoryboardPhase === 1;
-                        const status = isPhase1 ? (sh.storyboard_status || 'pending') : (sh.video_status || 'pending');
-                        const statusColor = status === 'approved' ? '#4caf50' : (status === 'enriched' || status === 'regenerated' || status === 'generated' ? '#ff9800' : '#555');
+                        
+                        // Status
+                        const imgStatus = sh.storyboard_status || 'pending';
+                        const vidStatus = sh.video_status || 'pending';
+                        const imgStatusColor = imgStatus === 'approved' ? '#4caf50' : (imgStatus === 'generated' ? '#ff9800' : '#555');
+                        const vidStatusColor = vidStatus === 'approved' ? '#4caf50' : (vidStatus === 'generated' ? '#ff9800' : '#555');
                         
                         // Collect local relevant reference images for this scene
                         const sceneRefs = [];
-                        // Location reference
                         const locObj = locationData.find(l => l.name === s.location_id && l.savedImage);
                         if (locObj) {
                             let clean = locObj.savedImage;
@@ -8889,7 +9296,6 @@ Project visual language: ${projVL}`;
                             else clean = clean.replace(/\s+/g, '_') + '.png';
                             sceneRefs.push({ label: locObj.name, stage: 'locations', filename: clean });
                         }
-                        // Characters present
                         const charNames = sh.characters_present || s.characters_present || [];
                         charData.forEach(c => {
                             if (c.savedImage && charNames.includes(c.name)) {
@@ -8904,118 +9310,74 @@ Project visual language: ${projVL}`;
                             `<img src="/api/projects/${encodeURIComponent(projName)}/saved-image/${r.stage}/${encodeURIComponent(r.filename)}${projectPathQuery}" alt="${r.label}" title="${r.label}" onclick="openFullscreenImage(this.src)" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid var(--border-color);flex-shrink:0;">`
                         ).join('') : '';
 
-                        if (isPhase1) {
-                            // PHASE 1 Card: Image Generation
-                            const savedImg = sh.storyboard_image;
-                            const tempImg = sh._temp_storyboard_image;
-                            const imageUrl = savedImg 
-                                ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
-                                : tempImg 
-                                    ? `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
-                                    : null;
-
-                            html += `
-                            <div id="shot-card-${shotKey}" style="width:280px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border-color);display:flex;flex-direction:column;padding:8px;position:relative;">
-                                ${refHtml ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;padding:3px;background:var(--bg-primary);border-radius:4px;" title="Scene/Shot References">${refHtml}</div>` : ''}
-                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                                    <span style="font-size:0.65rem;color:var(--accent-primary);font-weight:600;">${sh.shot_id || 'SHOT_?'}</span>
-                                    <span style="font-size:0.6rem;color:var(--text-secondary);">${sh.shot_type || ''}</span>
-                                    <span style="font-size:0.55rem;padding:1px 5px;border-radius:3px;background:${statusColor};color:#fff;font-weight:600;text-transform:capitalize;">${status}</span>
-                                </div>
-                                <div id="shot-t2i-preview-${sceneIdx}-${shotIdx}" style="height:150px;background:var(--bg-primary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;margin-bottom:6px;">
-                                    <span id="shot-t2i-placeholder-${sceneIdx}-${shotIdx}" style="color:var(--text-secondary);font-size:0.7rem;${imageUrl ? 'display:none;' : ''}">No Image Generated</span>
-                                    <img id="shot-t2i-img-${sceneIdx}-${shotIdx}" alt="Shot ${sh.shot_id}" style="${imageUrl ? 'width:100%;height:100%;object-fit:cover;cursor:pointer;' : 'display:none;width:100%;height:100%;object-fit:cover;cursor:pointer;'}" src="${imageUrl || ''}" onclick="openFullscreenImage(this.src)" data-filename="${tempImg || ''}">
-                                </div>
-                                <div style="position:relative;flex:1;">
-                                    <textarea class="form-input" id="shot-img-prompt-${shotKey}" rows="3" placeholder="Describe visual elements..." style="resize:vertical;width:100%;font-size:0.75rem;padding:4px 6px;margin-bottom:4px;height:65px;" oninput="screenplayData.scenes[${sceneIdx}].shots[${shotIdx}].storyboard_prompt=this.value;scheduleSaveState()">${sh.storyboard_prompt || sh.image_prompt || ''}</textarea>
-                                    <button type="button" onclick="openPromptExpand('${shotKey}')" style="position:absolute;right:2px;top:2px;padding:0 4px;font-size:0.65rem;cursor:pointer;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);z-index:1;" title="Edit prompt fullscreen">⤢</button>
-                                </div>
-                                <button class="btn btn-secondary" type="button" onclick="regenerateShotPrompt(${sceneIdx}, ${shotIdx})" id="reg-sp-btn-${sceneIdx}-${shotIdx}" style="padding:4px 8px;font-size:0.65rem;width:100%;margin-top:2px;">🔄 Regenerate Prompt</button>
-                                
-                                ${!savedImg ? `
-                                    <button class="btn btn-primary" type="button" onclick="generateShotImage(${sceneIdx}, ${shotIdx})" id="shot-t2i-btn-${sceneIdx}-${shotIdx}" style="padding:4px 8px;font-size:0.65rem;width:100%;margin-top:4px;">🎨 Generate Image</button>
-                                ` : ''}
-
-                                <div id="shot-t2i-actions-${sceneIdx}-${shotIdx}" style="${tempImg ? 'display:block;' : 'display:none;'}margin-top:4px;">
-                                    <div style="display:flex;gap:4px;">
-                                        <button class="btn btn-success" type="button" onclick="approveShotImage(${sceneIdx}, ${shotIdx})" style="padding:3px;font-size:0.75rem;flex:1;" title="Approve">✅ Approve</button>
-                                        <button class="btn btn-warning" type="button" onclick="rejectShotImage(${sceneIdx}, ${shotIdx})" style="padding:3px;font-size:0.75rem;flex:1;" title="Reject">❌ Regen</button>
-                                        <button class="btn btn-secondary" type="button" onclick="skipShotImage(${sceneIdx}, ${shotIdx})" style="padding:3px;font-size:0.75rem;flex:1;" title="Skip">⏭️ Skip</button>
-                                    </div>
-                                </div>
-
-                                ${savedImg ? `
-                                    <div style="margin-top:4px;display:flex;gap:4px;align-items:center;">
-                                        <div style="flex:1;padding:4px;background:var(--accent-success);color:#fff;border-radius:4px;font-size:0.65rem;text-align:center;font-weight:600;">✅ Approved</div>
-                                        <button class="btn btn-secondary" type="button" onclick="regenerateShotImage(${sceneIdx}, ${shotIdx})" style="padding:4px;font-size:0.65rem;cursor:pointer;white-space:nowrap;" title="Regenerate image">🔄 Redo</button>
-                                    </div>
-                                ` : ''}
-                            </div>`;
-                        } else {
-                            // PHASE 2 Card: Video Generation
-                            const savedVid = sh.video_clip;
-                            const tempVid = sh._temp_video_clip;
-                            const tempSub = sh._temp_video_subfolder;
-                            const savedImg = sh.storyboard_image;
-                            
-                            const videoUrl = savedVid 
-                                ? `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(savedVid)}${projectPathQuery}`
-                                : tempVid 
-                                    ? `/api/comfyui/view?filename=${encodeURIComponent(tempVid)}${tempSub ? '&subfolder=' + encodeURIComponent(tempSub) : ''}`
-                                    : null;
-                                    
-                            const imageUrl = savedImg 
-                                ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
+                        // Image URLs
+                        const savedImg = sh.storyboard_image;
+                        const tempImg = sh._temp_storyboard_image;
+                        const imageUrl = savedImg 
+                            ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
+                            : tempImg 
+                                ? `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
                                 : null;
 
-                            let previewHtml = `<span id="shot-i2v-placeholder-${sceneIdx}-${shotIdx}" style="color:var(--text-secondary);font-size:0.7rem;${(videoUrl || imageUrl) ? 'display:none;' : ''}">No Image / Video</span>`;
-                            
-                            if (videoUrl) {
-                                previewHtml += `<video id="shot-i2v-video-${sceneIdx}-${shotIdx}" src="${videoUrl}" controls autoplay loop muted style="width:100%;height:100%;object-fit:cover;"></video>`;
-                            } else if (imageUrl) {
-                                previewHtml += `<img id="shot-i2v-img-${sceneIdx}-${shotIdx}" src="${imageUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;">`;
-                            }
+                        // Video URLs
+                        const savedVid = sh.video_clip;
+                        const tempVid = sh._temp_video_clip;
+                        const tempSub = sh._temp_video_subfolder;
+                        const videoUrl = savedVid 
+                            ? `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(savedVid)}${projectPathQuery}`
+                            : tempVid 
+                                ? `/api/comfyui/view?filename=${encodeURIComponent(tempVid)}${tempSub ? '&subfolder=' + encodeURIComponent(tempSub) : ''}`
+                                : null;
 
-                            html += `
-                            <div id="shot-card-${shotKey}" style="width:280px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border-color);display:flex;flex-direction:column;padding:8px;position:relative;">
-                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                                    <span style="font-size:0.65rem;color:var(--accent-primary);font-weight:600;">${sh.shot_id || 'SHOT_?'}</span>
-                                    <span style="font-size:0.6rem;color:var(--text-secondary);">${sh.shot_type || ''}</span>
-                                    <span style="font-size:0.55rem;padding:1px 5px;border-radius:3px;background:${statusColor};color:#fff;font-weight:600;text-transform:capitalize;">${status}</span>
-                                </div>
-                                <div id="shot-i2v-preview-${sceneIdx}-${shotIdx}" style="height:150px;background:var(--bg-primary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;margin-bottom:6px;">
-                                    ${previewHtml}
-                                </div>
-                                <div style="position:relative;flex:1;">
-                                    <textarea class="form-input" id="shot-video-prompt-${shotKey}" rows="3" placeholder="Describe video motion..." style="resize:vertical;width:100%;font-size:0.75rem;padding:4px 6px;margin-bottom:4px;height:65px;" oninput="screenplayData.scenes[${sceneIdx}].shots[${shotIdx}].video_prompt=this.value;scheduleSaveState()">${sh.video_prompt || ''}</textarea>
-                                    <button type="button" onclick="openPromptExpand('${shotKey}')" style="position:absolute;right:2px;top:2px;padding:0 4px;font-size:0.65rem;cursor:pointer;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);z-index:1;" title="Edit prompt fullscreen">⤢</button>
-                                </div>
-                                <button class="btn btn-secondary" type="button" onclick="regenerateShotVideoPrompt(${sceneIdx}, ${shotIdx})" id="reg-vp-btn-${sceneIdx}-${shotIdx}" style="padding:4px 8px;font-size:0.65rem;width:100%;margin-top:2px;">🔄 Regenerate Prompt</button>
-                                
-                                ${(!savedVid && imageUrl) ? `
-                                    <button class="btn btn-primary" type="button" onclick="generateShotVideo(${sceneIdx}, ${shotIdx})" id="shot-i2v-btn-${sceneIdx}-${shotIdx}" style="padding:4px 8px;font-size:0.65rem;width:100%;margin-top:4px;">🎥 Generate Video</button>
-                                ` : ''}
-                                
-                                ${(!imageUrl) ? `
-                                    <div style="color:var(--accent-danger);font-size:0.65rem;text-align:center;margin-top:4px;padding:4px;background:rgba(217,83,79,0.1);border-radius:4px;">⚠️ Approve Image first in Phase 1</div>
-                                ` : ''}
-
-                                <div id="shot-i2v-actions-${sceneIdx}-${shotIdx}" style="${tempVid ? 'display:block;' : 'display:none;'}margin-top:4px;">
-                                    <div style="display:flex;gap:4px;">
-                                        <button class="btn btn-success" type="button" onclick="approveShotVideo(${sceneIdx}, ${shotIdx})" style="padding:3px;font-size:0.75rem;flex:1;" title="Approve">✅ Approve</button>
-                                        <button class="btn btn-warning" type="button" onclick="rejectShotVideo(${sceneIdx}, ${shotIdx})" style="padding:3px;font-size:0.75rem;flex:1;" title="Reject">❌ Regen</button>
-                                        <button class="btn btn-secondary" type="button" onclick="skipShotVideo(${sceneIdx}, ${shotIdx})" style="padding:3px;font-size:0.75rem;flex:1;" title="Skip">⏭️ Skip</button>
-                                    </div>
-                                </div>
-
-                                ${savedVid ? `
-                                    <div style="margin-top:4px;display:flex;gap:4px;align-items:center;">
-                                        <div style="flex:1;padding:4px;background:var(--accent-success);color:#fff;border-radius:4px;font-size:0.65rem;text-align:center;font-weight:600;">✅ Approved</div>
-                                        <button class="btn btn-secondary" type="button" onclick="regenerateShotVideo(${sceneIdx}, ${shotIdx})" style="padding:4px;font-size:0.65rem;cursor:pointer;white-space:nowrap;" title="Regenerate video">🔄 Redo</button>
-                                    </div>
-                                ` : ''}
-                            </div>`;
+                        // Single preview: video replaces image when generated
+                        let previewContent = '';
+                        const hasVideo = !!(savedVid || tempVid);
+                        const hasImage = !!(savedImg || tempImg);
+                        if (hasVideo) {
+                            previewContent = `<video id="shot-preview-video-${sceneIdx}-${shotIdx}" src="${videoUrl}" controls autoplay loop muted style="width:100%;height:100%;object-fit:cover;"></video>`;
+                        } else if (hasImage) {
+                            previewContent = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${imageUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage(this.src)" data-filename="${tempImg || ''}">`;
+                        } else {
+                            previewContent = `<span style="color:var(--text-secondary);font-size:0.7rem;">No Image Generated</span>`;
                         }
+
+                        // Reference thumbnail count
+                        const refCount = sceneRefs.length;
+                        const refSize = refCount > 4 ? 28 : 36;
+
+                        html += `
+                        <div id="shot-card-${shotKey}" style="background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border-color);display:flex;flex-direction:column;padding:8px;position:relative;cursor:pointer;" onclick="expandStoryboardShot(${sceneIdx}, ${shotIdx})">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                                <span style="font-size:0.65rem;color:var(--accent-primary);font-weight:600;">${sh.shot_id || 'SHOT_?'}</span>
+                                <span style="font-size:0.6rem;color:var(--text-secondary);">${sh.shot_type || ''}</span>
+                                <div style="display:flex;gap:4px;align-items:center;">
+                                    <span style="font-size:0.55rem;padding:1px 5px;border-radius:3px;background:${imgStatusColor};color:#fff;font-weight:600;" title="Image status">🖼 ${imgStatus}</span>
+                                    <span style="font-size:0.55rem;padding:1px 5px;border-radius:3px;background:${vidStatusColor};color:#fff;font-weight:600;" title="Video status">🎬 ${vidStatus}</span>
+                                </div>
+                            </div>
+                            <!-- Shared preview area: image first, video replaces when generated -->
+                            <div id="shot-preview-${sceneIdx}-${shotIdx}" style="height:150px;background:var(--bg-primary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;margin-bottom:6px;">
+                                ${previewContent}
+                            </div>
+                            <!-- Compact button row -->
+                            <div style="display:flex;gap:2px;padding:3px 0;flex-wrap:wrap;">
+                                <button class="btn btn-secondary" onclick="event.stopPropagation();expandStoryboardShot(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                                ${!savedImg && !tempImg ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotImage(${sceneIdx}, ${shotIdx})" id="shot-t2i-btn-${sceneIdx}-${shotIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate Image">🎨 Gen</button>` : ''}
+                                ${savedImg ? `<button class="btn btn-secondary" onclick="event.stopPropagation();regenerateShotImage(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Redo">🔄 Redo</button>` : ''}
+                                <button class="btn btn-secondary" onclick="event.stopPropagation();showStoryboardVariantInput(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                                <button class="btn btn-success" onclick="event.stopPropagation();approveShotImage(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Approve" ${tempImg ? '' : 'disabled'}>✅</button>
+                                ${savedImg ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotVideo(${sceneIdx}, ${shotIdx})" id="shot-i2v-btn-${sceneIdx}-${shotIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate Video">🎥</button>` : ''}
+                            </div>
+                            <!-- I2I reference image grid (80x80) -->
+                            ${sceneRefs.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--border-color);padding-top:6px;margin-top:4px;">
+                                ${sceneRefs.map(r => `
+                                    <div title="${r.label}" onclick="event.stopPropagation();openFullscreenImage('/api/projects/${encodeURIComponent(projName)}/saved-image/${r.stage}/${encodeURIComponent(r.filename)}${projectPathQuery}')" style="width:80px;height:80px;background:var(--bg-primary);border-radius:6px;border:1px solid var(--border-color);overflow:hidden;cursor:pointer;position:relative;flex-shrink:0;">
+                                        <img src="/api/projects/${encodeURIComponent(projName)}/saved-image/${r.stage}/${encodeURIComponent(r.filename)}${projectPathQuery}" alt="${r.label}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;">
+                                        <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.55);font-size:0.5rem;color:#fff;padding:1px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.label}</div>
+                                    </div>
+                                `).join('')}
+                            </div>` : ''}
+                        </div>`;
                     });
                 } else {
                     html += `<div style="color:var(--text-secondary);font-size:0.8rem;padding:20px;">No shots in this scene.</div>`;
@@ -9027,6 +9389,21 @@ Project visual language: ${projVL}`;
 
             html += '</div>';
             container.innerHTML = html;
+
+            // Update Generate All Videos button state
+            const allImagesApproved = screenplayData.scenes.every(s =>
+                !s.shots || s.shots.every(sh => sh.storyboard_status === 'approved')
+            );
+            const vidBtn = document.getElementById('sb-generate-all-videos-btn');
+            if (vidBtn) {
+                if (allImagesApproved && totalShots > 0) {
+                    vidBtn.style.opacity = '1';
+                    vidBtn.style.pointerEvents = 'auto';
+                } else {
+                    vidBtn.style.opacity = '0.4';
+                    vidBtn.style.pointerEvents = 'none';
+                }
+            }
         }
 
         function regenerateShotImage(sceneIdx, shotIdx) {
@@ -9045,39 +9422,19 @@ Project visual language: ${projVL}`;
             scheduleSaveState();
         }
 
-        function showShotT2ISpinner(sceneIdx, shotIdx) {
-            const preview = document.getElementById(`shot-t2i-preview-${sceneIdx}-${shotIdx}`);
-            const placeholder = document.getElementById(`shot-t2i-placeholder-${sceneIdx}-${shotIdx}`);
-            if (!preview) return;
-            if (placeholder) placeholder.style.display = 'none';
-            const old = preview.querySelector('.t2i-spinner');
-            if (old) old.remove();
-            const spinner = document.createElement('div');
-            spinner.className = 't2i-spinner';
-            spinner.innerHTML = '<div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">Generating...</div>';
-            preview.appendChild(spinner);
-        }
-
-        function hideShotT2ISpinner(sceneIdx, shotIdx) {
-            const preview = document.getElementById(`shot-t2i-preview-${sceneIdx}-${shotIdx}`);
-            if (!preview) return;
-            const spinner = preview.querySelector('.t2i-spinner');
-            if (spinner) spinner.remove();
-        }
-
-        function showShotI2VSpinner(sceneIdx, shotIdx) {
-            const preview = document.getElementById(`shot-i2v-preview-${sceneIdx}-${shotIdx}`);
+        function showShotSpinner(sceneIdx, shotIdx, label) {
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
             if (!preview) return;
             const old = preview.querySelector('.t2i-spinner');
             if (old) old.remove();
             const spinner = document.createElement('div');
             spinner.className = 't2i-spinner';
-            spinner.innerHTML = '<div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">Generating...</div>';
+            spinner.innerHTML = `<div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">${label || 'Generating...'}</div>`;
             preview.appendChild(spinner);
         }
 
-        function hideShotI2VSpinner(sceneIdx, shotIdx) {
-            const preview = document.getElementById(`shot-i2v-preview-${sceneIdx}-${shotIdx}`);
+        function hideShotSpinner(sceneIdx, shotIdx) {
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
             if (!preview) return;
             const spinner = preview.querySelector('.t2i-spinner');
             if (spinner) spinner.remove();
@@ -9234,7 +9591,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             btn.disabled = true;
             btn.textContent = '⏳...';
-            showShotT2ISpinner(sceneIdx, shotIdx);
+            showShotSpinner(sceneIdx, shotIdx);
             const seed = Math.floor(Math.random() * 999999999) + 1;
             const inputImages = getSavedInputImages();
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
@@ -9254,10 +9611,14 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     })
                 });
                 const data = await res.json();
-                hideShotT2ISpinner(sceneIdx, shotIdx);
+                hideShotSpinner(sceneIdx, shotIdx);
                 if (data.success) {
                     sh._temp_storyboard_image = data.filename;
                     sh.storyboard_status = 'generated';
+                    sh.storyboard_history = sh.storyboard_history || [];
+                    if (!sh.storyboard_history.includes(data.filename)) {
+                        sh.storyboard_history.push(data.filename);
+                    }
                     renderStoryboard();
                 } else {
                     notify('I2I Failed', data.error || 'Generation failed');
@@ -9268,7 +9629,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 notify('Error', e.message);
                 btn.disabled = false;
                 btn.textContent = '🎨 Generate Image';
-                hideShotT2ISpinner(sceneIdx, shotIdx);
+                hideShotSpinner(sceneIdx, shotIdx);
             }
         }
 
@@ -9299,6 +9660,11 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     sh.storyboard_image = savedFilename;
                     sh.storyboard_status = 'approved';
                     sh._temp_storyboard_image = null;
+                    // Track in history if not already
+                    sh.storyboard_history = sh.storyboard_history || [];
+                    if (!sh.storyboard_history.includes(tempFilename)) {
+                        sh.storyboard_history.push(tempFilename);
+                    }
                     renderStoryboard();
                     scheduleSaveState();
                 } else {
@@ -9336,7 +9702,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             btn.disabled = true;
             btn.textContent = '⏳...';
-            showShotI2VSpinner(sceneIdx, shotIdx);
+            showShotSpinner(sceneIdx, shotIdx);
             const seed = Math.floor(Math.random() * 999999999) + 1;
             const inputImagePath = `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`;
 
@@ -9352,7 +9718,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     })
                 });
                 const data = await res.json();
-                hideShotI2VSpinner(sceneIdx, shotIdx);
+                hideShotSpinner(sceneIdx, shotIdx);
                 if (data.success) {
                     sh._temp_video_clip = data.filename;
                     sh._temp_video_subfolder = data.subfolder || '';
@@ -9367,7 +9733,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 notify('Error', e.message);
                 btn.disabled = false;
                 btn.textContent = '🎥 Generate Video';
-                hideShotI2VSpinner(sceneIdx, shotIdx);
+                hideShotSpinner(sceneIdx, shotIdx);
             }
         }
 
@@ -10102,6 +10468,17 @@ Respond with raw JSON only, no markdown, no backticks.`;
 
         let _promptExpandIndex = -1;
         let _promptExpandType = '';
+        function openModalPromptExpand(elementId) {
+            const ta = document.getElementById(elementId);
+            if (!ta) return;
+            _promptExpandIndex = elementId;
+            _promptExpandType = 'modal';
+            document.getElementById('prompt-expand-textarea').value = ta.value;
+            document.getElementById('prompt-expand-title').textContent = 'Edit Prompt';
+            document.getElementById('prompt-expand-overlay').classList.add('active');
+            setTimeout(() => document.getElementById('prompt-expand-textarea').focus(), 100);
+        }
+
         function openPromptExpand(index) {
             _promptExpandIndex = index;
             const ta = document.getElementById('shot-img-prompt-' + index) || 
@@ -10134,12 +10511,17 @@ Respond with raw JSON only, no markdown, no backticks.`;
             const idx = _promptExpandIndex;
             if (idx === -1) return;
             const val = document.getElementById('prompt-expand-textarea').value;
-            const taId = _promptExpandType === 'shot-image' ? 'shot-img-prompt-' :
-                         _promptExpandType === 'shot-video' ? 'shot-video-prompt-' :
-                         _promptExpandType === 'scene' ? 'scene-img-' : 
-                         _promptExpandType === 'video' ? 'vidprompt-' : 
-                         _promptExpandType === 'char' ? 'char-img-' : 'loc-img-';
-            const ta = document.getElementById(taId + idx);
+            let ta;
+            if (_promptExpandType === 'modal') {
+                ta = document.getElementById(idx);
+            } else {
+                const taId = _promptExpandType === 'shot-image' ? 'shot-img-prompt-' :
+                             _promptExpandType === 'shot-video' ? 'shot-video-prompt-' :
+                             _promptExpandType === 'scene' ? 'scene-img-' : 
+                             _promptExpandType === 'video' ? 'vidprompt-' : 
+                             _promptExpandType === 'char' ? 'char-img-' : 'loc-img-';
+                ta = document.getElementById(taId + idx);
+            }
             if (ta) { ta.value = val; ta.dispatchEvent(new Event('input', { bubbles: true })); }
         }
         function closePromptExpand() {
@@ -10580,83 +10962,196 @@ Raw JSON only, no markdown.`;
             const pb = document.getElementById('storyboard-progress');
             if (!pb) return;
             pb.style.display = 'block';
-            document.getElementById('sb-progress-bar').style.width = '10%';
-            document.getElementById('sb-progress-pct').textContent = '10%';
-            document.getElementById('sb-progress-title').textContent = window._currentStoryboardPhase === 1 ? 'Generating visual prompts...' : 'Generating video prompts...';
 
             try {
-                if (window._currentStoryboardPhase === 1) {
-                    const res = await fetch('/api/orchestrator/storyboard', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({})
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        document.getElementById('sb-progress-bar').style.width = '100%';
-                        document.getElementById('sb-progress-pct').textContent = '100%';
-                        document.getElementById('sb-progress-title').textContent = '✅ Image prompts generated!';
-                        setTimeout(() => { pb.style.display = 'none'; }, 1000);
-                        await loadProjectState();
-                        renderStoryboard();
-                    } else {
-                        notify('Error', data.error || 'Failed to generate prompts');
-                        pb.style.display = 'none';
-                    }
-                } else {
-                    const res = await fetch('/api/orchestrator/video-prompts', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({})
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        document.getElementById('sb-progress-bar').style.width = '100%';
-                        document.getElementById('sb-progress-pct').textContent = '100%';
-                        document.getElementById('sb-progress-title').textContent = '✅ Video prompts generated!';
-                        setTimeout(() => { pb.style.display = 'none'; }, 1000);
-                        await loadProjectState();
-                        renderStoryboard();
-                    } else {
-                        notify('Error', data.error || 'Failed to generate video prompts');
-                        pb.style.display = 'none';
-                    }
+                // Step 1: Generate Image Prompts
+                document.getElementById('sb-progress-bar').style.width = '10%';
+                document.getElementById('sb-progress-pct').textContent = '10%';
+                document.getElementById('sb-progress-title').textContent = 'Generating image prompts...';
+                let imgRes = await fetch('/api/orchestrator/storyboard', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+                });
+                let imgData = await imgRes.json();
+                if (!imgData.success) {
+                    notify('Error', imgData.error || 'Failed to generate image prompts');
+                    pb.style.display = 'none'; return;
                 }
+
+                // Step 2: Generate Video Prompts
+                document.getElementById('sb-progress-bar').style.width = '50%';
+                document.getElementById('sb-progress-pct').textContent = '50%';
+                document.getElementById('sb-progress-title').textContent = 'Generating video prompts...';
+                let vidRes = await fetch('/api/orchestrator/video-prompts', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+                });
+                let vidData = await vidRes.json();
+                if (!vidData.success) {
+                    notify('Warning', 'Image prompts generated but video prompts failed: ' + (vidData.error || ''), '⚠️');
+                }
+
+                document.getElementById('sb-progress-bar').style.width = '100%';
+                document.getElementById('sb-progress-pct').textContent = '100%';
+                document.getElementById('sb-progress-title').textContent = '✅ All prompts generated!';
+                setTimeout(() => { pb.style.display = 'none'; }, 1000);
+                await loadProjectState();
+                renderStoryboard();
             } catch(e) {
                 notify('Error', e.message);
                 pb.style.display = 'none';
             }
         }
 
-        async function generateAllStoryboardPhase() {
+        async function generateAllStoryboardImages() {
             if (!screenplayData || !screenplayData.scenes) {
-                notify('No Screenplay', 'Please generate screenplay first.');
-                return;
+                notify('No Screenplay', 'Please generate screenplay first.'); return;
             }
-            if (window._currentStoryboardPhase === 1) {
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh.storyboard_image) continue;
+                    const btn = document.getElementById(`shot-card-${sIdx}_${shIdx}`);
+                    if (!btn) continue;
+                    await generateShotImage(sIdx, shIdx);
+                }
+            }
+        }
+
+        async function generateAllStoryboardVideos() {
+            if (!screenplayData || !screenplayData.scenes) {
+                notify('No Screenplay', 'Please generate screenplay first.'); return;
+            }
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh.video_clip) continue;
+                    if (!sh.storyboard_image) continue;
+                    await generateShotVideo(sIdx, shIdx);
+                }
+            }
+        }
+
+        // ── Batch Approve / Clear ───────────────────────────────────
+        async function approveAllImages() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            let count = 0;
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh._temp_storyboard_image && !sh.storyboard_image) {
+                        await approveShotImage(sIdx, shIdx);
+                        count++;
+                    }
+                }
+            }
+            notify('Batch Approve', `Approved ${count} image(s)`, '✅');
+            renderStoryboard();
+        }
+
+        async function approveAllVideos() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            let count = 0;
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh._temp_video_clip && !sh.video_clip) {
+                        await approveShotVideo(sIdx, shIdx);
+                        count++;
+                    }
+                }
+            }
+            notify('Batch Approve', `Approved ${count} video(s)`, '✅');
+            renderStoryboard();
+        }
+
+        async function clearAllTempImages() {
+            const confirmed = await showConfirm('Clear Temp Images', 'Move ALL non-approved generated images to deleted_history? You can retrieve them manually from the project folder.');
+            if (!confirmed) return;
+            const filenames = [];
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh._temp_storyboard_image && !sh.storyboard_image) {
+                        filenames.push(sh._temp_storyboard_image);
+                    }
+                }
+            }
+            if (!filenames.length) { notify('Nothing to clear', 'No temp images found', 'ℹ️'); return; }
+            try {
+                await fetch('/api/projects/delete-history-files', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_path: currentProject?.path || '',
+                        stage: '',
+                        filenames: filenames
+                    })
+                });
                 for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
                     const s = screenplayData.scenes[sIdx];
                     if (!s.shots) continue;
                     for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
                         const sh = s.shots[shIdx];
-                        if (sh.storyboard_image) continue;
-                        const btn = document.getElementById(`shot-t2i-btn-${sIdx}-${shIdx}`);
-                        if (!btn || btn.disabled || btn.style.display === 'none') continue;
-                        await generateShotImage(sIdx, shIdx);
+                        if (sh._temp_storyboard_image && !sh.storyboard_image) {
+                            sh._temp_storyboard_image = null;
+                            sh.storyboard_status = 'enriched';
+                        }
                     }
                 }
-            } else {
+                notify('Cleared', `Moved ${filenames.length} temp image(s) to deleted_history`, '🗑');
+                renderStoryboard();
+                scheduleSaveState();
+            } catch(e) { notify('Error', e.message, '❌'); }
+        }
+
+        async function clearAllTempVideos() {
+            const confirmed = await showConfirm('Clear Temp Videos', 'Move ALL non-approved generated videos to deleted_history? You can retrieve them manually from the project folder.');
+            if (!confirmed) return;
+            const filenames = [];
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh._temp_video_clip && !sh.video_clip) {
+                        filenames.push(sh._temp_video_clip);
+                    }
+                }
+            }
+            if (!filenames.length) { notify('Nothing to clear', 'No temp videos found', 'ℹ️'); return; }
+            try {
+                await fetch('/api/projects/delete-history-files', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_path: currentProject?.path || '',
+                        stage: '',
+                        filenames: filenames
+                    })
+                });
                 for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
                     const s = screenplayData.scenes[sIdx];
                     if (!s.shots) continue;
                     for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
                         const sh = s.shots[shIdx];
-                        if (sh.video_clip) continue;
-                        if (!sh.storyboard_image) continue;
-                        const btn = document.getElementById(`shot-i2v-btn-${sIdx}-${shIdx}`);
-                        if (!btn || btn.disabled || btn.style.display === 'none') continue;
-                        await generateShotVideo(sIdx, shIdx);
+                        if (sh._temp_video_clip && !sh.video_clip) {
+                            sh._temp_video_clip = null;
+                            sh._temp_video_subfolder = null;
+                            sh.video_status = 'enriched';
+                        }
                     }
                 }
-            }
+                notify('Cleared', `Moved ${filenames.length} temp video(s) to deleted_history`, '🗑');
+                renderStoryboard();
+                scheduleSaveState();
+            } catch(e) { notify('Error', e.message, '❌'); }
         }
 
         async function regenerateScenePrompt(index) {
