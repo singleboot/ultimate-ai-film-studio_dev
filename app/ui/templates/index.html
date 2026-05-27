@@ -9438,6 +9438,9 @@ Project visual language: ${projVL}`;
                             ${escapeHtml(s.synopsis || 'No synopsis.')}
                         </div>
                         ${s.shots && s.shots.some(sh => !sh.storyboard_image && !sh._temp_storyboard_image) ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;width:100%;">🎨 Generate All Shots</button>` : ''}
+                        ${s.shots && s.shots.some(sh => sh._temp_storyboard_image) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" id="scene-app-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;width:100%;">✅ Approve All</button>` : ''}
+                        ${s.shots ? `<button class="btn btn-secondary" onclick="event.stopPropagation();regenerateScenePrompts(${sceneIdx})" id="scene-regen-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;width:100%;">🔄 Regen Prompts</button>` : ''}
+                        ${s.shots && s.shots.length > 0 && s.shots.every(sh => sh.storyboard_status === 'approved') ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneVideos(${sceneIdx})" id="scene-vid-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;width:100%;">🎥 Generate All Videos</button>` : ''}
                     </div>`;
 
                 // === RIGHT: Shot Cards Grid (CSS Grid matching asset studio) ===
@@ -9839,6 +9842,168 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             btn.disabled = false;
             btn.textContent = '🎨 Generate All Shots';
+            renderStoryboard();
+        }
+
+        async function approveSceneImages(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-app-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            const pending = s.shots.filter(sh => sh._temp_storyboard_image);
+            if (!pending.length) { btn.style.display = 'none'; return; }
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${pending.length}`;
+            let completed = 0;
+
+            for (const sh of pending) {
+                const tempFilename = sh._temp_storyboard_image;
+                const shotIdx = s.shots.indexOf(sh);
+                const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+                try {
+                    const res = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: 'scenes',
+                            filename: tempFilename,
+                            card_name: cardName,
+                            previous_file: sh.storyboard_image ? sh.storyboard_image : null
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        const savedFilename = data.path.split(/[\\/]/).pop();
+                        const relativePath = 'scenes/' + savedFilename;
+                        addAsset('scene', cardName, relativePath);
+                        sh.storyboard_image = savedFilename;
+                        sh.storyboard_status = 'approved';
+                        sh._temp_storyboard_image = null;
+                        sh.storyboard_history = sh.storyboard_history || [];
+                        if (!sh.storyboard_history.includes(tempFilename)) {
+                            sh.storyboard_history.push(tempFilename);
+                        }
+                    } else {
+                        notify('Save Failed', `Shot ${sh.shot_id}: ${data.error}`);
+                    }
+                } catch(e) {
+                    notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
+                }
+                completed++;
+                btn.textContent = `⏳ ${completed}/${pending.length}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '✅ Approve All';
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        async function regenerateScenePrompts(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-regen-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${s.shots.length}`;
+            let completed = 0;
+
+            const context = buildModuleContext();
+            const charsText = charData.filter(c => c.name).map(c => `${c.name}: ${c.description}`).join('\n');
+            const locsText = locationData.filter(l => l.name && l.details).map(l => `${l.name}: ${l.details}`).join('\n');
+
+            for (const sh of s.shots) {
+                const prompt = `Convert this shot description into a highly detailed cinematic text-to-image prompt for Flux.
+
+Shot ID: ${sh.shot_id || 'Shot'}
+Shot Type: ${sh.shot_type || ''}
+Scene Synopsis: ${s.synopsis || ''}
+Action/Subject: ${Array.isArray(sh.action) ? sh.action.join(', ') : (sh.action || '')}
+Camera Movement/Framing: ${Array.isArray(sh.camera_language) ? sh.camera_language.join(', ') : (sh.camera_language || '')}
+Lighting: ${Array.isArray(sh.lighting_language) ? sh.lighting_language.join(', ') : (sh.lighting_language || '')}
+Emotion/Mood: ${Array.isArray(sh.emotion) ? sh.emotion.join(', ') : (sh.emotion || '')}
+Characters Present: ${(sh.characters_present || []).join(', ')}
+
+Style Context: ${context}
+${charsText ? 'Character Bible:\n' + charsText : ''}
+${locsText ? 'Location Bible:\n' + locsText : ''}
+
+Output format:
+Image Prompt: [cinematic details, framing, environment, lighting, character details, textures. ${selectedVisualStyle ? 'Style: ' + selectedVisualStyle : ''} ${selectedFilmAesthetic ? 'Aesthetic: ' + selectedFilmAesthetic : ''}]`;
+
+                try {
+                    const data = await generateFromLLM(prompt);
+                    if (data.success) {
+                        const m = data.response.match(/Image Prompt:\s*([\s\S]+?)$/i);
+                        if (m) {
+                            sh.storyboard_prompt = m[1].trim();
+                        } else {
+                            sh.storyboard_prompt = data.response.trim();
+                        }
+                    } else {
+                        notify('LLM Error', `Shot ${sh.shot_id}: ${data.error || 'Failed'}`);
+                    }
+                } catch(e) {
+                    notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
+                }
+                completed++;
+                btn.textContent = `⏳ ${completed}/${s.shots.length}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🔄 Regen Prompts';
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        async function generateSceneVideos(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-vid-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            const pending = s.shots.filter(sh => sh.storyboard_status === 'approved' && sh.storyboard_image && sh.video_prompt && sh.video_prompt.trim());
+            if (!pending.length) { btn.style.display = 'none'; return; }
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${pending.length}`;
+            let completed = 0;
+
+            for (const sh of pending) {
+                const inputImagePath = `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`;
+                const seed = Math.floor(Math.random() * 999999999) + 1;
+                try {
+                    const res = await fetch('/api/comfyui/generate/i2v', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            prompt: sh.video_prompt,
+                            seed: seed,
+                            project_path: currentProject?.path || '',
+                            input_image: inputImagePath,
+                            scene_index: sceneIdx
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        sh._temp_video_clip = data.filename;
+                        sh._temp_video_subfolder = data.subfolder || '';
+                        sh.video_status = 'generated';
+                    } else {
+                        notify('I2V Failed', `Shot ${sh.shot_id}: ${data.error || 'Generation failed'}`);
+                    }
+                } catch(e) {
+                    notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
+                }
+                completed++;
+                btn.textContent = `⏳ ${completed}/${pending.length}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🎥 Generate All Videos';
             renderStoryboard();
         }
 
