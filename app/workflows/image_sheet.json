@@ -1,0 +1,794 @@
+{
+  "76": {
+    "inputs": {
+      "image": "adventure-arid-bushes-998653.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Image 1"
+    }
+  },
+  "81": {
+    "inputs": {
+      "image": "firefox_YQa2VTqxyc.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Image 2"
+    }
+  },
+  "94": {
+    "inputs": {
+      "filename_prefix": "Flux2-Klein",
+      "images": [
+        "92:65",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "99": {
+    "inputs": {
+      "image": "firefox_l9dIGAO5ro.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Image 3"
+    }
+  },
+  "100": {
+    "inputs": {
+      "image": "firefox_XwbZS7K4z7.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Image 4"
+    }
+  },
+  "101": {
+    "inputs": {
+      "image": "firefox_9ZiFVXNvdw.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "image 5"
+    }
+  },
+  "102": {
+    "inputs": {
+      "image": "firefox_KYTTwaYIzd.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Image 6"
+    }
+  },
+  "106": {
+    "inputs": {
+      "image": "chrome_B3TveJTiuX.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Image 7"
+    }
+  },
+  "109": {
+    "inputs": {
+      "image": "firefox_BqCsIm8MGz.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Image 8"
+    }
+  },
+  "92:61": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "92:62": {
+    "inputs": {
+      "steps": 8,
+      "width": [
+        "92:110",
+        0
+      ],
+      "height": [
+        "92:110",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler",
+    "_meta": {
+      "title": "Flux2Scheduler"
+    }
+  },
+  "92:63": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "92:103",
+        0
+      ],
+      "positive": [
+        "92:114:136",
+        0
+      ],
+      "negative": [
+        "92:114:134",
+        0
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFGGuider"
+    }
+  },
+  "92:64": {
+    "inputs": {
+      "noise": [
+        "92:73",
+        0
+      ],
+      "guider": [
+        "92:63",
+        0
+      ],
+      "sampler": [
+        "92:61",
+        0
+      ],
+      "sigmas": [
+        "92:62",
+        0
+      ],
+      "latent_image": [
+        "92:66",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "92:65": {
+    "inputs": {
+      "samples": [
+        "92:64",
+        0
+      ],
+      "vae": [
+        "92:72",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "92:73": {
+    "inputs": {
+      "noise_seed": 245293339796575
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "92:70": {
+    "inputs": {
+      "unet_name": "IMAGE\\FLUX 2\\flux-2-klein-9b-fp8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "92:71": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "92:74": {
+    "inputs": {
+      "text": "the environment is defined in image 1,\n\nIdentify the same character that appears consistently across image 2 and image 3 and image 4 and image 5 and image 6 and image 7 and image 8.\nTreat 2 and image 3 and image 4 and image 5 and image 6 and image 7 and image 7 as different views of the same character, not separate subjects.\n\nInfer the character’s overall form, proportions, surface details, and material qualities based on what is consistent across those views.\n\nthe character is called Bob\n\n\nplace a photorealistic version of Bob in the environment, Bob is standing alone , Bob is a centaur, Bob has glowing circuits\n\nMake lighting on Bob consistent with the environment and make Bob blend into the environment perfectly,  ",
+      "clip": [
+        "92:103",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "92:72": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "92:80": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "76",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "ImageScaleToTotalPixels"
+    }
+  },
+  "92:85": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "100",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "ImageScaleToTotalPixels"
+    }
+  },
+  "92:79:115": {
+    "inputs": {
+      "conditioning": [
+        "92:86",
+        0
+      ],
+      "latent": [
+        "92:79:78",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:79:78": {
+    "inputs": {
+      "pixels": [
+        "92:80",
+        0
+      ],
+      "vae": [
+        "92:72",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "92:79:77": {
+    "inputs": {
+      "conditioning": [
+        "92:74",
+        0
+      ],
+      "latent": [
+        "92:79:78",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:84:116": {
+    "inputs": {
+      "conditioning": [
+        "92:90:122",
+        0
+      ],
+      "latent": [
+        "92:84:117",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:84:117": {
+    "inputs": {
+      "pixels": [
+        "92:85",
+        0
+      ],
+      "vae": [
+        "92:72",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "92:84:118": {
+    "inputs": {
+      "conditioning": [
+        "92:90:124",
+        0
+      ],
+      "latent": [
+        "92:84:117",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:86": {
+    "inputs": {
+      "conditioning": [
+        "92:74",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "92:66": {
+    "inputs": {
+      "width": [
+        "92:110",
+        0
+      ],
+      "height": [
+        "92:110",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "92:110": {
+    "inputs": {
+      "image": [
+        "92:80",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "92:87": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "81",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "ImageScaleToTotalPixels"
+    }
+  },
+  "92:88:119": {
+    "inputs": {
+      "conditioning": [
+        "92:79:115",
+        0
+      ],
+      "latent": [
+        "92:88:120",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:88:120": {
+    "inputs": {
+      "pixels": [
+        "92:87",
+        0
+      ],
+      "vae": [
+        "92:72",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "92:88:121": {
+    "inputs": {
+      "conditioning": [
+        "92:79:77",
+        0
+      ],
+      "latent": [
+        "92:88:120",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:89": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "99",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "ImageScaleToTotalPixels"
+    }
+  },
+  "92:90:122": {
+    "inputs": {
+      "conditioning": [
+        "92:88:119",
+        0
+      ],
+      "latent": [
+        "92:90:123",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:90:123": {
+    "inputs": {
+      "pixels": [
+        "92:89",
+        0
+      ],
+      "vae": [
+        "92:72",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "92:90:124": {
+    "inputs": {
+      "conditioning": [
+        "92:88:121",
+        0
+      ],
+      "latent": [
+        "92:90:123",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:91": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "101",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "ImageScaleToTotalPixels"
+    }
+  },
+  "92:111:125": {
+    "inputs": {
+      "conditioning": [
+        "92:84:116",
+        0
+      ],
+      "latent": [
+        "92:111:126",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:111:126": {
+    "inputs": {
+      "pixels": [
+        "92:91",
+        0
+      ],
+      "vae": [
+        "92:72",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "92:111:127": {
+    "inputs": {
+      "conditioning": [
+        "92:84:118",
+        0
+      ],
+      "latent": [
+        "92:111:126",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:93": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "102",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "ImageScaleToTotalPixels"
+    }
+  },
+  "92:112:128": {
+    "inputs": {
+      "conditioning": [
+        "92:111:125",
+        0
+      ],
+      "latent": [
+        "92:112:129",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:112:129": {
+    "inputs": {
+      "pixels": [
+        "92:93",
+        0
+      ],
+      "vae": [
+        "92:72",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "92:112:130": {
+    "inputs": {
+      "conditioning": [
+        "92:111:127",
+        0
+      ],
+      "latent": [
+        "92:112:129",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:95": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "106",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "ImageScaleToTotalPixels"
+    }
+  },
+  "92:96:131": {
+    "inputs": {
+      "conditioning": [
+        "92:112:128",
+        0
+      ],
+      "latent": [
+        "92:96:132",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:96:132": {
+    "inputs": {
+      "pixels": [
+        "92:95",
+        0
+      ],
+      "vae": [
+        "92:72",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "92:96:133": {
+    "inputs": {
+      "conditioning": [
+        "92:112:130",
+        0
+      ],
+      "latent": [
+        "92:96:132",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:113": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "109",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "ImageScaleToTotalPixels"
+    }
+  },
+  "92:114:134": {
+    "inputs": {
+      "conditioning": [
+        "92:96:131",
+        0
+      ],
+      "latent": [
+        "92:114:135",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:114:135": {
+    "inputs": {
+      "pixels": [
+        "92:113",
+        0
+      ],
+      "vae": [
+        "92:72",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "92:114:136": {
+    "inputs": {
+      "conditioning": [
+        "92:96:133",
+        0
+      ],
+      "latent": [
+        "92:114:135",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "92:103": {
+    "inputs": {
+      "lora_name": "Flux\\klein_slider_detail.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1,
+      "model": [
+        "92:70",
+        0
+      ],
+      "clip": [
+        "92:71",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA (Model and CLIP)"
+    }
+  }
+}

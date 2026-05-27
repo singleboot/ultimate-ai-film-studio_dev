@@ -4,8 +4,9 @@ import shutil
 import platform
 import logging
 from pathlib import Path
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -32,17 +33,8 @@ try:
 except ImportError:
     HAS_LLM = False
 
-app = FastAPI(title="Ultimate AI Film Studio")
-
-# Cleanup subprocesses on shutdown
-@app.on_event("shutdown")
-async def shutdown_event():
-    if llm_engine:
-        llm_engine.cleanup_subprocesses()
-
-# Initialize default settings and auto-start local LLM on startup
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app):
     try:
         settings = load_settings()
         changed = False
@@ -64,10 +56,32 @@ async def startup_event():
             if "auto_start" not in llm_settings:
                 llm_settings["auto_start"] = True
                 changed = True
-        
+
+        if "comfyui" not in settings:
+            settings["comfyui"] = {
+                "auto_start": True,
+                "host": "http://localhost:8188",
+                "port": 8188,
+                "use_sage_attention": True,
+                "path": "",
+                "models_path": ""
+            }
+            changed = True
+        else:
+            cui = settings["comfyui"]
+            if "auto_start" not in cui:
+                cui["auto_start"] = True
+                changed = True
+            if "use_sage_attention" not in cui:
+                cui["use_sage_attention"] = True
+                changed = True
+            if "port" not in cui:
+                cui["port"] = 8188
+                changed = True
+
         if changed:
             save_settings(settings)
-            
+
         llm_settings = settings.get("llm", {})
         if llm_settings.get("auto_start", True) and llm_engine:
             provider = llm_settings.get("provider")
@@ -83,8 +97,32 @@ async def startup_event():
                     logger.info(f"Auto-launch local LLM status: {res}")
                 else:
                     logger.warning(f"No installed models found for {provider}. Please download or copy one from settings UI.")
+
+        comfyui_settings = settings.get("comfyui", {})
+        if comfyui_settings.get("auto_start", True) and comfyui_client:
+            try:
+                status = comfyui_client.get_comfyui_status()
+                if not status.get("running"):
+                    logger.info("Auto-starting ComfyUI...")
+                    use_sa = comfyui_settings.get("use_sage_attention", True)
+                    res = comfyui_client.launch_comfyui(
+                        path=comfyui_settings.get("path") or None,
+                        host=comfyui_settings.get("host", "0.0.0.0"),
+                        port=comfyui_settings.get("port", 8188),
+                        use_sage_attention=use_sa
+                    )
+                    logger.info(f"ComfyUI auto-launch status: {res}")
+                else:
+                    logger.info("ComfyUI already running — skipping auto-start")
+            except Exception as e:
+                logger.error(f"Error during ComfyUI auto-start: {e}", exc_info=True)
     except Exception as e:
-        logger.error(f"Error during auto-start of local LLM: {e}", exc_info=True)
+        logger.error(f"Error during startup: {e}", exc_info=True)
+    yield
+    if llm_engine:
+        llm_engine.cleanup_subprocesses()
+
+app = FastAPI(title="Ultimate AI Film Studio", lifespan=lifespan)
 
 # Global exception handler - always return JSON
 @app.exception_handler(Exception)
@@ -129,16 +167,16 @@ for _name, _dir_var in [("settings.json", SETTINGS_FILE), ("genres", GENRES_DIR)
         try:
             _dir_var.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(_old), str(_dir_var))
-            print(f"Migrated {_name} to {_dir_var}")
+            logger.info("Migrated %s to %s", _name, _dir_var)
         except Exception as e:
-            print(f"Could not migrate {_name}: {e}")
+            logger.warning("Could not migrate %s: %s", _name, e)
             # Copy instead of move if cross-drive move failed
             if _old.is_file() and not _dir_var.exists():
                 shutil.copy2(str(_old), str(_dir_var))
-                print(f"Copied {_name} to {_dir_var}")
+                logger.info("Copied %s to %s", _name, _dir_var)
             elif _old.is_dir() and not _dir_var.exists():
                 shutil.copytree(str(_old), str(_dir_var))
-                print(f"Copied directory {_name} to {_dir_var}")
+                logger.info("Copied directory %s to %s", _name, _dir_var)
 
 GENRES_DIR.mkdir(exist_ok=True)
 VISUAL_STYLES_DIR.mkdir(exist_ok=True)
@@ -187,8 +225,12 @@ async def root():
             with open(html_file, 'r', encoding='utf-8') as f:
                 return HTMLResponse(content=f.read())
     except Exception as e:
-        print(f"Error serving HTML: {e}")
+        logger.error("Error serving HTML: %s", e)
     return HTMLResponse(content=get_default_html())
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
 
 @app.get("/api/templates")
 async def get_templates():
@@ -229,6 +271,8 @@ async def test_provider(provider_id: str):
 @app.post("/api/generate")
 def generate(request: GenerateRequest):
     """Generate content using LLM."""
+    logger.info("POST /api/generate — provider=%s, model=%s, stage=%s, template=%s",
+                 request.provider, request.model, request.stage_name, request.template_name)
     system_prompt = None
     if request.template_name and request.stage_name and request.variables:
         try:
@@ -356,6 +400,7 @@ async def download_comfyui_model(data: dict):
     model_type = data.get("model_type", "checkpoints")
     if not repo or not filename:
         return {"success": False, "error": "repo and filename required"}
+    logger.info("POST /api/comfyui/download-model — repo=%s, file=%s, type=%s", repo, filename, model_type)
     return comfyui_client.download_model(repo, filename, model_type)
 
 @app.get("/api/comfyui/installed-models")
@@ -401,6 +446,7 @@ async def get_orchestrator_progress():
 @app.post("/api/orchestrator/ideas")
 def generate_ideas(data: dict):
     """Stage 1: Generate 5 cinematic story ideas."""
+    logger.info("POST /api/orchestrator/ideas — genres=%s", data.get("genres"))
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.generate_ideas(data)
@@ -409,6 +455,7 @@ def generate_ideas(data: dict):
 @app.post("/api/orchestrator/screenplay")
 def generate_screenplay(data: dict):
     """Stage 2: Generate master screenplay from selected idea."""
+    logger.info("POST /api/orchestrator/screenplay — idea_index=%s", data.get("idea_index"))
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.generate_screenplay(data)
@@ -417,6 +464,7 @@ def generate_screenplay(data: dict):
 @app.post("/api/orchestrator/regenerate-idea")
 def regenerate_idea(data: dict):
     """Regenerate a single idea."""
+    logger.info("POST /api/orchestrator/regenerate-idea")
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.regenerate_single_idea(data)
@@ -425,6 +473,7 @@ def regenerate_idea(data: dict):
 @app.post("/api/orchestrator/idea-variants")
 def generate_idea_variants(data: dict):
     """Generate 3 variants of an idea based on user change request."""
+    logger.info("POST /api/orchestrator/idea-variants — change=%s", data.get("user_change", "")[:60])
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.generate_idea_variants(data)
@@ -433,6 +482,7 @@ def generate_idea_variants(data: dict):
 @app.post("/api/orchestrator/locations")
 def generate_locations(data: dict = None):
     """Stage 3: Generate reusable location assets."""
+    logger.info("POST /api/orchestrator/locations")
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.generate_locations(data or {})
@@ -441,6 +491,7 @@ def generate_locations(data: dict = None):
 @app.post("/api/orchestrator/characters")
 def generate_characters(data: dict = None):
     """Stage 4: Generate reusable character assets."""
+    logger.info("POST /api/orchestrator/characters")
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.generate_characters(data or {})
@@ -449,17 +500,61 @@ def generate_characters(data: dict = None):
 @app.post("/api/orchestrator/storyboard")
 def generate_storyboard(data: dict = None):
     """Stage 5: Generate storyboard with shots."""
+    logger.info("POST /api/orchestrator/storyboard")
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.generate_storyboard(data or {})
+    
+    if result.get("success"):
+        try:
+            name = project_manager.current_project
+            if name:
+                state = project_manager.load_project_state(name) or {}
+                # Update screenplayData scenes/shots from orchestrator memory
+                pg = orchestrator.memory.project_graph
+                scene_graph = pg.get("scene_graph", [])
+                if scene_graph:
+                    scr = state.get("screenplayData", {}) or {}
+                    scr["scenes"] = scene_graph
+                    state["screenplayData"] = scr
+                
+                # Update orchestrator memory in state
+                state["_orchestrator_memory"] = orchestrator.to_dict()
+                project_manager.save_project_state(name, state)
+                logger.info("Successfully auto-saved project state after storyboard generation")
+        except Exception as e:
+            logger.error("Failed to auto-save project state after storyboard generation: %s", e)
+            
     return result
 
 @app.post("/api/orchestrator/video-prompts")
 def generate_video_prompts(data: dict = None):
     """Stage 6: Generate LTX 2.3 video prompts."""
+    logger.info("POST /api/orchestrator/video-prompts")
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.generate_video_prompts(data or {})
+    
+    if result.get("success"):
+        try:
+            name = project_manager.current_project
+            if name:
+                state = project_manager.load_project_state(name) or {}
+                # Update screenplayData scenes/shots from orchestrator memory
+                pg = orchestrator.memory.project_graph
+                scene_graph = pg.get("scene_graph", [])
+                if scene_graph:
+                    scr = state.get("screenplayData", {}) or {}
+                    scr["scenes"] = scene_graph
+                    state["screenplayData"] = scr
+                
+                # Update orchestrator memory in state
+                state["_orchestrator_memory"] = orchestrator.to_dict()
+                project_manager.save_project_state(name, state)
+                logger.info("Successfully auto-saved project state after video prompts generation")
+        except Exception as e:
+            logger.error("Failed to auto-save project state after video prompts generation: %s", e)
+            
     return result
 
 @app.get("/api/orchestrator/memory")
@@ -519,21 +614,31 @@ async def get_locks():
     return orchestrator.get_locks()
 
 @app.post("/api/orchestrator/approve-characters")
-async def approve_characters(data: dict = None):
+async def approve_characters(request: Request):
     """Approve characters, enabling storyboard generation. Auto-locks image_prompt."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
-    result = orchestrator.approve_characters(data or {})
+    data = {}
+    try:
+        data = await request.json()
+    except Exception:
+        pass
+    result = orchestrator.approve_characters(data)
     if result.get("success"):
         _save_orchestrator_state()
     return result
 
 @app.post("/api/orchestrator/approve-locations")
-async def approve_locations(data: dict = None):
+async def approve_locations(request: Request):
     """Approve locations, enabling storyboard generation. Auto-locks image_prompt."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
-    result = orchestrator.approve_locations(data or {})
+    data = {}
+    try:
+        data = await request.json()
+    except Exception:
+        pass
+    result = orchestrator.approve_locations(data)
     if result.get("success"):
         _save_orchestrator_state()
     return result
@@ -577,10 +682,35 @@ def save_character_sheet(data: dict):
     entry = sheets.get(character_id, {"character_id": character_id, "generation_history": []})
     if sheet_image:
         entry["sheet_image"] = sheet_image
-        entry["generation_history"] = entry.get("generation_history", []) + [sheet_image]
+        history = entry.setdefault("generation_history", [])
+        if sheet_image not in history:
+            history.append(sheet_image)
     if approved:
         entry["approved"] = True
+        current_img = entry.get("sheet_image", "")
+        if current_img:
+            p_path = project_manager.get_current_project_path()
+            if p_path:
+                project_path = str(p_path)
+                src_rel = current_img.split("?")[0]
+                if not src_rel.startswith("character_sheets/"):
+                    src_rel = f"character_sheets/{src_rel}"
+                src_file = Path(project_path) / src_rel
+                dest_rel = f"character_sheets/approved/{character_id}.png"
+                dest_file = Path(project_path) / dest_rel
+                if src_file.exists() and src_file != dest_file:
+                    try:
+                        import shutil
+                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_file, dest_file)
+                        logger.info("[Approve Sheet] Copied %s to %s", src_file, dest_file)
+                        entry["sheet_image"] = dest_rel
+                        if dest_rel not in entry["generation_history"]:
+                            entry["generation_history"].append(dest_rel)
+                    except Exception as e:
+                        logger.error("[Approve Sheet] Copy failed: %s", e)
     sheets[character_id] = entry
+    _save_orchestrator_state()
     return {"success": True, "character_sheets": sheets}
 
 @app.post("/api/orchestrator/save-location-sheet")
@@ -598,10 +728,35 @@ def save_location_sheet(data: dict):
     entry = sheets.get(location_id, {"location_id": location_id, "generation_history": []})
     if sheet_image:
         entry["sheet_image"] = sheet_image
-        entry["generation_history"] = entry.get("generation_history", []) + [sheet_image]
+        history = entry.setdefault("generation_history", [])
+        if sheet_image not in history:
+            history.append(sheet_image)
     if approved:
         entry["approved"] = True
+        current_img = entry.get("sheet_image", "")
+        if current_img:
+            p_path = project_manager.get_current_project_path()
+            if p_path:
+                project_path = str(p_path)
+                src_rel = current_img.split("?")[0]
+                if not src_rel.startswith("location_sheets/"):
+                    src_rel = f"location_sheets/{src_rel}"
+                src_file = Path(project_path) / src_rel
+                dest_rel = f"location_sheets/approved/{location_id}.png"
+                dest_file = Path(project_path) / dest_rel
+                if src_file.exists() and src_file != dest_file:
+                    try:
+                        import shutil
+                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_file, dest_file)
+                        logger.info("[Approve Sheet] Copied %s to %s", src_file, dest_file)
+                        entry["sheet_image"] = dest_rel
+                        if dest_rel not in entry["generation_history"]:
+                            entry["generation_history"].append(dest_rel)
+                    except Exception as e:
+                        logger.error("[Approve Sheet] Copy failed: %s", e)
     sheets[location_id] = entry
+    _save_orchestrator_state()
     return {"success": True, "location_sheets": sheets}
 
 @app.post("/api/orchestrator/sync-bibles")
@@ -620,8 +775,8 @@ def _save_orchestrator_state():
         return
     try:
         name = project_manager.current_project
-        proj_path = project_manager.projects_dir / name
-        if not proj_path.exists():
+        proj_path = project_manager.get_current_project_path()
+        if not proj_path or not proj_path.exists():
             return
         state = project_manager.load_project_state(name, str(proj_path))
         if state is None:
@@ -737,6 +892,27 @@ def generate_image_endpoint(data: dict):
     """Generate an image using the selected provider."""
     if not image_engine:
         return {"success": False, "error": "Image engine not available"}
+    
+    input_images = data.get("input_images", [])
+    if input_images:
+        project_path = data.get("project_path", "")
+        if not project_path:
+            p_path = project_manager.get_current_project_path()
+            if p_path:
+                project_path = str(p_path)
+        if project_path:
+            resolved_images = []
+            for rel in input_images:
+                p = Path(rel)
+                if not p.is_absolute():
+                    p = Path(project_path) / rel
+                if p.exists():
+                    resolved_images.append(str(p.resolve()))
+                else:
+                    logger.warning("[generate_image_endpoint] Image NOT FOUND: %s", p)
+                    resolved_images.append(rel)
+            data["input_images"] = resolved_images
+
     return image_engine.generate_image(
         provider_id=data.get("provider", "comfyui"),
         model=data.get("model", ""),
@@ -759,11 +935,42 @@ async def get_image_progress():
         return {"pct": 0, "status": "idle", "label": ""}
     return image_engine.get_gen_progress()
 
+@app.post("/api/image/interrupt")
+async def interrupt_image_generation():
+    """Interrupt the current ComfyUI generation/queue."""
+    logger.info("POST /api/image/interrupt")
+    try:
+        success = comfyui_client.interrupt()
+        comfyui_client.clear_queue()
+        if image_engine:
+            image_engine._update_gen_progress(0, "error", "Cancelled by user")
+        return {"success": success}
+    except Exception as e:
+        logger.error("Failed to interrupt ComfyUI: %s", e)
+        return {"success": False, "error": str(e)}
+
 @app.post("/api/video/generate")
 def generate_video_endpoint(data: dict):
     """Generate a video using the selected provider."""
     if not image_engine:
         return {"success": False, "error": "Image engine not available"}
+    
+    input_image = data.get("input_image")
+    if input_image:
+        project_path = data.get("project_path", "")
+        if not project_path:
+            p_path = project_manager.get_current_project_path()
+            if p_path:
+                project_path = str(p_path)
+        if project_path:
+            p = Path(input_image)
+            if not p.is_absolute():
+                p = Path(project_path) / input_image
+            if p.exists():
+                data["input_image"] = str(p.resolve())
+            else:
+                logger.warning("[generate_video_endpoint] Image NOT FOUND: %s", p)
+
     return image_engine.generate_video(
         provider_id=data.get("provider", "comfyui"),
         model=data.get("model", ""),
@@ -806,6 +1013,7 @@ def generate_image(
     seed: int = -1
 ):
     """Generate an image."""
+    logger.info("POST /api/comfyui/generate/image — model=%s, %dx%d, seed=%d", model, width, height, seed)
     # Try to test connection first, but don't block if it fails
     conn_test = comfyui_client.test_connection()
     if not conn_test.get("success"):
@@ -827,9 +1035,10 @@ async def generate_t2i_endpoint(request: Request):
     if not prompt:
         return {"success": False, "error": "No prompt provided"}
     settings = load_settings()
-    workflow_name = settings.get("workflows", {}).get("t2i", "")
+    workflow_name = data.get("workflow_name") or settings.get("workflows", {}).get("t2i", "")
     if not workflow_name:
         return {"success": False, "error": "No T2I workflow assigned in Settings"}
+    logger.info("POST /api/comfyui/generate/t2i — workflow=%s, seed=%s", workflow_name, seed)
     return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed)
 
 @app.post("/api/comfyui/generate/i2i")
@@ -838,14 +1047,19 @@ async def generate_i2i_endpoint(request: Request):
     data = await request.json()
     prompt = data.get("prompt", "")
     seed = data.get("seed")
+    steps = data.get("steps")
     project_path = data.get("project_path", "")
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
     input_images = data.get("input_images", [])
     aspect_ratio = data.get("aspect_ratio")
     resolution = data.get("resolution")
     if not prompt:
         return {"success": False, "error": "No prompt provided"}
     settings = load_settings()
-    workflow_name = settings.get("workflows", {}).get("i2i", "")
+    workflow_name = data.get("workflow_name") or settings.get("workflows", {}).get("i2i", "")
     if not workflow_name:
         return {"success": False, "error": "No I2I workflow assigned in Settings"}
     abs_paths = []
@@ -854,12 +1068,10 @@ async def generate_i2i_endpoint(request: Request):
         if p.exists():
             abs_paths.append(str(p))
         else:
-            print(f"[I2I] Image NOT FOUND: {p}")
-    if abs_paths:
-        print(f"[I2I] Resolved {len(abs_paths)}/{len(input_images)} images: {abs_paths}")
-    else:
-        print(f"[I2I] No input images resolved (requested {len(input_images)})")
-    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, input_images=abs_paths if abs_paths else None, aspect_ratio=aspect_ratio, resolution=resolution)
+            logger.warning("[I2I] Image NOT FOUND: %s", p)
+    logger.info("POST /api/comfyui/generate/i2i — workflow=%s, %d/%d images resolved, seed=%s, steps=%s",
+                 workflow_name, len(abs_paths), len(input_images), seed, steps)
+    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, steps=steps, input_images=abs_paths if abs_paths else None, aspect_ratio=aspect_ratio, resolution=resolution)
 
 @app.post("/api/comfyui/generate/i2v")
 async def generate_i2v_endpoint(request: Request):
@@ -867,14 +1079,16 @@ async def generate_i2v_endpoint(request: Request):
     data = await request.json()
     prompt = data.get("prompt", "")
     seed = data.get("seed")
+    steps = data.get("steps")
     project_path = data.get("project_path", "")
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
     input_image = data.get("input_image")
     scene_index = data.get("scene_index")
-    print(f"\n[I2V] ===== REQUEST =====")
-    print(f"[I2V] prompt='{prompt[:80]}...' seed={seed}")
-    print(f"[I2V] project_path='{project_path}'")
-    print(f"[I2V] input_image='{input_image}'")
-    print(f"[I2V] scene_index={scene_index}")
+    logger.info("POST /api/comfyui/generate/i2v — seed=%s, steps=%s, scene_index=%s, input=%s",
+                 seed, steps, scene_index, input_image)
     if not prompt:
         return {"success": False, "error": "No prompt provided"}
     settings = load_settings()
@@ -886,19 +1100,19 @@ async def generate_i2v_endpoint(request: Request):
         p = Path(input_image)
         if p.exists():
             abs_image = str(p)
-            print(f"[I2V] Resolved input image: {abs_image}")
+            logger.info("[I2V] Resolved input image: %s", abs_image)
         else:
             stem = p.stem
             parent = p.parent
-            print(f"[I2V] Input image NOT at {p}, trying alt extensions...")
+            logger.warning("[I2V] Input image NOT at %s, trying alt extensions...", p)
             for ext in ['.png', '.jpg', '.jpeg', '.webp']:
                 alt = parent / f"{stem}{ext}"
                 if alt.exists():
                     abs_image = str(alt)
-                    print(f"[I2V] Found image with alt extension: {abs_image}")
+                    logger.info("[I2V] Found image with alt extension: %s", abs_image)
                     break
             if not abs_image:
-                print(f"[I2V] No alt extension found for {p}")
+                logger.warning("[I2V] No alt extension found for %s", p)
     # Auto-discover scene image from project if not resolved yet
     if not abs_image and project_path:
         scene_index = data.get("scene_index", 0)
@@ -913,35 +1127,59 @@ async def generate_i2v_endpoint(request: Request):
             for c in candidates:
                 if c.stem == target:
                     abs_image = str(c)
-                    print(f"[I2V] Auto-discovered scene image: {abs_image}")
+                    logger.info("[I2V] Auto-discovered scene image: %s", abs_image)
                     break
             if not abs_image:
                 # Try any scene image
                 scene_files = [c for c in candidates if c.stem.startswith("scene_")]
                 if scene_files:
                     abs_image = str(scene_files[0])
-                    print(f"[I2V] Auto-discovered first scene image: {abs_image}")
+                    logger.info("[I2V] Auto-discovered first scene image: %s", abs_image)
     if not abs_image:
         return {"success": False, "error": "Scene image not found. Make sure you approved the storyboard image first."}
-    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, input_images=[abs_image] if abs_image else None)
+    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, steps=steps, input_images=[abs_image] if abs_image else None)
 
 @app.post("/api/projects/save-image")
 async def save_project_image(request: Request):
     """Save a generated image to project folder."""
     data = await request.json()
+    logger.info("POST /api/projects/save-image — stage=%s, card_name=%s", data.get("stage"), data.get("card_name"))
     stage = data.get("stage", "")
     filename = data.get("filename", "")
     project_path = data.get("project_path", "")
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
     card_name = data.get("card_name", "")
     project_name = data.get("project_name", "")
     previous_file = data.get("previous_file")
+    subfolder = data.get("subfolder", "")
     import requests
-    try:
-        resp = requests.get(f"{comfyui_client.host}/view?filename={filename}", timeout=60)
-        if resp.status_code != 200:
-            return {"success": False, "error": "Failed to download from ComfyUI"}
-    except Exception as e:
-        return {"success": False, "error": f"Download error: {str(e)}"}
+    import time
+    resp = None
+    last_error = ""
+    for attempt in range(5):
+        try:
+            url = f"{comfyui_client.host}/view?filename={filename}"
+            if subfolder:
+                url += f"&subfolder={subfolder}"
+                url += "&type=output"
+            resp = requests.get(url, timeout=15)
+            if resp.status_code == 200:
+                logger.info("Successfully downloaded image from ComfyUI on attempt %d", attempt + 1)
+                break
+            else:
+                last_error = f"HTTP {resp.status_code}"
+                logger.warning("ComfyUI view returned HTTP %d on attempt %d, retrying in 1s...", resp.status_code, attempt + 1)
+        except Exception as e:
+            last_error = str(e)
+            logger.warning("Error fetching view from ComfyUI on attempt %d: %s, retrying in 1s...", attempt + 1, e)
+        time.sleep(1.0)
+
+    if not resp or resp.status_code != 200:
+        logger.error("Failed to download image from ComfyUI after retries. Last error: %s", last_error)
+        return {"success": False, "error": f"Failed to download from ComfyUI: {last_error}"}
     ext = Path(filename).suffix or ".png"
     safe = card_name.replace(" ", "_").replace("/", "_") if card_name else filename
     save_name = f"{safe}{ext}"
@@ -953,13 +1191,13 @@ async def save_project_image(request: Request):
                 prev_path.unlink()
         elif project_name:
             project_manager.load_project(project_name)
-            prev_path = project_manager.projects_dir / project_name / stage / previous_file
+            prev_path = project_manager.get_project_path(project_name) / stage / previous_file
             if prev_path.exists():
                 prev_path.unlink()
     # Save to project_path first (ensures I2I can find it), fall back to project_manager
     if project_path:
         stage_dir = Path(project_path) / stage
-        stage_dir.mkdir(exist_ok=True)
+        stage_dir.mkdir(parents=True, exist_ok=True)
         dest = stage_dir / save_name
         dest.write_bytes(resp.content)
         return {"success": True, "path": str(dest)}
@@ -988,29 +1226,240 @@ async def upload_asset_image(project_name: str = Form(""), project_path: str = F
             pg = orchestrator.memory.project_graph
             if asset_type == "character":
                 key = "character_assets"
-            else:
+                if asset_id not in pg.get(key, {}):
+                    pg.setdefault(key, {})[asset_id] = {}
+                pg[key][asset_id]["approved_image"] = f"{folder}/{save_name}"
+                pg[key][asset_id]["approved"] = True
+            elif asset_type == "location":
                 key = "location_assets"
-            if asset_id not in pg.get(key, {}):
-                pg.setdefault(key, {})[asset_id] = {}
-            pg[key][asset_id]["approved_image"] = f"{folder}/{save_name}"
-            pg[key][asset_id]["approved"] = True
+                if asset_id not in pg.get(key, {}):
+                    pg.setdefault(key, {})[asset_id] = {}
+                pg[key][asset_id]["approved_image"] = f"{folder}/{save_name}"
+                pg[key][asset_id]["approved"] = True
+            elif asset_type == "character_sheet":
+                key = "character_sheets"
+                sheets = pg.setdefault(key, {})
+                entry = sheets.setdefault(asset_id, {"character_id": asset_id, "generation_history": []})
+                entry["sheet_image"] = f"{folder}/{save_name}"
+                entry["generation_history"] = entry.get("generation_history", []) + [f"{folder}/{save_name}"]
+                entry["approved"] = True
+            elif asset_type == "location_sheet":
+                key = "location_sheets"
+                sheets = pg.setdefault(key, {})
+                entry = sheets.setdefault(asset_id, {"location_id": asset_id, "generation_history": []})
+                entry["sheet_image"] = f"{folder}/{save_name}"
+                entry["generation_history"] = entry.get("generation_history", []) + [f"{folder}/{save_name}"]
+                entry["approved"] = True
         return {"success": True, "path": f"{folder}/{save_name}"}
     elif project_name:
         project_manager.load_project(project_name)
-        stage_dir = project_manager.projects_dir / project_name / folder
+        stage_dir = project_manager.get_project_path(project_name) / folder
         stage_dir.mkdir(parents=True, exist_ok=True)
         dest = stage_dir / save_name
         dest.write_bytes(content)
         return {"success": True, "path": f"{folder}/{save_name}"}
     return {"success": False, "error": "No project specified"}
 
+@app.post("/api/storyboard/upload")
+async def upload_storyboard_file(
+    project_name: str = Form(""),
+    project_path: str = Form(""),
+    is_video: bool = Form(...),
+    scene_index: int = Form(...),
+    shot_index: int = Form(...),
+    file: UploadFile = File(...)
+):
+    """Upload a storyboard shot image or video from file picker."""
+    if not file.filename:
+        return {"success": False, "error": "No file provided"}
+    ext = Path(file.filename).suffix
+    
+    stage = "videos" if is_video else "scenes"
+    card_name = f"scene_{scene_index + 1}_shot_{shot_index + 1}"
+    safe = card_name.replace(" ", "_").replace("/", "_")
+    save_name = f"{safe}{ext}"
+    
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
+            
+    content = await file.read()
+    if project_path:
+        stage_dir = Path(project_path) / stage
+        stage_dir.mkdir(parents=True, exist_ok=True)
+        dest = stage_dir / save_name
+        dest.write_bytes(content)
+        
+        # Now update the screenplayData in the orchestrator memory!
+        if orchestrator:
+            pg = orchestrator.memory.project_graph
+            scene_graph = pg.get("scene_graph", [])
+            if 0 <= scene_index < len(scene_graph):
+                s = scene_graph[scene_index]
+                if s.get("shots") and 0 <= shot_index < len(s["shots"]):
+                    sh = s["shots"][shot_index]
+                    if is_video:
+                        sh["video_clip"] = save_name
+                        sh["video_status"] = "approved"
+                        sh.pop("_temp_video_clip", None)
+                    else:
+                        sh["storyboard_image"] = save_name
+                        sh["storyboard_status"] = "approved"
+                        sh.pop("_temp_storyboard_image", None)
+            _save_orchestrator_state()
+            
+        return {"success": True, "path": str(dest), "filename": save_name}
+    return {"success": False, "error": "No project path found"}
+
+@app.post("/api/assets/approve-single")
+async def approve_single_asset(request: Request):
+    """Approve a single character or location asset, copying the file to a clean path and updating project graph."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    data = await request.json()
+    logger.info("POST /api/assets/approve-single — id=%s, type=%s, image_path=%s", data.get("id"), data.get("type"), data.get("image_path"))
+    asset_id = data.get("id")
+    asset_type = data.get("type") # "char" or "loc"
+    image_path = data.get("image_path") # e.g. "characters/CHAR_001_12345.png" or URL
+    project_path = data.get("project_path")
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
+    
+    if not asset_id or not asset_type or not image_path or not project_path:
+        return {"success": False, "error": "Missing required fields"}
+        
+    folder = "characters" if asset_type == "char" else "locations"
+    
+    # Resolve the source file path
+    if image_path.startswith("http"):
+        from urllib.parse import urlparse
+        parsed = urlparse(image_path)
+        path_parts = parsed.path.split("/saved-image/")
+        if len(path_parts) > 1:
+            image_path = path_parts[1]
+            
+    # Remove any query parameters
+    image_path = image_path.split("?")[0]
+    
+    src_rel_path = image_path
+    if not src_rel_path.startswith(folder + "/"):
+        if src_rel_path.startswith("characters/") or src_rel_path.startswith("locations/"):
+            pass
+        else:
+            src_rel_path = f"{folder}/{src_rel_path}"
+            
+    src_file = Path(project_path) / src_rel_path
+    if not src_file.exists():
+        logger.warning("[Approve] Source file not found at %s", src_file)
+        return {"success": False, "error": f"Source image not found: {src_rel_path}"}
+        
+    # Destination file
+    dest_rel_path = f"{folder}/approved/{asset_id}.png"
+    dest_file = Path(project_path) / dest_rel_path
+    
+    try:
+        import shutil
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_file, dest_file)
+        logger.info("[Approve] Copied %s to %s", src_file, dest_file)
+    except Exception as e:
+        logger.error("[Approve] Copy failed: %s", e)
+        return {"success": False, "error": f"Failed to copy file: {str(e)}"}
+        
+    # Update orchestrator project graph
+    pg = orchestrator.memory.project_graph
+    key = "character_assets" if asset_type == "char" else "location_assets"
+    asset_entry = pg.setdefault(key, {}).setdefault(asset_id, {})
+    asset_entry["approved_image"] = dest_rel_path
+    asset_entry["approved"] = True
+    
+    # Save orchestrator state
+    _save_orchestrator_state()
+    
+    return {"success": True, "path": dest_rel_path}
+
+@app.post("/api/assets/register-generation")
+async def register_asset_generation(request: Request):
+    """Register a new generated image in the orchestrator's project graph history."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    data = await request.json()
+    logger.info("POST /api/assets/register-generation — id=%s, type=%s, path=%s", data.get("id"), data.get("type"), data.get("image_path"))
+    asset_id = data.get("id")
+    asset_type = data.get("type") # "char" or "loc"
+    image_path = data.get("image_path")
+    
+    if not asset_id or not asset_type or not image_path:
+        return {"success": False, "error": "Missing required fields"}
+        
+    pg = orchestrator.memory.project_graph
+    key = "character_assets" if asset_type == "char" else "location_assets"
+    
+    asset_entry = pg.setdefault(key, {}).setdefault(asset_id, {})
+    
+    history = asset_entry.setdefault("generation_history", [])
+    if image_path not in history:
+        history.append(image_path)
+    
+    asset_entry["approved_image"] = image_path
+    
+    _save_orchestrator_state()
+    return {"success": True}
+
+@app.post("/api/assets/update-graph-entry")
+async def update_asset_graph_entry(request: Request):
+    """Update an asset's entry in the project graph (history and approved image)."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    data = await request.json()
+    asset_id = data.get("id")
+    asset_type = data.get("type") # "char", "loc", "char_sheet", "loc_sheet"
+    history = data.get("generation_history", [])
+    approved_image = data.get("approved_image", "")
+    approved = data.get("approved", False)
+    
+    if not asset_id or not asset_type:
+        return {"success": False, "error": "Missing required fields"}
+        
+    pg = orchestrator.memory.project_graph
+    
+    if asset_type == "char":
+        key = "character_assets"
+    elif asset_type == "loc":
+        key = "location_assets"
+    elif asset_type == "char_sheet":
+        key = "character_sheets"
+    elif asset_type == "loc_sheet":
+        key = "location_sheets"
+    else:
+        return {"success": False, "error": f"Invalid asset type: {asset_type}"}
+        
+    asset_entry = pg.setdefault(key, {}).setdefault(asset_id, {})
+    asset_entry["generation_history"] = history
+    if asset_type in ("char_sheet", "loc_sheet"):
+        asset_entry["sheet_image"] = approved_image
+    else:
+        asset_entry["approved_image"] = approved_image
+    asset_entry["approved"] = approved
+    
+    _save_orchestrator_state()
+    return {"success": True}
+
 @app.post("/api/projects/save-video")
 async def save_project_video(request: Request):
     """Save a generated video to project folder by downloading from ComfyUI."""
     data = await request.json()
+    logger.info("POST /api/projects/save-video — filename=%s, card_name=%s", data.get("filename"), data.get("card_name"))
     filename = data.get("filename", "")
     subfolder = data.get("subfolder", "")
     project_path = data.get("project_path", "")
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
     card_name = data.get("card_name", "")
     project_name = data.get("project_name", "")
     if not filename:
@@ -1073,6 +1522,7 @@ async def check_project(path: str):
 @app.post("/api/projects")
 async def create_project(request: ProjectCreateRequest):
     """Create a new project."""
+    logger.info("POST /api/projects — name=%s, template=%s", request.name, request.template_name)
     location = request.location
     if location and location.strip():
         location = location.strip()
@@ -1113,9 +1563,17 @@ async def save_project_state(name: str, request: Request):
     body = await request.json()
     state = body.get("state", {})
     project_path = body.get("project_path")
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
 
     # Sync orchestrator memory into state for persistence
     if orchestrator:
+        if state:
+            orchestrator.memory.project_info["genres"] = state.get("selectedGenres", [])
+            orchestrator.memory.project_info["visual_style"] = state.get("selectedVisualStyle", "")
+            orchestrator.memory.project_info["film_aesthetic"] = state.get("selectedFilmAesthetic", "")
         state["_orchestrator_memory"] = orchestrator.to_dict()
 
     result = project_manager.save_project_state(name, state, project_path)
@@ -1126,11 +1584,16 @@ async def load_project_state(name: str, path: str = None):
     """Load full project state from disk, restoring orchestrator continuity memory."""
     result = project_manager.load_project_state(name, path)
     if result is None:
+        if orchestrator:
+            orchestrator.reset()
         return {"success": False, "state": None}
 
     # Restore orchestrator continuity memory from saved state
-    if orchestrator and result.get("_orchestrator_memory"):
-        orchestrator.from_dict(result["_orchestrator_memory"])
+    if orchestrator:
+        if result.get("_orchestrator_memory"):
+            orchestrator.from_dict(result["_orchestrator_memory"])
+        else:
+            orchestrator.reset()
 
     return {"success": True, "state": result}
 
@@ -1146,6 +1609,10 @@ async def delete_project_file(name: str, request: Request):
     """Delete a file from a project stage."""
     data = await request.json()
     project_path = data.get("project_path")
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
     stage = data.get("stage", "")
     filename = data.get("filename", "")
     if not filename:
@@ -1155,7 +1622,7 @@ async def delete_project_file(name: str, request: Request):
             target = Path(project_path) / stage / filename
         else:
             project_manager.load_project(name)
-            target = project_manager.projects_dir / name / stage / filename
+            target = project_manager.get_project_path(name) / stage / filename
         if target.exists():
             target.unlink()
             return {"success": True}
@@ -1163,24 +1630,209 @@ async def delete_project_file(name: str, request: Request):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+class DeleteHistoryRequest(BaseModel):
+    project_path: Optional[str] = None
+    stage: str
+    filenames: List[str]
+
+@app.post("/api/projects/delete-history-files")
+async def delete_history_files(req: DeleteHistoryRequest):
+    project_path = req.project_path
+    stage = req.stage
+    filenames = req.filenames
+
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
+
+    if not project_path:
+        return {"success": False, "error": "No project path provided"}
+
+    proj_dir = Path(project_path).resolve()
+    if not proj_dir.exists() or not proj_dir.is_dir():
+        return {"success": False, "error": "Project path does not exist"}
+
+    deleted_history_dir = proj_dir / "deleted_history"
+    deleted_history_dir.mkdir(exist_ok=True)
+
+    moved_files = []
+    failed_files = []
+
+    import datetime
+    for name in filenames:
+        if not name:
+            continue
+        
+        name_path = Path(name)
+        if name_path.is_absolute():
+            target_file = name_path.resolve()
+        else:
+            parts = name_path.parts
+            if parts and parts[0] == stage:
+                target_file = (proj_dir / name_path).resolve()
+            else:
+                target_file = (proj_dir / stage / name_path).resolve()
+        
+        try:
+            target_file.relative_to(proj_dir)
+        except ValueError:
+            failed_files.append({"filename": name, "error": "Out of project boundary"})
+            continue
+
+        if not target_file.exists() or not target_file.is_file():
+            continue
+        
+        stem = target_file.stem
+        suffix = target_file.suffix
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        dest_filename = f"{stem}_{timestamp}{suffix}"
+        dest_file = deleted_history_dir / dest_filename
+        
+        counter = 1
+        while dest_file.exists():
+            dest_filename = f"{stem}_{timestamp}_{counter}{suffix}"
+            dest_file = deleted_history_dir / dest_filename
+            counter += 1
+            
+        try:
+            shutil.move(str(target_file), str(dest_file))
+            moved_files.append(name)
+        except Exception as e:
+            logger.error("Failed to move file %s to deleted_history: %s", target_file, e)
+            failed_files.append({"filename": name, "error": str(e)})
+
+    return {
+        "success": len(failed_files) == 0,
+        "moved": moved_files,
+        "failed": failed_files
+    }
+
+@app.post("/api/projects/{name}/clear-stage")
+async def clear_project_stage(name: str, request: Request):
+    """Delete all files and folders in a project stage directory, and reset its memory (to start completely fresh)."""
+    data = await request.json()
+    project_path = data.get("project_path")
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
+    stage = data.get("stage", "")
+    if not stage:
+        return {"success": False, "error": "No stage directory specified"}
+    try:
+        if project_path:
+            target_dir = Path(project_path) / stage
+        else:
+            project_manager.load_project(name)
+            target_dir = project_manager.get_project_path(name) / stage
+            
+        if target_dir.exists() and target_dir.is_dir():
+            import shutil
+            # Delete everything inside target_dir but keep target_dir itself
+            for item in target_dir.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+
+        # Update orchestrator project graph memory to match
+        if orchestrator:
+            pg = orchestrator.memory.project_graph
+            if stage == "characters":
+                pg["character_assets"] = {}
+            elif stage == "locations":
+                pg["location_assets"] = {}
+            elif stage == "character_sheets":
+                pg["character_sheets"] = {}
+            elif stage == "location_sheets":
+                pg["location_sheets"] = {}
+            elif stage == "scenes":
+                # Clear all storyboard images in memory
+                for s in pg.get("scene_graph", []):
+                    for sh in s.get("shots", []):
+                        sh.pop("storyboard_image", None)
+                        sh.pop("_temp_storyboard_image", None)
+                        if sh.get("storyboard_status") in ["approved", "generated"]:
+                            sh["storyboard_status"] = "enriched"
+                if isinstance(orchestrator.memory.storyboard, list):
+                    for entry in orchestrator.memory.storyboard:
+                        for sh in entry.get("shots", []):
+                            sh.pop("storyboard_image", None)
+            elif stage == "videos":
+                # Clear all video clips in memory
+                for s in pg.get("scene_graph", []):
+                    for sh in s.get("shots", []):
+                        sh.pop("video_clip", None)
+                        sh.pop("_temp_video_clip", None)
+                        sh.pop("_temp_video_subfolder", None)
+                        if sh.get("video_status") in ["approved", "generated"]:
+                            sh["video_status"] = "enriched"
+            _save_orchestrator_state()
+
+        return {"success": True}
+    except Exception as e:
+        logger.error("Failed to clear project stage %s: %s", stage, e)
+        return {"success": False, "error": str(e)}
+
+
+_thumbnail_cache = {}
+
+def get_image_thumbnail_bytes(img_bytes: bytes, max_width: int = 280) -> bytes:
+    from PIL import Image
+    import io
+    try:
+        img = Image.open(io.BytesIO(img_bytes))
+        w, h = img.size
+        if w > max_width:
+            ratio = max_width / w
+            new_size = (max_width, int(h * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=80)
+        return out.getvalue()
+    except Exception as e:
+        logger.error("Failed to generate thumbnail: %s", e)
+        return img_bytes
+
 @app.get("/api/projects/{name}/saved-image/{stage}/{filename:path}")
-async def get_saved_project_image(name: str, stage: str, filename: str):
+async def get_saved_project_image(name: str, stage: str, filename: str, path: str = None, thumbnail: bool = False):
     """Serve a saved project image."""
     try:
-        project_manager.load_project(name)
-        img_path = project_manager.projects_dir / name / stage / filename
+        if path:
+            img_path = Path(path) / stage / filename
+        else:
+            project_manager.load_project(name)
+            img_path = project_manager.get_project_path(name) / stage / filename
         if not img_path.exists():
             return JSONResponse(status_code=404, content={"success": False, "error": "Image not found"})
+        
+        if thumbnail:
+            cache_key = f"saved:{img_path}"
+            if cache_key in _thumbnail_cache:
+                return Response(content=_thumbnail_cache[cache_key], media_type="image/jpeg")
+            with open(img_path, "rb") as f:
+                img_bytes = f.read()
+            thumb_bytes = get_image_thumbnail_bytes(img_bytes)
+            _thumbnail_cache[cache_key] = thumb_bytes
+            return Response(content=thumb_bytes, media_type="image/jpeg")
+
         return FileResponse(str(img_path), media_type="image/png")
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 @app.get("/api/projects/{name}/saved-video/{filename:path}")
-async def get_saved_project_video(name: str, filename: str):
+async def get_saved_project_video(name: str, filename: str, path: str = None):
     """Serve a saved project video."""
     try:
-        project_manager.load_project(name)
-        vid_path = project_manager.projects_dir / name / "videos" / filename
+        if path:
+            vid_path = Path(path) / "videos" / filename
+        else:
+            project_manager.load_project(name)
+            vid_path = project_manager.get_project_path(name) / "videos" / filename
         if not vid_path.exists():
             return JSONResponse(status_code=404, content={"success": False, "error": "Video not found"})
         return FileResponse(str(vid_path), media_type="video/mp4")
@@ -1232,7 +1884,7 @@ async def set_comfyui_host(host: str):
     return {"success": True, "message": f"ComfyUI host set to {host}"}
 
 @app.get("/api/comfyui/view")
-async def view_comfyui_image(filename: str, subfolder: str = ""):
+async def view_comfyui_image(filename: str, subfolder: str = "", thumbnail: bool = False):
     """View an image or video from ComfyUI output."""
     try:
         import requests
@@ -1241,9 +1893,21 @@ async def view_comfyui_image(filename: str, subfolder: str = ""):
         if subfolder:
             params["subfolder"] = subfolder
             params["type"] = "output"
+
+        is_video = filename.endswith(('.mp4', '.webm', '.gif'))
+
+        if thumbnail and not is_video:
+            cache_key = f"comfyui:{filename}:{subfolder}"
+            if cache_key in _thumbnail_cache:
+                return Response(content=_thumbnail_cache[cache_key], media_type="image/jpeg")
+            response = requests.get(f"{host}/view", params=params, timeout=60)
+            if response.status_code == 200:
+                thumb_bytes = get_image_thumbnail_bytes(response.content)
+                _thumbnail_cache[cache_key] = thumb_bytes
+                return Response(content=thumb_bytes, media_type="image/jpeg")
+
         response = requests.get(f"{host}/view", params=params, timeout=60)
-        from fastapi.responses import Response
-        ctype = response.headers.get("content-type", "video/mp4") if filename.endswith(('.mp4','.webm','.gif')) else response.headers.get("content-type", "image/png")
+        ctype = response.headers.get("content-type", "video/mp4") if is_video else response.headers.get("content-type", "image/png")
         return Response(content=response.content, media_type=ctype)
     except Exception as e:
         return {"error": str(e)}
@@ -1451,6 +2115,7 @@ async def get_settings():
 @app.post("/api/settings")
 async def save_settings_endpoint(data: dict):
     """Save settings, preserving genres and other non-overlapping keys."""
+    logger.info("POST /api/settings — %d keys", len(data))
     existing = load_settings()
     for key in existing:
         if key not in data:
@@ -1461,13 +2126,30 @@ async def save_settings_endpoint(data: dict):
     # Ensure llm auto_start flag
     if "llm" not in data:
         data["llm"] = existing.get("llm", {"provider": "app_llm", "model": "gemma-4-E2B-it-Q4_K_M.gguf", "host": "http://localhost:8081", "apiKey": "", "auto_start": True})
+    # Ensure comfyui auto_start flag
+    if "comfyui" not in data:
+        data["comfyui"] = existing.get("comfyui", {"auto_start": True, "host": "http://localhost:8188", "port": 8188, "use_sage_attention": True, "path": "", "models_path": ""})
     save_settings(data)
-    if data.get("comfyui", {}).get("url"):
-        comfyui_client.set_host(data["comfyui"]["url"])
+    if data.get("comfyui", {}).get("host"):
+        comfyui_client.set_host(data["comfyui"]["host"])
     # Auto-start local LLM if enabled
     if data.get("llm", {}).get("auto_start", False) and llm_engine:
         try:
             llm_engine.launch_local_llm(data["llm"]["provider"])
+        except Exception:
+            pass
+    # Auto-start ComfyUI if enabled
+    cui = data.get("comfyui", {})
+    if cui.get("auto_start", False) and comfyui_client:
+        try:
+            status = comfyui_client.get_comfyui_status()
+            if not status.get("running"):
+                comfyui_client.launch_comfyui(
+                    path=cui.get("path") or None,
+                    host=cui.get("host", "0.0.0.0"),
+                    port=cui.get("port", 8188),
+                    use_sage_attention=cui.get("use_sage_attention", True)
+                )
         except Exception:
             pass
     return {"success": True}
@@ -1810,5 +2492,5 @@ def get_default_html() -> str:
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 7860))
-    print(f"Starting Ultimate AI Film Studio on http://127.0.0.1:{port}")
+    logger.info("Starting Ultimate AI Film Studio on http://127.0.0.1:%s", port)
     uvicorn.run(app, host="127.0.0.1", port=port)

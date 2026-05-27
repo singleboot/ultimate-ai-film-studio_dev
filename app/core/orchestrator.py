@@ -254,22 +254,113 @@ class CinematicOrchestrator:
                 except Exception:
                     model = "llama3.1"
 
-        result = self.llm_engine.generate(
-            provider_id=provider,
-            model=model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            host=host or None,
-        )
+        # Console output for visibility of query starting
+        title = self._progress.get("title", "Processing")
+        print("\n" + "=" * 60)
+        print(f"[LLM QUERY]: {provider}/{model}")
+        print(f"[STAGE]: {title}")
+        print(f"[Prompt Length]: {len(prompt)} chars")
+        import re
+        genres_match = re.search(r"GENRES:\s*(.*?)\n", prompt)
+        style_match = re.search(r"VISUAL_STYLE:\s*(.*?)\n", prompt)
+        custom_match = re.search(r"CUSTOM_STORY_INPUT:\s*(.*?)\n", prompt)
+        if genres_match and genres_match.group(1).strip() != "None":
+            print(f"[Genres]: {genres_match.group(1).strip()}")
+        if style_match and style_match.group(1).strip() != "None":
+            print(f"[Visual Style]: {style_match.group(1).strip()}")
+        if custom_match and custom_match.group(1).strip() != "None":
+            print(f"[Custom Input]: {custom_match.group(1).strip()[:100]}...")
+        if not (genres_match or style_match or custom_match):
+            preview = prompt[:120].strip().replace('\n', ' ')
+            print(f"[Prompt Preview]: {preview}...")
+        print("=" * 60 + "\n")
+
+        # Start a background thread to animate progress and count elapsed seconds
+        stop_event = threading.Event()
+        base_pct = self._progress["pct"]
+        
+        def animate():
+            start_time = time.time()
+            # Estimate total time based on provider and stage
+            is_screenplay = "screenplay" in title.lower()
+            if provider == "app_llm":
+                estimated_total = 1800 if is_screenplay else 600  # 30m for screenplay, 10m for ideas
+            elif provider in ("llama_cpp", "lm_studio", "ollama"):
+                estimated_total = 120 if is_screenplay else 60
+            else:
+                estimated_total = 60 if is_screenplay else 30
+
+            while not stop_event.is_set():
+                elapsed = int(time.time() - start_time)
+                remaining = max(1, estimated_total - elapsed)
+                
+                # Smoothly interpolate progress pct from base_pct to max_pct (base_pct + 35, max 95)
+                max_pct = min(95, base_pct + 35)
+                fraction = min(1.0, elapsed / estimated_total)
+                current_pct = int(base_pct + (max_pct - base_pct) * fraction)
+                
+                # Format remaining time nicely
+                if remaining >= 60:
+                    rem_str = f"{remaining // 60}m {remaining % 60}s remaining"
+                else:
+                    rem_str = f"{remaining}s remaining"
+                
+                subtext = f"Waiting for LLM response... ({elapsed}s elapsed, est. {rem_str})"
+                self.set_progress(current_pct, title, subtext)
+                stop_event.wait(1.0)
+
+        animator_thread = threading.Thread(target=animate, daemon=True)
+        animator_thread.start()
+
+        start_time = time.time()
+        try:
+            result = self.llm_engine.generate(
+                provider_id=provider,
+                model=model,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                host=host or None,
+            )
+        finally:
+            stop_event.set()
+            animator_thread.join(timeout=1.0)
+
+        elapsed = int(time.time() - start_time)
 
         if result.get("success"):
             text = result["response"]
+            
+            # Console output for visibility of query completion
+            print("\n" + "=" * 60)
+            print(f"[LLM RESPONSE RECEIVED]: {provider}/{model}")
+            print(f"[Time elapsed]: {elapsed}s")
+            print(f"[Response Length]: {len(text)} chars")
+            json_data = self._extract_json(text)
+            if json_data is not None:
+                if isinstance(json_data, list) and len(json_data) > 0:
+                    print(f"[Extracted {len(json_data)} ideas]:")
+                    for idx, idea in enumerate(json_data):
+                        print(f"   {idx+1}. {idea.get('title', 'Untitled')} - {idea.get('logline', '')[:80]}...")
+                elif isinstance(json_data, dict):
+                    print(f"[Extracted JSON keys]: {list(json_data.keys())}")
+            else:
+                if json_output:
+                    print(f"[Warning]: Could not extract JSON from response")
+                print(f"[Response Preview]: {text[:200].strip().replace('\n', ' ')}...")
+            print("=" * 60 + "\n")
+
             if json_output:
-                json_data = self._extract_json(text)
                 if json_data is not None:
                     return {"success": True, "data": json_data, "raw": text}
                 return {"success": True, "data": None, "raw": text, "warning": "Could not extract JSON from response"}
             return {"success": True, "data": text, "raw": text}
+
+        # Console output for visibility of failure
+        print("\n" + "x" * 30)
+        print(f"[LLM QUERY FAILED]: {provider}/{model}")
+        print(f"[Time elapsed]: {elapsed}s")
+        print(f"[Error]: {result.get('error', 'Unknown error')}")
+        print("x" * 30 + "\n")
 
         return result
 
@@ -297,6 +388,8 @@ class CinematicOrchestrator:
 
     def generate_ideas(self, params: Dict) -> Dict:
         """Stage 1: Generate 5 cinematic story ideas with exact count enforcement."""
+        logger.info("Stage 1: generate_ideas started — genres=%s, style=%s",
+                     params.get("genres"), params.get("visual_style"))
         self._reset_progress()
         self.set_progress(5, "Gathering sources...")
         self.memory.project_info.update(params)
@@ -649,13 +742,17 @@ Every concept must feel:
                             idea["location_count"] = self.memory.selected_locations
                 self.memory.ideas = result["data"]
                 self.set_progress(100, "Ideas generated!", f"{len(result['data'])} concepts ready")
+                logger.info("Stage 1: generate_ideas completed — %d ideas", len(result["data"]))
                 return {"success": True, "ideas": result["data"], "raw": result.get("raw")}
 
+        logger.warning("Stage 1: generate_ideas failed — %s", result.get("error", "unknown"))
         self.set_progress(0, "Failed", result.get("error", "Generation failed"))
         return result
 
     def generate_screenplay(self, params: Dict) -> Dict:
         """Stage 2: Generate master screenplay with shot nodes + character/location bible."""
+        logger.info("Stage 2: generate_screenplay started — idea_index=%s",
+                     params.get("idea_index", self.memory.selected_idea_index))
         self._reset_progress()
         self.set_progress(5, "Starting screenplay + shot design...")
 
@@ -834,8 +931,12 @@ IMPORTANT CONSTRAINTS:
             scene_count_actual = len(data.get("scenes", []))
             shot_count_actual = sum(len(s.get("shots", [])) for s in data.get("scenes", []))
             self.set_progress(100, "Screenplay + shot design complete!", f"{scene_count_actual} scenes, {shot_count_actual} shots")
+            logger.info("Stage 2: generate_screenplay completed — %d scenes, %d shots, %d characters, %d locations",
+                         scene_count_actual, shot_count_actual,
+                         len(data.get("character_bible", [])), len(data.get("location_bible", [])))
             return {"success": True, "screenplay": data, "raw": result.get("raw")}
 
+        logger.warning("Stage 2: generate_screenplay failed — %s", result.get("error", "unknown"))
         self.set_progress(0, "Failed", result.get("error", "Generation failed"))
         return result
 
@@ -1015,6 +1116,7 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
 
     def generate_locations(self, params: Dict = None) -> Dict:
         """Stage 3: Extract from location_bible if present, else LLM fallback."""
+        logger.info("Stage 3: generate_locations started")
         self._reset_progress()
         self.set_progress(10, "Checking location bible...")
 
@@ -1035,6 +1137,7 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
                     "approved": False,
                 }
             self.set_progress(100, "Locations extracted from bible!", f"{len(bible)} locations ready")
+            logger.info("Stage 3: generate_locations completed — %d locations from bible", len(bible))
             return {"success": True, "locations": bible, "from_bible": True}
 
         # Fallback: LLM generation (legacy path)
@@ -1080,13 +1183,16 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
         if result.get("success") and result.get("data") and isinstance(result["data"], list):
             self.memory.locations = result["data"]
             self.set_progress(100, "Locations generated!", f"{len(result['data'])} ready")
+            logger.info("Stage 3: generate_locations completed — %d locations via LLM", len(result["data"]))
             return {"success": True, "locations": result["data"], "raw": result.get("raw")}
 
+        logger.warning("Stage 3: generate_locations failed — %s", result.get("error", "unknown"))
         self.set_progress(0, "Failed", result.get("error", "Generation failed"))
         return result
 
     def generate_characters(self, params: Dict = None) -> Dict:
         """Stage 4: Extract from character_bible if present, else LLM fallback."""
+        logger.info("Stage 4: generate_characters started")
         self._reset_progress()
         self.set_progress(10, "Checking character bible...")
 
@@ -1107,6 +1213,7 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
                     "approved": False,
                 }
             self.set_progress(100, "Characters extracted from bible!", f"{len(bible)} characters ready")
+            logger.info("Stage 4: generate_characters completed — %d characters from bible", len(bible))
             return {"success": True, "characters": bible, "from_bible": True}
 
         # Fallback: LLM generation (legacy path)
@@ -1162,13 +1269,16 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
         if result.get("success") and result.get("data") and isinstance(result["data"], list):
             self.memory.characters = result["data"]
             self.set_progress(100, "Characters generated!", f"{len(result['data'])} ready")
+            logger.info("Stage 4: generate_characters completed — %d characters via LLM", len(result["data"]))
             return {"success": True, "characters": result["data"], "raw": result.get("raw")}
 
+        logger.warning("Stage 4: generate_characters failed — %s", result.get("error", "unknown"))
         self.set_progress(0, "Failed", result.get("error", "Generation failed"))
         return result
 
     def generate_storyboard(self, params: Dict = None) -> Dict:
         """Stage 5: Shot enrichment pipeline. NEVER creates shots, only enriches existing ones."""
+        logger.info("Stage 5: generate_storyboard started")
         self._reset_progress()
         self.set_progress(5, "Starting shot enrichment...")
 
@@ -1177,6 +1287,7 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
         if not scene_graph:
             scene_graph = self.memory.screenplay.get("scenes", [])
         if not scene_graph:
+            logger.warning("Stage 5: generate_storyboard failed — no scene graph")
             self.set_progress(0, "Failed", "No scene graph available")
             return {"success": False, "error": "No scenes in screenplay"}
 
@@ -1192,16 +1303,20 @@ All outputs must remain cinematic, producible, and emotionally engaging."""
                 })
 
         if not all_shots:
+            logger.warning("Stage 5: generate_storyboard failed — no shot nodes")
             self.set_progress(0, "Failed", "No shot nodes in scene graph")
             return {"success": False, "error": "No shots in screenplay (has the new screenplay prompt been used?)"}
 
         self.set_progress(20, f"Enriching {len(all_shots)} shots...")
 
-        # Check approvals
-        approvals = pg.get("approvals", {})
-        if not approvals.get("characters_approved", False) or not approvals.get("locations_approved", False):
-            self.set_progress(0, "Blocked", "Characters and locations must be approved first")
-            return {"success": False, "error": "Characters and locations must be approved before storyboard generation"}
+        # Check approvals - auto-approve characters/locations if not marked to avoid blocking the user
+        approvals = pg.setdefault("approvals", {})
+        if not approvals.get("characters_approved", False):
+            logger.info("Stage 5: Auto-approving characters for storyboard generation")
+            self.approve_characters()
+        if not approvals.get("locations_approved", False):
+            logger.info("Stage 5: Auto-approving locations for storyboard generation")
+            self.approve_locations()
 
         continuity = self.get_continuity_context()
 
@@ -1338,6 +1453,7 @@ Output example format:
             self.memory.storyboard.append(entry)
 
         self.set_progress(100, "Shot enrichment complete!", f"{enriched_count} shots enriched")
+        logger.info("Stage 5: generate_storyboard completed — %d/%d shots enriched", enriched_count, len(all_shots))
         return {
             "success": True,
             "storyboard": self.memory.storyboard,
@@ -1347,6 +1463,7 @@ Output example format:
 
     def generate_video_prompts(self, params: Dict = None) -> Dict:
         """Stage 6: Generate LTX 2.3 video prompts from storyboard."""
+        logger.info("Stage 6: generate_video_prompts started — %d storyboard entries", len(self.memory.storyboard))
         storyboard = self.memory.storyboard
         if not storyboard:
             return {"success": False, "error": "No storyboard generated yet"}
@@ -1399,12 +1516,44 @@ LTX PROMPT RULES:
 
         if result.get("success") and result.get("data") and isinstance(result["data"], list):
             self.memory.video_prompts = result["data"]
+            
+            # Merge video prompts back into scene_graph shots
+            pg = self.memory.project_graph
+            scene_graph = pg.get("scene_graph", [])
+            if not scene_graph:
+                scene_graph = self.memory.screenplay.get("scenes", [])
+            
+            # Map by scene_id and shot_number or shot_id
+            prompts_map = {}
+            for scene_data in result["data"]:
+                sc_id = scene_data.get("scene_id", "")
+                for sh_data in scene_data.get("shots", []):
+                    sh_num = sh_data.get("shot_number")
+                    prompts_map[(sc_id, sh_num)] = sh_data.get("ltx_prompt", "")
+
+            enriched_count = 0
+            for s in scene_graph:
+                sc_id = s.get("scene_id", "")
+                for idx, sh in enumerate(s.get("shots", [])):
+                    sh_num = sh.get("shot_number", idx + 1)
+                    if (sc_id, sh_num) in prompts_map:
+                        sh["video_prompt"] = prompts_map[(sc_id, sh_num)]
+                        sh["video_status"] = "enriched"
+                        enriched_count += 1
+            
+            pg["scene_graph"] = scene_graph
+            
+            shot_count = sum(len(s.get("shots", [])) for s in result["data"])
+            logger.info("Stage 6: generate_video_prompts completed — %d scenes, %d shot prompts (%d shots updated)", 
+                        len(result["data"]), shot_count, enriched_count)
             return {"success": True, "video_prompts": result["data"], "raw": result.get("raw")}
 
+        logger.warning("Stage 6: generate_video_prompts failed — %s", result.get("error", "unknown"))
         return result
 
     def create_shot_variant(self, params: Dict) -> Dict:
         """Generate 3 non-destructive variants of a shot node."""
+        logger.info("create_shot_variant started — shot_id=%s", params.get("shot_id", ""))
         self._reset_progress()
         self.set_progress(10, "Preparing shot variant generation...")
 
@@ -1498,8 +1647,10 @@ Each variant must be meaningfully different from the original and from each othe
                 if isinstance(var, dict) and var.get("variant_id"):
                     pg["variants"][var["variant_id"]] = var
             self.set_progress(100, "Shot variants ready!", f"{len(variants)} variants generated")
+            logger.info("create_shot_variant completed — %d variants for shot_id=%s", len(variants), shot_id)
             return {"success": True, "variants": variants, "raw": result.get("raw")}
 
+        logger.warning("create_shot_variant failed — %s", result.get("error", "unknown"))
         self.set_progress(0, "Failed", result.get("error", "Generation failed"))
         return result
 
@@ -1641,6 +1792,7 @@ Each variant must be meaningfully different from the original and from each othe
 
     def regenerate_shot(self, params: Dict) -> Dict:
         """Regenerate a single shot, preserving continuity and locked fields."""
+        logger.info("regenerate_shot started — shot_id=%s", params.get("shot_id", ""))
         self._reset_progress()
         self.set_progress(10, "Preparing shot regeneration...")
 
@@ -1733,8 +1885,10 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
                         break
             pg["shots"][shot_id] = regenerated
             self.set_progress(100, "Shot regenerated!", f"{shot_id} updated")
+            logger.info("regenerate_shot completed — %s regenerated", shot_id)
             return {"success": True, "shot": regenerated, "raw": result.get("raw")}
 
+        logger.warning("regenerate_shot failed — %s", result.get("error", "unknown"))
         self.set_progress(0, "Failed", result.get("error", "Generation failed"))
         return result
 
@@ -2180,8 +2334,7 @@ Write a single, rich image generation prompt for a cinematic environment referen
                             new_entry["character_id"] = aid
                         pg[bible_key].append(new_entry)
                 return {"success": True, "prompt": prompt}
-            return {"success": False, "error": "LLM returned empty response. Check your LLM provider/model settings."}
-        return {"success": False, "error": result.get("error", "LLM call failed")}
+        return {"success": False, "error": "LLM call failed"}
 
     def generate_asset_variant(self, asset_type: str, asset: Dict, current_image: str = "", variant_instruction: str = "") -> Dict:
         """Generate 3 variant prompts for an asset preserving locked continuity rules."""
@@ -2191,37 +2344,66 @@ Write a single, rich image generation prompt for a cinematic environment referen
         fa = info.get("film_aesthetic", "")
         proj_context = f"Genre: {genre}; Visual Style: {vs}; Film Aesthetic: {fa}"
 
-        name = asset.get("full_name", asset.get("character_name", asset.get("location_name", asset.get("name", ""))))
-        continuity_rules = asset.get("clothing_continuity", "") or asset.get("clothing", "") or asset.get("architecture_style", "")
-        identity = asset.get("visual_identity", "")
-        original_prompt = asset.get("image_prompt", "")
+        if asset_type in ["shot_image", "shot_video"]:
+            name = asset.get("shot_id", "Shot")
+            continuity_rules = asset.get("camera_language", "") or asset.get("camera_direction", "")
+            identity = asset.get("lighting_language", "") or asset.get("lighting", "")
+            if asset_type == "shot_image":
+                original_prompt = asset.get("storyboard_prompt", "") or asset.get("image_prompt", "")
+                rules_text = """- Each variant MUST describe a detailed text-to-image prompt for a cinematic shot.
+- Integrate the variant instructions (e.g. changing camera angle, lighting, weather, characters) while keeping the core narrative context.
+- Maintain character reference identifiers (like CHAR_001, CHAR_002) and location reference identifiers (like LOC_001) exactly as in the original prompt."""
+            else:
+                original_prompt = asset.get("video_prompt", "") or asset.get("ltx_prompt", "")
+                rules_text = """- Each variant MUST describe a video motion prompt (e.g., describing physical movement, camera panning, action pacing) suitable for image-to-video diffusion models like LTX 2.3.
+- Integrate the variant instructions (e.g. make motion faster, pan left, add wind) while keeping the core shot context.
+- The prompt should describe the temporal motion, camera dynamics, and physical action flow."""
+        else:
+            name = asset.get("full_name", asset.get("character_name", asset.get("location_name", asset.get("name", ""))))
+            continuity_rules = asset.get("clothing_continuity", "") or asset.get("clothing", "") or asset.get("architecture_style", "")
+            identity = asset.get("visual_identity", "")
+            original_prompt = asset.get("image_prompt", "")
+
+            if asset_type == "char_sheet":
+                rules_text = """- The original prompt describes a four-panel character turnaround sheet layout. Each variant MUST preserve this exact four-panel layout description and instructions.
+- The variant instructions (e.g., adding accessories, color changes) must be integrated and applied consistently to the character across all panels (front view, side view, back view, and head portraits).
+- Do NOT change the overall turnaround grid structure or reduce it to a single portrait."""
+            elif asset_type == "loc_sheet":
+                rules_text = """- The original prompt describes a multi-panel location reference board grid layout. Each variant MUST preserve this exact multi-panel grid layout description and instructions.
+- The variant instructions (e.g., changing weather, adding elements) must be integrated and applied consistently across all panels of the reference board.
+- Do NOT change the overall reference board grid structure or reduce it to a single establishing shot."""
+            else:
+                rules_text = """- Each variant MUST preserve the core identity and continuity constraints
+- Slight variations in composition, lighting, mood, or camera angle are permitted
+- Do NOT change clothing, architecture, facial structure, or key identity markers"""
 
         prompt_text = f"""Project context: {proj_context}
-
-You are a cinema visual AI. Given an existing character/location reference, generate 3 variant visual prompts.
-
-Asset: {name}
+ 
+You are a cinema visual AI. Given an existing character/location/shot reference, generate 3 variant prompts.
+ 
+Asset/Shot: {name}
 Original prompt: {original_prompt}
-Continuity rules (must preserve): {continuity_rules}
-Visual identity (must preserve): {identity}
-Variant instruction: {variant_instruction or 'subtle variation of composition, lighting, or expression while maintaining identity'}
-
+Continuity details/rules (must preserve): {continuity_rules}
+Visual identity/lighting (must preserve): {identity}
+Variant instruction: {variant_instruction or 'subtle variation of composition, lighting, expression, or motion while maintaining context'}
+ 
 Rules:
-- Each variant MUST preserve the core identity and continuity constraints
-- Slight variations in composition, lighting, mood, or camera angle are permitted
-- Do NOT change clothing, architecture, facial structure, or key identity markers
+{rules_text}
 - Each variant must be clearly different from the others
-
+ 
 Return a JSON array of exactly 3 variant prompt strings. No explanation."""
-        result = self._call_llm(prompt_text, system_suffix="You output JSON arrays of image prompts only.", json_output=True)
+        result = self._call_llm(prompt_text, system_suffix="You output JSON arrays of prompts only.", json_output=True)
         if result.get("success"):
             try:
                 variants = result["data"]
                 if isinstance(variants, list) and len(variants) >= 3:
+                    if asset_type in ["shot_image", "shot_video"]:
+                        return {"success": True, "variants": variants[:3]}
+                        
                     variant_records = [{"id": f"v{int(time.time())}_{i}", "prompt": v, "instruction": variant_instruction, "image": "", "approved": False} for i, v in enumerate(variants[:3])]
                     # Persist variants into project_graph
                     pg = self.memory.project_graph
-                    bible_key = "character_bible" if asset_type == "char" else "location_bible"
+                    bible_key = "character_bible" if asset_type in ["char", "char_sheet"] else "location_bible"
                     aid = asset.get("character_id") or asset.get("id") or asset.get("location_id") or asset.get("_id", "")
                     if aid and pg.get(bible_key) is not None:
                         for entry in pg[bible_key]:

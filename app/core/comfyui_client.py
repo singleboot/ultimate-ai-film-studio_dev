@@ -1,12 +1,15 @@
 import json
 import os
 import time
+import logging
 import subprocess
 import signal
 import requests
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from threading import Thread
+
+logger = logging.getLogger("comfyui_client")
 
 
 class ComfyUIClient:
@@ -312,7 +315,7 @@ class ComfyUIClient:
         
         return workflow
 
-    def generate_with_workflow(self, prompt: str, workflow_name: str, negative_prompt: str = None, seed: int = None, input_images: List[str] = None, aspect_ratio: str = None, resolution: str = None) -> Dict:
+    def generate_with_workflow(self, prompt: str, workflow_name: str, negative_prompt: str = None, seed: int = None, input_images: List[str] = None, aspect_ratio: str = None, resolution: str = None, steps: int = None) -> Dict:
         """Generate using a custom workflow JSON from the workflows folder.
         UAIImageSlot nodes get their image_path set directly from input_images paths.
         Unused slots default to empty string (1x1 black image = bypass)."""
@@ -329,7 +332,7 @@ class ComfyUIClient:
 
             debug_log = []
             print(f"[generate_with_workflow] workflow={workflow_name}, prompt='{prompt[:60]}...'")
-            print(f"[generate_with_workflow] seed={seed}, input_images={input_images}, resolution={resolution}")
+            print(f"[generate_with_workflow] seed={seed}, steps={steps}, input_images={input_images}, resolution={resolution}")
             # Phase 1: set prompt text
             # If the workflow has a PrimitiveStringMultiline node, use it as the prompt source
             # (only overwrite CLIPTextEncode direct strings when there's no PrimitiveStringMultiline)
@@ -381,6 +384,9 @@ class ComfyUIClient:
                     slot_nodes.append(node_id)
             slot_nodes.sort(key=int)
             debug_log.append(f"Found {len(slot_nodes)} UAIImageSlot nodes: {slot_nodes}")
+            if input_images and len(input_images) == 1 and len(slot_nodes) > 1:
+                debug_log.append(f"Duplicating single input image across all {len(slot_nodes)} UAIImageSlot nodes")
+                input_images = input_images * len(slot_nodes)
             for idx, nid in enumerate(slot_nodes):
                 if input_images and idx < len(input_images):
                     img_path = input_images[idx]
@@ -400,6 +406,9 @@ class ComfyUIClient:
                         load_image_nodes.append(node_id)
                 load_image_nodes.sort(key=int)
                 debug_log.append(f"Found {len(load_image_nodes)} LoadImage nodes: {load_image_nodes}")
+                if input_images and len(input_images) == 1 and len(load_image_nodes) > 1:
+                    debug_log.append(f"Duplicating single input image across all {len(load_image_nodes)} LoadImage nodes")
+                    input_images = input_images * len(load_image_nodes)
                 for idx, nid in enumerate(load_image_nodes):
                     if idx < len(input_images):
                         img_path = input_images[idx]
@@ -426,6 +435,20 @@ class ComfyUIClient:
                         inputs["seed"] = seed
                     if ct == "RandomNoise" and "noise_seed" in inputs:
                         inputs["noise_seed"] = seed
+
+            # Phase 3b: set steps
+            if steps is not None:
+                for node_id, node_data in workflow.items():
+                    if not isinstance(node_data, dict):
+                        continue
+                    ct = node_data.get("class_type", "")
+                    inputs = node_data.get("inputs", {})
+                    if "steps" in inputs:
+                        try:
+                            inputs["steps"] = int(steps)
+                            debug_log.append(f"Set steps for {ct} {node_id} to {steps}")
+                        except (ValueError, TypeError):
+                            pass
 
             # Phase 4: override resolution
             if resolution:
@@ -501,29 +524,36 @@ class ComfyUIClient:
                         debug_log.append(f"[final] {nid} ({ct}): value='{str(inp['value'])[:60]}'")
                     elif "text" in inp:
                         debug_log.append(f"[final] {nid} ({ct}): text='{str(inp['text'])[:60]}'")
-
-            with open(r"C:\Users\avik\AppData\Local\Temp\opencode\lora_debug.log", "w") as df:
-                df.write("\n".join(debug_log))
-
             prompt_id = self.queue_prompt(workflow)
             if not prompt_id:
                 return {"success": False, "error": "Failed to queue workflow on ComfyUI"}
 
+            logger.info("ComfyUI queued [%s] id=%s", workflow_name, prompt_id)
+
+            gstart = time.time()
             output = self.get_output(prompt_id, timeout=600)
+            elapsed = time.time() - gstart
             if not output:
+                logger.warning("ComfyUI timeout [%s] after %.0fs", workflow_name, elapsed)
                 return {"success": False, "error": "Generation timeout"}
 
             for nid, nout in output.items():
                 if "images" in nout and nout["images"]:
                     img = nout["images"][0]
-                    return {"success": True, "filename": img.get("filename"), "subfolder": img.get("subfolder", "")}
+                    fname = img.get("filename", "unknown")
+                    logger.info("ComfyUI done [%s] → %s [%.1fs]", workflow_name, fname, elapsed)
+                    return {"success": True, "filename": fname, "subfolder": img.get("subfolder", "")}
                 if "gifs" in nout and nout["gifs"]:
                     gif = nout["gifs"][0]
-                    return {"success": True, "filename": gif.get("filename"), "subfolder": gif.get("subfolder", "")}
+                    fname = gif.get("filename", "unknown")
+                    logger.info("ComfyUI done [%s] → %s [%.1fs]", workflow_name, fname, elapsed)
+                    return {"success": True, "filename": fname, "subfolder": gif.get("subfolder", "")}
 
             if isinstance(output, dict) and "_error" in output:
+                logger.error("ComfyUI error [%s]: %s", workflow_name, output['_error'])
                 return {"success": False, "workflow_errored": True, "error": f"ComfyUI error: {output['_error']}"}
 
+            logger.warning("ComfyUI no output [%s]", workflow_name)
             return {"success": False, "error": "No output generated"}
         except Exception as e:
             return {"success": False, "error": f"Workflow error: {str(e)}"}
@@ -738,9 +768,45 @@ class ComfyUIClient:
     def set_comfyui_path(self, path: str):
         """Set the ComfyUI installation path."""
         self._comfyui_path = path
+        self._use_sage_attention = os.path.isfile(
+            os.path.join(path, "ComfyUI", "main.py") if path else ""
+        )
+
+    def get_portable_path(self) -> Optional[str]:
+        """Auto-detect the Easy-Install portable ComfyUI path."""
+        base = Path(__file__).parent.parent.parent
+        candidates = [
+            base / "comfyui" / "ComfyUI",
+            base / "ComfyUI" / "ComfyUI",
+            base / "comfyui",
+        ]
+        for c in candidates:
+            main_py = c / "main.py" if c.name == "ComfyUI" else (c / "ComfyUI" / "main.py")
+            if main_py.is_file():
+                return str(c.parent) if c.name == "ComfyUI" else str(c)
+        # Check for python_embedded as evidence of Easy-Install
+        for c in candidates:
+            pipy = c / "python_embedded" / "python.exe"
+            if pipy.is_file():
+                ci = c / "ComfyUI" / "main.py"
+                if ci.is_file():
+                    return str(c)
+        return None
 
     def detect_comfyui(self) -> Dict:
         """Detect if ComfyUI is installed on the system."""
+        # Check portable (Easy-Install) first
+        portable = self.get_portable_path()
+        if portable:
+            ci_main = os.path.join(portable, "ComfyUI", "main.py")
+            pipy = os.path.join(portable, "python_embedded", "python.exe")
+            direct_main = os.path.join(portable, "main.py")
+            if os.path.isfile(ci_main):
+                return {"installed": True, "path": ci_main.rstrip(os.sep + "main.py"),
+                        "portable": True, "python_embedded": pipy if os.path.isfile(pipy) else None}
+            if os.path.isfile(direct_main):
+                return {"installed": True, "path": portable, "portable": False, "python_embedded": None}
+
         search_dirs = [
             self._comfyui_path,
             os.environ.get("COMFYUI_PATH", ""),
@@ -755,7 +821,7 @@ class ComfyUIClient:
         for d in search_dirs:
             main_py = os.path.join(d, "main.py")
             if os.path.isfile(main_py):
-                return {"installed": True, "path": d}
+                return {"installed": True, "path": d, "portable": False, "python_embedded": None}
 
         # Try `where` / `which` on git clone scenario
         try:
@@ -767,7 +833,8 @@ class ComfyUIClient:
             if result.returncode == 0 and result.stdout.strip():
                 for line in result.stdout.strip().split("\n"):
                     if "ComfyUI" in line and "main.py" in line:
-                        return {"installed": True, "path": str(Path(line).parent)}
+                        return {"installed": True, "path": str(Path(line).parent),
+                                "portable": False, "python_embedded": None}
         except Exception:
             pass
 
@@ -789,36 +856,79 @@ class ComfyUIClient:
             return {"running": False, "error": str(e)}
         return {"running": False, "error": "Unknown - server returned non-200"}
 
-    def launch_comfyui(self, path: str = None, host: str = "0.0.0.0", port: int = 8188) -> Dict:
+    def launch_comfyui(self, path: str = None, host: str = "0.0.0.0", port: int = 8188,
+                       use_sage_attention: bool = True) -> Dict:
         """Launch ComfyUI as a subprocess."""
         status = self.get_comfyui_status()
         if status.get("running"):
             return {"success": True, "message": "ComfyUI already running", "pid": status.get("pid")}
 
         comfy_path = path or self._comfyui_path
-        if not comfy_path or not os.path.isfile(os.path.join(comfy_path, "main.py")):
+        if not comfy_path:
             detect = self.detect_comfyui()
             if detect.get("installed"):
                 comfy_path = detect["path"]
+                self._comfyui_path = comfy_path
+                if detect.get("python_embedded"):
+                    self._python_embedded = detect["python_embedded"]
             else:
-                return {"success": False, "error": "ComfyUI not found. Set the path in Settings or install it."}
+                return {"success": False,
+                        "error": "ComfyUI not found. Set the path in Settings or install it."}
 
         try:
-            main_py = os.path.join(comfy_path, "main.py")
-            cmd = ["python", main_py, "--listen", host, "--port", str(port)]
+            # Determine launch method
+            import math
+            pi_exe = getattr(self, '_python_embedded', None)
+
+            # Check for portable Easy-Install structure
+            if not pi_exe and comfy_path:
+                possible_pe = os.path.join(comfy_path, "python_embedded", "python.exe")
+                if os.path.isfile(possible_pe):
+                    pi_exe = possible_pe
+                    self._python_embedded = possible_pe
+                elif os.path.isfile(os.path.join(os.path.dirname(comfy_path), "python_embedded", "python.exe")):
+                    pi_exe = os.path.join(os.path.dirname(comfy_path), "python_embedded", "python.exe")
+                    self._python_embedded = pi_exe
+
+            # Locate main.py
+            if os.path.isfile(os.path.join(comfy_path, "main.py")):
+                main_py = os.path.join(comfy_path, "main.py")
+            elif os.path.isfile(os.path.join(comfy_path, "ComfyUI", "main.py")):
+                main_py = os.path.join(comfy_path, "ComfyUI", "main.py")
+                cwd = os.path.join(comfy_path, "ComfyUI")
+            elif os.path.isdir(comfy_path) and os.path.isfile(os.path.join(os.path.dirname(comfy_path), "ComfyUI", "main.py")):
+                main_py = os.path.join(os.path.dirname(comfy_path), "ComfyUI", "main.py")
+                cwd = os.path.join(os.path.dirname(comfy_path), "ComfyUI")
+            else:
+                return {"success": False, "error": "ComfyUI main.py not found"}
+
+            if 'cwd' not in dir() or not cwd:
+                cwd = comfy_path if os.path.isdir(comfy_path) else os.path.dirname(comfy_path)
+            if not cwd:
+                cwd = os.path.dirname(main_py)
+
+            if pi_exe and os.path.isfile(pi_exe):
+                cmd = [pi_exe, "-s", main_py, "--listen", host, "--port", str(port)]
+                if use_sage_attention:
+                    cmd.append("--use-sage-attention")
+                cmd.append("--highvram")
+            else:
+                cmd = ["python", main_py, "--listen", host, "--port", str(port)]
+                if use_sage_attention:
+                    cmd.append("--use-sage-attention")
+
+            logger.info(f"Launching ComfyUI: {' '.join(cmd)}")
             self._proc = subprocess.Popen(
-                cmd,
-                cwd=comfy_path,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                cmd, cwd=cwd,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
             self._comfyui_path = comfy_path
 
             # Wait for startup
-            timeout = 60
+            timeout_val = 120
             start = time.time()
-            while time.time() - start < timeout:
+            while time.time() - start < timeout_val:
                 try:
                     resp = requests.get(f"{self.host}/system_stats", timeout=2)
                     if resp.status_code == 200:
@@ -827,7 +937,8 @@ class ComfyUIClient:
                     pass
                 time.sleep(2)
 
-            return {"success": True, "message": "ComfyUI starting (may take longer)", "pid": self._proc.pid}
+            return {"success": True, "message": "ComfyUI starting (may take longer)",
+                    "pid": self._proc.pid}
         except FileNotFoundError:
             return {"success": False, "error": "Python not found. Ensure Python is in PATH."}
         except Exception as e:
