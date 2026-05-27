@@ -9437,6 +9437,7 @@ Project visual language: ${projVL}`;
                         <div style="font-size:0.75rem;color:var(--text-secondary);font-style:italic;line-height:1.4;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);flex:1;min-height:50px;overflow-y:auto;">
                             ${escapeHtml(s.synopsis || 'No synopsis.')}
                         </div>
+                        ${s.shots && s.shots.some(sh => !sh.storyboard_image && !sh._temp_storyboard_image) ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;width:100%;">🎨 Generate All Shots</button>` : ''}
                     </div>`;
 
                 // === RIGHT: Shot Cards Grid (CSS Grid matching asset studio) ===
@@ -9765,6 +9766,80 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 btn.textContent = '🎨 Generate Image';
                 hideShotSpinner(sceneIdx, shotIdx);
             }
+        }
+
+        async function generateSceneImages(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-gen-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            const pendingShots = s.shots.map((sh, i) => ({ sh, i })).filter(({ sh }) => !sh.storyboard_image && !sh._temp_storyboard_image);
+            if (!pendingShots.length) { btn.style.display = 'none'; return; }
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${pendingShots.length}`;
+            let completed = 0;
+
+            const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
+            const imgResEl = document.getElementById('sel-img-resolution');
+            const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+
+            for (const { sh, i } of pendingShots) {
+                let enrichedPrompt = sh.storyboard_prompt || '';
+                const shotChars = sh.characters_present || s.characters_present || [];
+                const savedChars = charData.filter(c => c.savedImage && shotChars.includes(c.name)).map(c => {
+                    let clean = c.savedImage;
+                    if (clean.includes('/')) clean = clean.split('/').pop();
+                    else clean = clean.replace(/\s+/g, '_') + '.png';
+                    return { name: c.name, description: c.description || '', savedImage: clean.replace('.png', '') };
+                });
+                const savedLocs = locationData.filter(l => l.name === s.location_id && l.savedImage).map(l => {
+                    let clean = l.savedImage;
+                    if (clean.includes('/')) clean = clean.split('/').pop();
+                    else clean = clean.replace(/\s+/g, '_') + '.png';
+                    return { name: l.name, details: l.details || '', type: l.type || '', savedImage: clean.replace('.png', '') };
+                });
+                if (savedLocs.length) {
+                    enrichedPrompt += `\n\nThe environment image provided is: "${savedLocs[0].savedImage}.png". Environment description: ${savedLocs[0].type ? 'Type: ' + savedLocs[0].type + '. ' : ''}${savedLocs[0].details || ''}.`;
+                }
+                if (savedChars.length) {
+                    enrichedPrompt += `\n\nCharacter reference images provided: ${savedChars.map(c => `"${c.savedImage}.png" (${c.name}: ${c.description})`).join(', ')}. The character should match the appearance shown in these reference images.`;
+                }
+
+                const seed = Math.floor(Math.random() * 999999999) + 1;
+                const inputImages = getSavedInputImages();
+                try {
+                    const res = await fetch('/api/comfyui/generate/i2i', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            prompt: enrichedPrompt,
+                            seed: seed,
+                            project_path: currentProject?.path || '',
+                            input_images: inputImages,
+                            aspect_ratio: aspectRatio,
+                            resolution: imgResolution
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        sh._temp_storyboard_image = data.filename;
+                        sh.storyboard_status = 'generated';
+                        sh.storyboard_history = sh.storyboard_history || [];
+                        if (!sh.storyboard_history.includes(data.filename)) {
+                            sh.storyboard_history.push(data.filename);
+                        }
+                    }
+                } catch(e) {
+                    notify('Error', `Shot ${sh.shot_id || i+1}: ${e.message}`);
+                }
+                completed++;
+                btn.textContent = `⏳ ${completed}/${pendingShots.length}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🎨 Generate All Shots';
+            renderStoryboard();
         }
 
         async function approveShotImage(sceneIdx, shotIdx) {
