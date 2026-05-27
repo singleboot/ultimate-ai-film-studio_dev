@@ -9437,10 +9437,13 @@ Project visual language: ${projVL}`;
                         <div style="font-size:0.75rem;color:var(--text-secondary);font-style:italic;line-height:1.4;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);flex:1;min-height:50px;overflow-y:auto;">
                             ${escapeHtml(s.synopsis || 'No synopsis.')}
                         </div>
-                        ${s.shots && s.shots.some(sh => !sh.storyboard_image && !sh._temp_storyboard_image) ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;width:100%;">🎨 Generate All Shots</button>` : ''}
-                        ${s.shots && s.shots.some(sh => sh._temp_storyboard_image) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" id="scene-app-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;width:100%;">✅ Approve All</button>` : ''}
-                        ${s.shots ? `<button class="btn btn-secondary" onclick="event.stopPropagation();regenerateScenePrompts(${sceneIdx})" id="scene-regen-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;width:100%;">🔄 Regen Prompts</button>` : ''}
-                        ${s.shots && s.shots.length > 0 && s.shots.every(sh => sh.storyboard_status === 'approved') ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneVideos(${sceneIdx})" id="scene-vid-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;width:100%;">🎥 Generate All Videos</button>` : ''}
+                        ${s.shots && s.shots.length > 0 ? `<div style="display:flex;gap:2px;flex-wrap:wrap;">
+                            <button class="btn btn-secondary" onclick="event.stopPropagation();regenerateScenePrompts(${sceneIdx})" id="scene-pr-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Regenerate prompts">🧠</button>
+                            ${s.shots.some(sh => !sh.storyboard_image && !sh._temp_storyboard_image) ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate images">🎨</button>` : ''}
+                            ${s.shots.some(sh => sh._temp_storyboard_image) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" id="scene-app-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Approve images">✅</button>` : ''}
+                            ${s.shots.every(sh => sh.storyboard_status === 'approved') ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneVideos(${sceneIdx})" id="scene-vid-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate videos">🎥</button>` : ''}
+                            ${s.shots.some(sh => sh._temp_video_clip) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneVideos(${sceneIdx})" id="scene-vapp-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Approve videos">✔️</button>` : ''}
+                        </div>` : ''}
                     </div>`;
 
                 // === RIGHT: Shot Cards Grid (CSS Grid matching asset studio) ===
@@ -9841,7 +9844,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             }
 
             btn.disabled = false;
-            btn.textContent = '🎨 Generate All Shots';
+            btn.textContent = '🎨';
             renderStoryboard();
         }
 
@@ -9897,7 +9900,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             }
 
             btn.disabled = false;
-            btn.textContent = '✅ Approve All';
+            btn.textContent = '✅';
             renderStoryboard();
             scheduleSaveState();
         }
@@ -9905,7 +9908,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
         async function regenerateScenePrompts(sceneIdx) {
             const s = screenplayData.scenes[sceneIdx];
             if (!s || !s.shots) return;
-            const btn = document.getElementById(`scene-regen-btn-${sceneIdx}`);
+            const btn = document.getElementById(`scene-pr-btn-${sceneIdx}`);
             if (!btn) return;
 
             btn.disabled = true;
@@ -9955,7 +9958,7 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             }
 
             btn.disabled = false;
-            btn.textContent = '🔄 Regen Prompts';
+            btn.textContent = '🧠';
             renderStoryboard();
             scheduleSaveState();
         }
@@ -10003,8 +10006,60 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             }
 
             btn.disabled = false;
-            btn.textContent = '🎥 Generate All Videos';
+            btn.textContent = '🎥';
             renderStoryboard();
+        }
+
+        async function approveSceneVideos(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-vapp-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            const pending = s.shots.filter(sh => sh._temp_video_clip);
+            if (!pending.length) { btn.style.display = 'none'; return; }
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${pending.length}`;
+            let completed = 0;
+
+            for (const sh of pending) {
+                const shotIdx = s.shots.indexOf(sh);
+                const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+                try {
+                    const res = await fetch('/api/projects/save-video', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            filename: sh._temp_video_clip,
+                            subfolder: sh._temp_video_subfolder || '',
+                            card_name: cardName
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        const savedFilename = data.path.split(/[\\/]/).pop();
+                        const relativePath = 'videos/' + savedFilename;
+                        addAsset('video', cardName, relativePath);
+                        sh.video_clip = savedFilename;
+                        sh.video_status = 'approved';
+                        sh._temp_video_clip = null;
+                        sh._temp_video_subfolder = null;
+                    } else {
+                        notify('Save Failed', `Shot ${sh.shot_id}: ${data.error}`);
+                    }
+                } catch(e) {
+                    notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
+                }
+                completed++;
+                btn.textContent = `⏳ ${completed}/${pending.length}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '✔️';
+            renderStoryboard();
+            scheduleSaveState();
         }
 
         async function approveShotImage(sceneIdx, shotIdx) {
