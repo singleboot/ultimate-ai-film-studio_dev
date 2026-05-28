@@ -1112,6 +1112,7 @@
                         <button class="btn btn-danger" onclick="cancelSheetBatch()" id="sheet-cancel-btn" style="padding:2px 8px;font-size:0.7rem;background:#e74c3c;color:#fff;border:none;border-radius:3px;cursor:pointer;">✕ Cancel</button>
                     </div>
                 </div>
+                <div style="font-size:0.65rem;color:var(--text-secondary);margin-bottom:4px;" id="sheet-progress-detail"></div>
                 <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
                     <div id="sheet-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
                 </div>
@@ -6811,10 +6812,10 @@
                     const pRes = await fetch('/api/image/progress');
                     const p = await pRes.json();
                     if (p && p.pct !== undefined && p.status === 'running') {
-                        setCardProgress(charId, 'char_sheet', p.pct);
+                        setCardProgress(charId, 'char_sheet', p.pct, p.step_label, p.node_label);
                         const isBatch = window._sheetBatchActive;
                         const progressTitle = isBatch ? document.getElementById('sheet-progress-title').textContent : `Generating Character Sheet for ${charId}...`;
-                        setSheetProgress(p.pct, progressTitle);
+                        setSheetProgress(p.pct, progressTitle, p.step_label, p.node_label);
                     } else if (p && (p.status === 'done' || p.status === 'error')) {
                         pollingActive = false;
                         const isBatch = window._sheetBatchActive;
@@ -7049,10 +7050,10 @@
                     const pRes = await fetch('/api/image/progress');
                     const p = await pRes.json();
                     if (p && p.pct !== undefined && p.status === 'running') {
-                        setCardProgress(locId, 'loc_sheet', p.pct);
+                        setCardProgress(locId, 'loc_sheet', p.pct, p.step_label, p.node_label);
                         const isBatch = window._sheetBatchActive;
                         const progressTitle = isBatch ? document.getElementById('sheet-progress-title').textContent : `Generating Location Sheet for ${locId}...`;
-                        setSheetProgress(p.pct, progressTitle);
+                        setSheetProgress(p.pct, progressTitle, p.step_label, p.node_label);
                     } else if (p && (p.status === 'done' || p.status === 'error')) {
                         pollingActive = false;
                         const isBatch = window._sheetBatchActive;
@@ -8513,16 +8514,23 @@ Project visual language: ${projVL}`;
             if (bar) bar.style.display = 'none';
         }
 
-        function setSheetProgress(pct, title) {
+        function setSheetProgress(pct, title, stepLabel, nodeLabel) {
             const bar = document.getElementById('sheet-progress');
             const barInner = document.getElementById('sheet-progress-bar');
             const pctEl = document.getElementById('sheet-progress-pct');
             const titleEl = document.getElementById('sheet-progress-title');
+            const detailEl = document.getElementById('sheet-progress-detail');
             if (!bar) return;
             bar.style.display = 'block';
             if (barInner) barInner.style.width = Math.min(pct, 100) + '%';
             if (pctEl) pctEl.textContent = Math.min(pct, 100) + '%';
             if (titleEl && title) titleEl.textContent = title;
+            if (detailEl) {
+                const parts = [];
+                if (stepLabel) parts.push(stepLabel);
+                if (nodeLabel) parts.push(nodeLabel);
+                detailEl.textContent = parts.join('') || '';
+            }
         }
         function hideSheetProgress() {
             const bar = document.getElementById('sheet-progress');
@@ -8560,7 +8568,7 @@ Project visual language: ${projVL}`;
             }
         }
 
-        function setCardProgress(id, type, pct) {
+        function setCardProgress(id, type, pct, stepLabel, nodeLabel) {
             const sel = getAssetSelector(id, type);
             const zone = document.querySelector(sel);
             if (!zone) return;
@@ -8571,12 +8579,19 @@ Project visual language: ${projVL}`;
                 overlay = document.createElement('div');
                 overlay.className = 'asset-card-spinner';
                 overlay.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;background:rgba(0,0,0,0.5);border-radius:4px;z-index:5;';
-                overlay.innerHTML = '<div class="spinner" style="width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top:2px solid #fff;border-radius:50%;animation:spin 0.8s linear infinite;"></div><span class="card-progress-pct" style="color:#fff;font-size:0.7rem;font-weight:600;"></span>';
+                overlay.innerHTML = '<div class="spinner" style="width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top:2px solid #fff;border-radius:50%;animation:spin 0.8s linear infinite;"></div><span class="card-progress-pct" style="color:#fff;font-size:0.7rem;font-weight:600;"></span><span class="card-progress-detail" style="color:#aaa;font-size:0.6rem;font-weight:400;"></span>';
                 zone.appendChild(overlay);
             }
             overlay.style.display = 'flex';
             const pctEl = overlay.querySelector('.card-progress-pct');
             if (pctEl) pctEl.textContent = pct > 0 ? `${pct}%` : '⏳';
+            const detailEl = overlay.querySelector('.card-progress-detail');
+            if (detailEl) {
+                const parts = [];
+                if (stepLabel) parts.push(stepLabel);
+                if (nodeLabel) parts.push(nodeLabel);
+                detailEl.textContent = parts.join('') || '';
+            }
         }
 
         function updateAssetCardImage(id, type, imageUrl) {
@@ -8636,6 +8651,13 @@ Project visual language: ${projVL}`;
                     const newImg = (assetStore[item.id] || {}).approved_image;
                     if (newImg && newImg !== oldImg) {
                         updateAssetCardImage(item.id, item.type, newImg);
+                        // Wait for image to load in browser before next gen
+                        const sel = getAssetSelector(item.id, item.type);
+                        const zone = document.querySelector(sel);
+                        const imgEl = zone ? zone.querySelector('img') : null;
+                        if (imgEl && !imgEl.complete) {
+                            await new Promise(resolve => { imgEl.onload = resolve; imgEl.onerror = resolve; });
+                        }
                         successCount++;
                     } else {
                         failCount++;
@@ -8774,7 +8796,7 @@ Project visual language: ${projVL}`;
                     const pRes = await fetch('/api/image/progress');
                     const p = await pRes.json();
                     if (p && p.pct !== undefined && p.status === 'running') {
-                        setCardProgress(id, type, p.pct);
+                        setCardProgress(id, type, p.pct, p.step_label, p.node_label);
                     } else if (p && (p.status === 'done' || p.status === 'error')) {
                         pollingActive = false;
                         return;
@@ -8950,7 +8972,7 @@ Project visual language: ${projVL}`;
                     const pRes = await fetch('/api/image/progress');
                     const p = await pRes.json();
                     if (p && p.pct !== undefined && p.status === 'running') {
-                        setCardProgress(id, type, p.pct);
+                        setCardProgress(id, type, p.pct, p.step_label, p.node_label);
                     } else if (p && (p.status === 'done' || p.status === 'error')) {
                         pollingActive = false;
                         return;
@@ -10350,6 +10372,10 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         sh.storyboard_history.push(data.filename);
                     }
                     updateShotPreview(sceneIdx, shotIdx);
+                    const imgEl = document.getElementById(`shot-preview-img-${sceneIdx}-${shotIdx}`);
+                    if (imgEl && !imgEl.complete) {
+                        await new Promise(resolve => { imgEl.onload = resolve; imgEl.onerror = resolve; });
+                    }
                 } else {
                     notify('I2I Failed', data.error || 'Generation failed');
                     btn.disabled = false;
@@ -10540,6 +10566,11 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                             sh.storyboard_history.push(data.filename);
                         }
                         updateShotPreview(sceneIdx, i);
+                        // Wait for image to load in browser before next generation
+                        const imgEl = document.getElementById(`shot-preview-img-${sceneIdx}-${i}`);
+                        if (imgEl && !imgEl.complete) {
+                            await new Promise(resolve => { imgEl.onload = resolve; imgEl.onerror = resolve; });
+                        }
                     }
                 } catch(e) {
                     hideShotSpinner(sceneIdx, i);

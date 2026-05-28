@@ -133,11 +133,13 @@ class ComfyUIClient:
                 return {
                     "running": data.get("running", False),
                     "current": data.get("current", 0),
-                    "max": data.get("max", 25)
+                    "max": data.get("max", 25),
+                    "node": data.get("node", ""),
+                    "node_type": data.get("node_type", ""),
                 }
         except Exception:
             pass
-        return {"running": False, "current": 0, "max": 0}
+        return {"running": False, "current": 0, "max": 0, "node": "", "node_type": ""}
 
     def get_queue(self) -> Dict:
         """Get current queue status."""

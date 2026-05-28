@@ -20,7 +20,7 @@ class ImageEngine:
             self._settings_path = Path(settings_path)
         else:
             self._settings_path = Path(__file__).parent.parent / "settings.json"
-        self._gen_progress = {"pct": 0, "status": "idle", "label": ""}
+        self._gen_progress = {"pct": 0, "status": "idle", "label": "", "step_label": "", "node_label": ""}
         self._gen_lock = threading.Lock()
 
     def _update_gen_progress(self, pct: int, status: str = None, label: str = None):
@@ -30,6 +30,9 @@ class ImageEngine:
                 self._gen_progress["status"] = status
             if label is not None:
                 self._gen_progress["label"] = label
+            if status in ("done", "error", "idle"):
+                self._gen_progress["step_label"] = ""
+                self._gen_progress["node_label"] = ""
 
     def get_gen_progress(self) -> Dict:
         with self._gen_lock:
@@ -178,7 +181,31 @@ class ImageEngine:
                     prog = self.comfyui.get_progress()
                     if prog.get("running") and prog.get("max", 0) > 0:
                         pct = round(prog["current"] / prog["max"] * 100)
-                        self._update_gen_progress(pct, "running", f"Step {prog['current']}/{prog['max']}")
+                        step = prog.get("current", 0)
+                        total = prog.get("max", 0)
+                        step_label = f"Step {step}/{total}"
+                        # Map ComfyUI node_type to readable labels
+                        node_type = prog.get("node_type", "") or prog.get("node", "") or ""
+                        node_map = {
+                            "KSampler": "Sampling",
+                            "VAEDecode": "VAE Decode",
+                            "VAEEncode": "VAE Encode",
+                            "CLIPTextEncode": "Encoding prompt",
+                            "EmptyLatentImage": "Preparing",
+                            "LoadImage": "Loading image",
+                            "SaveImage": "Saving",
+                            "CheckpointLoaderSimple": "Loading model",
+                            "CLIPSetLastLayer": "Setting CLIP layer",
+                            "VAELoader": "Loading VAE",
+                            "ControlNetLoader": "Loading ControlNet",
+                            "LoraLoader": "Loading LoRA",
+                        }
+                        readable = node_map.get(node_type, node_type.replace("_", " ").title() if node_type else "")
+                        node_label = f" — {readable}" if readable else ""
+                        self._update_gen_progress(pct, "running", step_label)
+                        with self._gen_lock:
+                            self._gen_progress["step_label"] = step_label
+                            self._gen_progress["node_label"] = node_label
                 except Exception:
                     pass
                 time.sleep(1)
