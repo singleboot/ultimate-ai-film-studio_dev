@@ -1897,6 +1897,25 @@ async def set_comfyui_host(host: str):
     comfyui_client.set_host(host)
     return {"success": True, "message": f"ComfyUI host set to {host}"}
 
+@app.post("/api/projects/open-folder")
+async def open_project_folder(data: dict):
+    """Open the project folder in the file explorer."""
+    path = data.get("path", "")
+    if not path:
+        return {"success": False, "error": "No path provided"}
+    try:
+        import subprocess
+        if platform.system() == "Windows":
+            subprocess.Popen(["explorer", path])
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+        return {"success": True}
+    except Exception as e:
+        logger.error("Failed to open folder: %s", e)
+        return {"success": False, "error": str(e)}
+
 @app.get("/api/comfyui/view")
 async def view_comfyui_image(filename: str, subfolder: str = "", thumbnail: bool = False):
     """View an image or video from ComfyUI output."""

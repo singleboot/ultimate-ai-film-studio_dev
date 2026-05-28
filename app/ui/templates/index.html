@@ -657,6 +657,7 @@
         <div style="display:flex;align-items:center;gap:12px;">
             <div class="title">🎬 Ultimate AI Film Studio</div>
             <div class="sub" id="project-label">No project</div>
+            <button class="nav-btn" onclick="openProjectFolder()" id="open-folder-btn" title="Open project folder" style="display:none;padding:4px 8px;font-size:0.75rem;">📂</button>
         </div>
         <button class="nav-btn" onclick="goHome()">🏠 Home</button>
         <button class="nav-btn" onclick="openSettings()" title="Settings">⚙️</button>
@@ -2214,8 +2215,26 @@
             scheduleSaveState();
             currentProject = null;
             document.getElementById('project-label').textContent = 'No project';
+            document.getElementById('open-folder-btn').style.display = 'none';
             syncRecentProjectsWithBackend();
             showPage('home');
+        }
+
+        async function openProjectFolder() {
+            if (!currentProject?.path) {
+                notify('No Project', 'No project is currently open.', '⚠️');
+                return;
+            }
+            try {
+                const res = await fetch('/api/projects/open-folder', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ path: currentProject.path })
+                });
+                const data = await res.json();
+                if (!data.success) notify('Error', data.error || 'Failed to open folder', '❌');
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
         }
 
         function openProjectWorkspace(name, path) {
@@ -2226,6 +2245,7 @@
             localStorage.setItem('lastProjectName', name);
             localStorage.setItem('lastProjectPath', path);
             document.getElementById('project-label').textContent = name;
+            document.getElementById('open-folder-btn').style.display = 'inline-block';
             document.getElementById('status-text').textContent = 'Project: ' + name;
             showPage('ideas');
             loadProjectState();
@@ -10519,6 +10539,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         if (!sh.storyboard_history.includes(data.filename)) {
                             sh.storyboard_history.push(data.filename);
                         }
+                        updateShotPreview(sceneIdx, i);
                     }
                 } catch(e) {
                     hideShotSpinner(sceneIdx, i);
