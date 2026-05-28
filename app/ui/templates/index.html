@@ -10565,6 +10565,22 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 if (signal.aborted) break;
                 const shotIdx = s.shots.indexOf(sh);
                 showShotSpinner(sceneIdx, shotIdx);
+
+                // If upscaled, use the already-saved 4K file
+                if (sh._temp_upscaled_file) {
+                    sh.storyboard_image = sh._temp_upscaled_file;
+                    sh.storyboard_status = 'approved';
+                    sh._temp_storyboard_image = null;
+                    sh._temp_upscaled_file = null;
+                    const relativePath = 'scenes/' + sh.storyboard_image;
+                    addAsset('scene', `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`, relativePath);
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    notify('✅ Saved', `Upscaled image saved as ${sh.storyboard_image}`);
+                    completed++;
+                    btn.textContent = `⏳ ${completed}/${pending.length}`;
+                    continue;
+                }
+
                 const tempFilename = sh._temp_storyboard_image;
                 const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
                 try {
