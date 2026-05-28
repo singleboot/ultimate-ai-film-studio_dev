@@ -24,6 +24,7 @@ class ComfyUIClient:
         self.history = []
         self._proc: Optional[subprocess.Popen] = None
         self._comfyui_path: Optional[str] = None
+        self._interrupted = False
 
     def _load_config(self, config_path: str) -> Dict:
         """Load ComfyUI workflow configuration."""
@@ -163,6 +164,10 @@ class ComfyUIClient:
         """Wait for and get output from a prompt."""
         start_time = time.time()
         while time.time() - start_time < timeout:
+            if self._interrupted:
+                logger.info("get_output: interrupted flag set, returning None")
+                self._interrupted = False
+                return {"_cancelled": True}
             history = self.get_history(prompt_id)
             if history and prompt_id in history:
                 prompt_data = history[prompt_id]
@@ -178,6 +183,12 @@ class ComfyUIClient:
                 # No outputs and no pending - might be done with error
                 if "outputs" in prompt_data:
                     return prompt_data["outputs"]
+            # Also check progress — if nothing is running and no history, generation was cancelled
+            if not history or prompt_id not in history:
+                prog = self.get_progress()
+                if not prog.get("running"):
+                    logger.info("get_output: ComfyUI progress shows not running, prompt not found in history, returning None")
+                    return {"_cancelled": True}
             time.sleep(2)
         return None
 
@@ -240,6 +251,8 @@ class ComfyUIClient:
         output = self.get_output(prompt_id, timeout=300)
         if not output:
             return {"success": False, "error": "Generation timeout - ComfyUI may be busy or model is slow"}
+        if isinstance(output, dict) and output.get("_cancelled"):
+            return {"success": False, "error": "Generation cancelled"}
 
         for node_id, node_output in output.items():
             if "images" in node_output:
@@ -564,6 +577,9 @@ class ComfyUIClient:
             if not output:
                 logger.warning("ComfyUI timeout [%s] after %.0fs", workflow_name, elapsed)
                 return {"success": False, "error": "Generation timeout"}
+            if isinstance(output, dict) and output.get("_cancelled"):
+                logger.info("ComfyUI cancelled [%s] after %.0fs", workflow_name, elapsed)
+                return {"success": False, "error": "Generation cancelled"}
 
             for nid, nout in output.items():
                 if "images" in nout and nout["images"]:
@@ -643,6 +659,8 @@ class ComfyUIClient:
         output = self.get_output(prompt_id, timeout=600)
         if not output:
             return {"success": False, "error": "Generation timeout"}
+        if isinstance(output, dict) and output.get("_cancelled"):
+            return {"success": False, "error": "Generation cancelled"}
 
         for node_id, node_output in output.items():
             if "images" in node_output:
@@ -754,6 +772,8 @@ class ComfyUIClient:
         output = self.get_output(prompt_id, timeout=300)
         if not output:
             return {"success": False, "error": "Generation timeout - this model may not support image input. Use Text-to-Image instead."}
+        if isinstance(output, dict) and output.get("_cancelled"):
+            return {"success": False, "error": "Generation cancelled"}
         
         # Check for ComfyUI error in output
         if "_error" in output:
@@ -777,6 +797,7 @@ class ComfyUIClient:
 
     def interrupt(self) -> bool:
         """Interrupt current generation."""
+        self._interrupted = True
         try:
             response = requests.post(f"{self.host}/interrupt", timeout=10)
             return response.status_code == 200
