@@ -24,7 +24,6 @@ class ComfyUIClient:
         self.history = []
         self._proc: Optional[subprocess.Popen] = None
         self._comfyui_path: Optional[str] = None
-        self._interrupted = False
 
     def _load_config(self, config_path: str) -> Dict:
         """Load ComfyUI workflow configuration."""
@@ -161,35 +160,37 @@ class ComfyUIClient:
         return None
 
     def get_output(self, prompt_id: str, timeout: int = 300) -> Optional[Dict]:
-        """Wait for and get output from a prompt."""
+        """Wait for and get output from a prompt. Checks ComfyUI progress each poll
+        to detect external cancellation (interrupt or queue clear)."""
         start_time = time.time()
+        grace_period = 10  # seconds before we check for cancellation
         while time.time() - start_time < timeout:
-            if self._interrupted:
-                logger.info("get_output: interrupted flag set, returning None")
-                self._interrupted = False
-                return {"_cancelled": True}
             history = self.get_history(prompt_id)
             if history and prompt_id in history:
                 prompt_data = history[prompt_id]
                 if "outputs" in prompt_data and prompt_data["outputs"]:
                     return prompt_data["outputs"]
-                # Check for error messages in status
                 if "status" in prompt_data:
                     status = prompt_data["status"]
                     if "messages" in status:
                         for msg_type, msg_data in status["messages"]:
-                            if msg_type == "execution_error" or msg_type == "error":
+                            if msg_type in ("execution_error", "error"):
                                 return {"_error": str(msg_data)}
-                # No outputs and no pending - might be done with error
                 if "outputs" in prompt_data:
                     return prompt_data["outputs"]
-            # Also check progress — if nothing is running and no history, generation was cancelled
-            if not history or prompt_id not in history:
+            elapsed = time.time() - start_time
+            # Only check for cancellation after grace period
+            if elapsed > grace_period:
                 prog = self.get_progress()
-                if not prog.get("running"):
-                    logger.info("get_output: ComfyUI progress shows not running, prompt not found in history, returning None")
-                    return {"_cancelled": True}
-            time.sleep(2)
+                is_running = prog.get("running", False)
+                if not is_running and (not history or prompt_id not in (history or {})):
+                    q = self.get_queue()
+                    running = q.get("queue_running", [])
+                    pending = q.get("queue_pending", [])
+                    if not running and not pending:
+                        logger.info("get_output: ComfyUI idle and prompt not in history — cancelled")
+                        return {"_cancelled": True}
+            time.sleep(1)
         return None
 
     def upload_image(self, image_path: str) -> Optional[str]:
@@ -796,8 +797,7 @@ class ComfyUIClient:
         return workflow
 
     def interrupt(self) -> bool:
-        """Interrupt current generation."""
-        self._interrupted = True
+        """Interrupt current generation on ComfyUI."""
         try:
             response = requests.post(f"{self.host}/interrupt", timeout=10)
             return response.status_code == 200

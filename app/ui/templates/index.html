@@ -10608,9 +10608,11 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 window._sceneAbortController.abort();
                 window._sceneAbortController = null;
             }
-            fetch('/api/image/interrupt', { method: 'POST' }).catch(() => {});
+            try {
+                await fetch('/api/image/interrupt', { method: 'POST' });
+            } catch(e) {}
             hideAbortButton();
-            notify('Cancelled', 'Scene batch cancelled', '✕');
+            notify('Cancelled', 'Generation cancelled', '✕');
         }
 
         function showAbortButton() {
