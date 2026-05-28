@@ -316,6 +316,13 @@ async def get_llm_status(provider: str):
     """Check if a local LLM is running."""
     return llm_engine.get_local_status(provider) if llm_engine else {"running": False}
 
+@app.get("/api/gpu/status")
+async def get_gpu_status():
+    """Check if GPU (CUDA) is available for llama.cpp."""
+    if llm_engine:
+        return {"gpu_available": llm_engine._gpu_available()}
+    return {"gpu_available": False}
+
 @app.post("/api/llm/start")
 async def start_local_llm(data: dict):
     """Start a local LLM as a subprocess."""

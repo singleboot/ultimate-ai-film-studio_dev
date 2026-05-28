@@ -806,16 +806,31 @@ class LLMEngine:
             pass
         return provider_id
 
+    def _gpu_available(self) -> bool:
+        try:
+            import subprocess
+            result = subprocess.run(["nvidia-smi"], capture_output=True, text=True, timeout=5)
+            return result.returncode == 0
+        except Exception:
+            try:
+                import torch
+                return torch.cuda.is_available()
+            except ImportError:
+                pass
+        return False
+
     def _get_gpu_layers(self) -> Optional[int]:
         try:
             if self._settings_path.exists():
                 with open(self._settings_path, 'r', encoding='utf-8') as f:
                     settings = json.load(f)
-                val = settings.get("llm", {}).get("n_gpu_layers", -1)
-                return int(val)
+                val = int(settings.get("llm", {}).get("n_gpu_layers", -1))
+                if val == -1:
+                    return -1 if self._gpu_available() else 0
+                return val
         except Exception:
             pass
-        return -1
+        return -1 if self._gpu_available() else 0
 
     def launch_local_llm(self, provider_id: str, model_path: str = None) -> Dict:
         status = self.get_local_status(provider_id)

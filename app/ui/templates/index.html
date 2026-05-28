@@ -1443,7 +1443,10 @@
                                 </div>
                                 <div class="form-group" id="llm-gpu-layers-group" style="display:none;">
                                     <label class="form-label">GPU Layers <span style="font-size:0.65rem;color:var(--text-secondary);">(-1=all, 0=CPU only)</span></label>
-                                    <input type="number" class="form-input" id="llm-gpu-layers" value="-1" min="-1" max="200" step="1" style="width:100px;">
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <input type="number" class="form-input" id="llm-gpu-layers" value="-1" min="-1" max="200" step="1" style="width:80px;">
+                                        <span id="llm-gpu-status" style="font-size:0.7rem;padding:2px 6px;border-radius:3px;">⏳ detecting...</span>
+                                    </div>
                                 </div>
                                 <div class="form-group" id="llm-models-path-group" style="display:none;">
                                     <label class="form-label">Models Folder (for GGUF files)</label>
@@ -2663,7 +2666,9 @@
             document.getElementById('llm-models-path-group').style.display = (provider === 'llama_cpp') ? 'block' : 'none';
             document.getElementById('llm-host-group').style.display = (provider === 'app_llm') ? 'none' : 'block';
             document.getElementById('llm-app-model-browser').style.display = isAppLLM ? 'block' : 'none';
-            document.getElementById('llm-gpu-layers-group').style.display = (provider === 'app_llm' || provider === 'llama_cpp') ? 'block' : 'none';
+            const showGpuGroup = provider === 'app_llm' || provider === 'llama_cpp';
+            document.getElementById('llm-gpu-layers-group').style.display = showGpuGroup ? 'block' : 'none';
+            if (showGpuGroup) checkGPUStatus();
             if (provider === 'ollama') {
                 document.getElementById('llm-host').value = 'http://localhost:11434';
             } else if (provider === 'lm_studio') {
@@ -2730,6 +2735,27 @@
                 statusEl.style.color = '#888';
                 startBtn.style.display = 'inline-block';
                 stopBtn.style.display = 'none';
+            }
+        }
+
+        async function checkGPUStatus() {
+            const el = document.getElementById('llm-gpu-status');
+            if (!el) return;
+            try {
+                const res = await fetch('/api/gpu/status');
+                const data = await res.json();
+                if (data.gpu_available) {
+                    el.textContent = '● GPU available';
+                    el.style.color = '#4ade80';
+                    el.style.background = 'rgba(74,222,128,0.1)';
+                } else {
+                    el.textContent = '○ CPU only (no GPU detected)';
+                    el.style.color = '#fbbf24';
+                    el.style.background = 'rgba(251,191,36,0.1)';
+                }
+            } catch(e) {
+                el.textContent = '○ detection failed';
+                el.style.color = '#888';
             }
         }
 
