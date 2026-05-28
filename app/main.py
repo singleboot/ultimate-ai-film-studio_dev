@@ -3,6 +3,8 @@ import json
 import shutil
 import platform
 import logging
+import threading
+import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
@@ -1070,6 +1072,7 @@ async def generate_i2i_endpoint(request: Request):
     input_images = data.get("input_images", [])
     aspect_ratio = data.get("aspect_ratio")
     resolution = data.get("resolution")
+    cfg = data.get("cfg")
     if not prompt:
         return {"success": False, "error": "No prompt provided"}
     settings = load_settings()
@@ -1085,7 +1088,48 @@ async def generate_i2i_endpoint(request: Request):
             logger.warning("[I2I] Image NOT FOUND: %s", p)
     logger.info("POST /api/comfyui/generate/i2i — workflow=%s, %d/%d images resolved, seed=%s, steps=%s",
                  workflow_name, len(abs_paths), len(input_images), seed, steps)
-    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, steps=steps, input_images=abs_paths if abs_paths else None, aspect_ratio=aspect_ratio, resolution=resolution)
+
+    # Start background progress poller so /api/image/progress shows live step info
+    _stop_i2i_poll = False
+    def _i2i_poll_progress():
+        node_map = {
+            "KSampler": "Sampling", "VAEDecode": "VAE Decode",
+            "VAEEncode": "VAE Encode", "CLIPTextEncode": "Encoding prompt",
+            "EmptyLatentImage": "Preparing", "LoadImage": "Loading image",
+            "SaveImage": "Saving", "CheckpointLoaderSimple": "Loading model",
+            "CLIPSetLastLayer": "Setting CLIP layer", "VAELoader": "Loading VAE",
+            "ControlNetLoader": "Loading ControlNet", "LoraLoader": "Loading LoRA",
+        }
+        while not _stop_i2i_poll:
+            try:
+                prog = comfyui_client.get_progress()
+                if prog.get("running") and prog.get("max", 0) > 0:
+                    pct = round(prog["current"] / prog["max"] * 100)
+                    step = prog.get("current", 0)
+                    total = prog.get("max", 0)
+                    step_label = f"Step {step}/{total}"
+                    node_type = prog.get("node_type", "") or prog.get("node", "") or ""
+                    readable = node_map.get(node_type, node_type.replace("_", " ").title() if node_type else "")
+                    node_label = f" — {readable}" if readable else ""
+                    if image_engine:
+                        image_engine._update_gen_progress(pct, "running", step_label)
+                        with image_engine._gen_lock:
+                            image_engine._gen_progress["step_label"] = step_label
+                            image_engine._gen_progress["node_label"] = node_label
+            except Exception:
+                pass
+            time.sleep(1)
+
+    poll_thread = threading.Thread(target=_i2i_poll_progress, daemon=True)
+    if image_engine:
+        image_engine._update_gen_progress(0, "running", "Starting generation...")
+    poll_thread.start()
+    try:
+        return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, steps=steps, cfg=cfg, input_images=abs_paths if abs_paths else None, aspect_ratio=aspect_ratio, resolution=resolution)
+    finally:
+        _stop_i2i_poll = True
+        if image_engine:
+            image_engine._update_gen_progress(0, "idle", "")
 
 @app.post("/api/comfyui/generate/i2v")
 async def generate_i2v_endpoint(request: Request):
