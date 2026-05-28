@@ -6485,6 +6485,7 @@
                             ? `<img src="${getAssetImageSrc(approvedImg, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
                             : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">${ch.image_prompt ? '🎨 ' + ch.image_prompt.substring(0, 100) + 'ΓǪ' : (ch.role || 'Drop image or click to import')}</span>`
                         }
+                        ${hasImage ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${approvedImg.includes('_4k_') ? '#e74c3c' : '#222'};z-index:2;">${getResolutionLabel(approvedImg)}</span>` : ''}
                     </div>
                     <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
                         ${ch.physical_appearance ? `<div style="color:var(--text-secondary);font-size:0.6rem;">👁 ${ch.physical_appearance.substring(0, 80)}${ch.physical_appearance.length > 80 ? 'ΓǪ' : ''}</div>` : ''}
@@ -6575,6 +6576,7 @@
                             ? `<img src="${getAssetImageSrc(sheetImage, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
                             : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">Drop turnaround sheet or click to import</span>`
                         }
+                        ${hasSheet ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${sheetImage.includes('_4k_') ? '#e74c3c' : '#222'};z-index:2;">${getResolutionLabel(sheetImage)}</span>` : ''}
                     </div>
                     <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
                         <div style="color:var(--text-secondary);font-size:0.6rem;">${ch.full_name || ch.character_name || ''}</div>
@@ -6656,6 +6658,7 @@
                             ? `<img src="${getAssetImageSrc(sheetImage, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
                             : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">Drop reference board or click to import</span>`
                         }
+                        ${hasSheet ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${sheetImage.includes('_4k_') ? '#e74c3c' : '#222'};z-index:2;">${getResolutionLabel(sheetImage)}</span>` : ''}
                     </div>
                     <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
                         <div style="color:var(--text-secondary);font-size:0.6rem;">${loc.location_name || loc.environment_type || ''}</div>
@@ -6822,12 +6825,14 @@
 
                 notify('Generating', `Sending to ${provider}...`, '🎨');
 
+                const csResEl = document.getElementById('sel-img-resolution');
+                const csResolution = csResEl ? csResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
                 const res = await fetch('/api/image/generate', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     signal: abortSignal,
                     body: JSON.stringify({
                         provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey,
-                        width: 1024, height: 1024, seed: seed, steps: stepsVal, cfg: cfgVal,
+                        seed: seed, steps: stepsVal, cfg: cfgVal, resolution: csResolution,
                         project_path: currentProject?.path || '',
                         input_images: [approvedImg]
                     })
@@ -7058,12 +7063,14 @@
 
                 notify('Generating', `Sending to ${provider}...`, '🎨');
 
+                const lsResEl = document.getElementById('sel-img-resolution');
+                const lsResolution = lsResEl ? lsResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
                 const res = await fetch('/api/image/generate', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     signal: abortSignal,
                     body: JSON.stringify({
                         provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey,
-                        width: 1024, height: 1024, seed: seed, steps: stepsVal, cfg: cfgVal,
+                        seed: seed, steps: stepsVal, cfg: cfgVal, resolution: lsResolution,
                         project_path: currentProject?.path || '',
                         input_images: [approvedImg]
                     })
@@ -7391,6 +7398,7 @@
                             ? `<img src="${getAssetImageSrc(approvedImg, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
                             : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">${loc.environment_type ? '🏠 ' + loc.environment_type : 'Drop image or click to import'}</span>`
                         }
+                        ${hasImage ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${approvedImg.includes('_4k_') ? '#e74c3c' : '#222'};z-index:2;">${getResolutionLabel(approvedImg)}</span>` : ''}
                     </div>
                     <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
                         ${loc.architecture_style ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🏛 ${loc.architecture_style.substring(0, 80)}${loc.architecture_style.length > 80 ? 'ΓǪ' : ''}</div>` : ''}
@@ -8762,10 +8770,12 @@ Project visual language: ${projVL}`;
                 const seed = seedOverride ? parseInt(seedOverride) : Math.floor(Math.random() * 999999999) + 1;
                 const cfgVal = parseFloat(document.getElementById('gen-cfg')?.value) || 4.0;
                 const stepsVal = parseInt(document.getElementById('gen-steps')?.value) || 20;
+                const imgResEl = document.getElementById('sel-img-resolution');
+                const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
                 const res = await fetch('/api/image/generate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey, width: 1024, height: 1024, seed: seed, steps: stepsVal, cfg: cfgVal }),
+                    body: JSON.stringify({ provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey, seed: seed, steps: stepsVal, cfg: cfgVal, resolution: imgResolution }),
                 });
                 const data = await res.json();
                 pollingActive = false;
@@ -11460,6 +11470,7 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                     <div id="t2i-preview-char-${i}" style="height:200px;background:var(--bg-tertiary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;">
                         <span id="t2i-placeholder-char-${i}" style="color:var(--text-secondary);font-size:0.7rem;text-align:center;${savedUrl ? 'display:none;' : ''}">No image</span>
                         <img id="t2i-img-char-${i}" alt="Character ${i+1}" style="${savedUrl ? 'width:100%;height:100%;object-fit:cover;border-radius:4px;cursor:pointer;' : 'display:none;width:100%;height:100%;object-fit:cover;border-radius:4px;cursor:pointer;'}" src="${savedUrl || ''}" onclick="openFullscreenImage(this.src)">
+                        ${savedUrl ? `<span id="t2i-res-badge-char-${i}" style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:#222;z-index:2;">${getResolutionLabel(img?.savedImage || '')}</span>` : ''}
                     </div>
                     <div style="font-weight:600;font-size:0.75rem;color:var(--accent-success);margin-top:6px;">Character ${i+1}</div>
                     <input type="text" class="form-input" id="char-name-${i}" placeholder="Name" value="${img?.name || ''}" oninput="charData[${i}].name=this.value;scheduleSaveState()" style="font-size:0.8rem;padding:4px 6px;margin-top:4px;">
@@ -11636,10 +11647,12 @@ Respond with raw JSON only, no markdown, no backticks.`;
             btn.textContent = '⏳...';
             showT2ISpinner(type, index);
             const seed = Math.floor(Math.random() * 999999999) + 1;
+            const t2iResEl = document.getElementById('sel-img-resolution');
+            const t2iResolution = t2iResEl ? t2iResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
             try {
                 const res = await fetch('/api/comfyui/generate/t2i', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ prompt: prompt, seed: seed })
+                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: t2iResolution })
                 });
                 const data = await res.json();
                 hideT2ISpinner(type, index);
@@ -11909,6 +11922,7 @@ Respond with raw JSON only, no markdown, no backticks.`;
                     <div id="t2i-preview-loc-${i}" style="height:200px;background:var(--bg-tertiary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;">
                         <span id="t2i-placeholder-loc-${i}" style="color:var(--text-secondary);font-size:0.7rem;text-align:center;${savedUrl ? 'display:none;' : ''}">No image</span>
                         <img id="t2i-img-loc-${i}" alt="Location ${i+1}" style="${savedUrl ? 'width:100%;height:100%;object-fit:cover;border-radius:4px;cursor:pointer;' : 'display:none;width:100%;height:100%;object-fit:cover;border-radius:4px;cursor:pointer;'}" src="${savedUrl || ''}" onclick="openFullscreenImage(this.src)">
+                        ${savedUrl ? `<span id="t2i-res-badge-loc-${i}" style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:#222;z-index:2;">${getResolutionLabel(loc?.savedImage || '')}</span>` : ''}
                     </div>
                     <div style="font-weight:600;font-size:0.75rem;color:var(--accent-success);margin-top:6px;">Location ${i+1}</div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px;">

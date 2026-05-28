@@ -1052,7 +1052,8 @@ async def generate_t2i_endpoint(request: Request):
     if not workflow_name:
         return {"success": False, "error": "No T2I workflow assigned in Settings"}
     logger.info("POST /api/comfyui/generate/t2i — workflow=%s, seed=%s", workflow_name, seed)
-    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed)
+    resolution = data.get("resolution")
+    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, resolution=resolution)
 
 @app.post("/api/comfyui/generate/i2i")
 async def generate_i2i_endpoint(request: Request):
