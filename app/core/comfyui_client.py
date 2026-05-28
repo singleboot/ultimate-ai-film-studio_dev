@@ -396,7 +396,7 @@ class ComfyUIClient:
                     debug_log.append(f"Slot {nid} <- (empty, bypass)")
                     workflow[nid]["inputs"]["image_path"] = ""
 
-            # Phase 2b: inject image into LoadImage nodes (for video workflows)
+            # Phase 2b: inject image into LoadImage nodes
             if not slot_nodes and input_images:
                 load_image_nodes = []
                 for node_id, node_data in workflow.items():
@@ -413,14 +413,16 @@ class ComfyUIClient:
                     if idx < len(input_images):
                         img_path = input_images[idx]
                         if not Path(img_path).exists():
-                            debug_log.append(f"LoadImage {nid} <- FILE NOT FOUND: {img_path}")
-                        else:
-                            uploaded_name = self.upload_image(img_path)
-                            if uploaded_name:
-                                debug_log.append(f"LoadImage {nid} <- uploaded: {uploaded_name}")
-                                workflow[nid]["inputs"]["image"] = uploaded_name
-                            else:
-                                debug_log.append(f"LoadImage {nid} <- upload failed, using original")
+                            err = f"Input image not found: {img_path}"
+                            logger.error(err)
+                            return {"success": False, "error": err}
+                        uploaded_name = self.upload_image(img_path)
+                        if not uploaded_name:
+                            err = f"Failed to upload input image to ComfyUI: {img_path}"
+                            logger.error(err)
+                            return {"success": False, "error": err}
+                        debug_log.append(f"LoadImage {nid} <- uploaded: {uploaded_name}")
+                        workflow[nid]["inputs"]["image"] = uploaded_name
                     else:
                         debug_log.append(f"LoadImage {nid} <- no input image provided")
 

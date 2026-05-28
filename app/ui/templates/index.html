@@ -2733,7 +2733,7 @@
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({provider})
                 });
-            } else {
+                } else {
                 statusEl.textContent = '⏳ Starting...';
                 const modelSel = getLLMModelSelect();
                 const modelPath = modelSel.value;
@@ -2746,10 +2746,19 @@
                         body.model_path = modelPath;
                     }
                 }
-                await fetch('/api/llm/start', {
+                const startRes = await fetch('/api/llm/start', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(body)
                 });
+                const startData = await startRes.json().catch(() => ({}));
+                if (!startData.success && startData.error) {
+                    notify('LLM Start Failed', startData.error, '⚠️');
+                    statusEl.textContent = '○ Stopped';
+                    statusEl.style.color = '#f87171';
+                    startBtn.style.display = 'inline-block';
+                    stopBtn.style.display = 'none';
+                    return;
+                }
             }
             setTimeout(() => checkLocalLLMStatus(provider), 3000);
         }
@@ -6190,13 +6199,15 @@
             renderLocationAssets(locBible);
         }
 
-        function getAssetImageSrc(path) {
+        function getAssetImageSrc(path, thumbnail) {
             if (!path) return '';
             if (path.startsWith('http')) return path;
             if (path.startsWith('/api/')) return path;
             const sep = path.includes('?') ? '&' : '?';
             const projectPathQuery = currentProject?.path ? ('&path=' + encodeURIComponent(currentProject.path)) : '';
-            return '/api/projects/' + (currentProject?.name || '') + '/saved-image/' + path + sep + 't=' + Date.now() + projectPathQuery;
+            let url = '/api/projects/' + (currentProject?.name || '') + '/saved-image/' + path + sep + 't=' + Date.now() + projectPathQuery;
+            if (thumbnail) url += '&thumbnail=true';
+            return url;
         }
 
         function resolveSavedImagePath(savedImage, stage) {
@@ -6333,7 +6344,7 @@
                     </div>
                     <div class="char-img-zone" data-cid="${cid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
                         ${hasImage
-                            ? `<img src="${getAssetImageSrc(approvedImg)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            ? `<img src="${getAssetImageSrc(approvedImg, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
                             : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">${ch.image_prompt ? '🎨 ' + ch.image_prompt.substring(0, 100) + 'ΓǪ' : (ch.role || 'Drop image or click to import')}</span>`
                         }
                     </div>
@@ -6422,7 +6433,7 @@
                     </div>
                     <div class="cs-img-zone" data-cid="${cid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
                         ${hasSheet
-                            ? `<img src="${getAssetImageSrc(sheetImage)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            ? `<img src="${getAssetImageSrc(sheetImage, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
                             : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">Drop turnaround sheet or click to import</span>`
                         }
                     </div>
@@ -6502,7 +6513,7 @@
                     </div>
                     <div class="ls-img-zone" data-lid="${lid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
                         ${hasSheet
-                            ? `<img src="${getAssetImageSrc(sheetImage)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            ? `<img src="${getAssetImageSrc(sheetImage, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
                             : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">Drop reference board or click to import</span>`
                         }
                     </div>
@@ -6670,6 +6681,7 @@
                     body: JSON.stringify({
                         provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey,
                         width: 1024, height: 1024, seed: seed,
+                        project_path: currentProject?.path || '',
                         input_images: [approvedImg]
                     })
                 });
@@ -6875,6 +6887,7 @@
                     body: JSON.stringify({
                         provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey,
                         width: 1024, height: 1024, seed: seed,
+                        project_path: currentProject?.path || '',
                         input_images: [approvedImg]
                     })
                 });
@@ -7178,7 +7191,7 @@
                     </div>
                     <div class="loc-img-zone" data-lid="${lid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
                         ${hasImage
-                            ? `<img src="${getAssetImageSrc(approvedImg)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            ? `<img src="${getAssetImageSrc(approvedImg, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
                             : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">${loc.environment_type ? '🏠 ' + loc.environment_type : 'Drop image or click to import'}</span>`
                         }
                     </div>
@@ -8558,7 +8571,7 @@ Project visual language: ${projVL}`;
                             if (clearBtn) clearBtn.style.display = history.length ? 'inline-block' : 'none';
                             historyEl.innerHTML = history.map((h, i) => `
                                 <div style="position:relative;width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === imgUrl ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="assetSetActiveFromHistory(${i})" title="Click to set as active">
-                                    <img src="${getAssetImageSrc(h)}" style="width:100%;height:100%;object-fit:cover;">
+<img src="${getAssetImageSrc(h, true)}" style="width:100%;height:100%;object-fit:cover;">
                                     <div style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:bold;cursor:pointer;" onclick="event.stopPropagation(); deleteAssetHistoryItem(${i})" title="Delete this variant">✕</div>
                                 </div>
                             `).join('');
@@ -12052,9 +12065,9 @@ Output all prompts in one block, separated by blank lines.`;
                 imgSrc = `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(a.filename)}${projectPathQuery}`;
             } else {
                 if (a.filename.includes('/')) {
-                    imgSrc = getAssetImageSrc(a.filename);
+                    imgSrc = getAssetImageSrc(a.filename, true);
                 } else {
-                    imgSrc = `/api/comfyui/view?filename=${a.filename}`;
+                    imgSrc = `/api/comfyui/view?filename=${a.filename}&thumbnail=true`;
                 }
             }
             
@@ -12229,6 +12242,8 @@ Output all prompts in one block, separated by blank lines.`;
                 fetch('/api/llm/start', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(body)
+                }).then(r => r.json()).then(d => {
+                    if (!d.success) console.warn('Auto-start LLM failed:', d.error);
                 }).catch(() => {});
             }
             if (s.comfyui && s.comfyui.auto_start) {

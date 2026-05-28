@@ -2135,9 +2135,11 @@ async def save_settings_endpoint(data: dict):
     # Auto-start local LLM if enabled
     if data.get("llm", {}).get("auto_start", False) and llm_engine:
         try:
-            llm_engine.launch_local_llm(data["llm"]["provider"])
-        except Exception:
-            pass
+            result = llm_engine.launch_local_llm(data["llm"]["provider"])
+            if not result.get("success"):
+                logger.warning("Auto-start LLM failed: %s", result.get("error"))
+        except Exception as e:
+            logger.warning("Auto-start LLM exception: %s", e)
     # Auto-start ComfyUI if enabled
     cui = data.get("comfyui", {})
     if cui.get("auto_start", False) and comfyui_client:

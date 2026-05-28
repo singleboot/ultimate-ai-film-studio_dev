@@ -822,6 +822,8 @@ class LLMEngine:
         detect = self.detect_local_llm(provider_id)
         if detect.get("installed") and detect.get("path"):
             cmd[0] = detect["path"]
+        elif provider_id in ("llama_cpp", "app_llm"):
+            return {"success": False, "error": f"{cmd[0]} not found. Install it first."}
 
         if provider_id == "llama_cpp" and model_path:
             if not os.path.exists(model_path):

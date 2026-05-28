@@ -88,17 +88,32 @@ if not exist "comfyui\main.py" (
 REM Download llama-server for App LLM
 echo.
 echo Checking for llama-server binary...
-set "LLAMA_VERSION=b4389"
 if not exist "bin\llama-server.exe" (
     echo Downloading llama-server for App LLM...
-    powershell -Command "& {$progressPreference='silentlyContinue'; Invoke-WebRequest -Uri 'https://github.com/ggml-org/llama.cpp/releases/download/b%LLAMA_VERSION%/llama-b%LLAMA_VERSION%-bin-win-cuda-x64.zip' -OutFile '%TEMP%\llama.zip'}"
+    echo Fetching latest llama.cpp release...
+    powershell -Command "& {$progressPreference='silentlyContinue'; try { $r = Invoke-WebRequest -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -UseBasicParsing -TimeoutSec 10; $d = $r.Content | ConvertFrom-Json; Write-Host $d.tag_name } catch { Write-Host 'b9370' }" > "%TEMP%\llama-latest-tag.txt"
+    set /p LLAMA_VERSION=<"%TEMP%\llama-latest-tag.txt"
+    echo Latest version: %LLAMA_VERSION%
+    powershell -Command "& {$progressPreference='silentlyContinue'; try { $k = Get-CimInstance 'CIM_VideoController' | Select-Object -ExpandProperty Name; if ($k -match 'NVIDIA') { $v = (nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>$null); if ($v) { $m = [Version]$v; if ($m.Major -ge 13) { 'cuda-13.3' } else { 'cuda-12.4' } } else { 'cuda-12.4' } } else { 'cpu' } } catch { 'cpu' }" > "%TEMP%\llama-variant.txt"
+    set /p LLAMA_VARIANT=<"%TEMP%\llama-variant.txt"
+    if "%LLAMA_VARIANT%"=="cuda-13.3" (
+        set "LLAMA_URL=https://github.com/ggml-org/llama.cpp/releases/download/%LLAMA_VERSION%/llama-%LLAMA_VERSION%-bin-win-cuda-13.3-x64.zip"
+    ) else if "%LLAMA_VARIANT%"=="cuda-12.4" (
+        set "LLAMA_URL=https://github.com/ggml-org/llama.cpp/releases/download/%LLAMA_VERSION%/llama-%LLAMA_VERSION%-bin-win-cuda-12.4-x64.zip"
+    ) else (
+        set "LLAMA_URL=https://github.com/ggml-org/llama.cpp/releases/download/%LLAMA_VERSION%/llama-%LLAMA_VERSION%-bin-win-cpu-x64.zip"
+    )
+    echo Downloading from: %LLAMA_URL%
+    powershell -Command "& {$progressPreference='silentlyContinue'; Invoke-WebRequest -Uri '%LLAMA_URL%' -OutFile '%TEMP%\llama.zip'}"
     if exist "%TEMP%\llama.zip" (
+        echo Extracting...
         powershell -Command "& {Expand-Archive -Path '%TEMP%\llama.zip' -DestinationPath '%TEMP%\llama-extracted' -Force}"
-        if exist "%TEMP%\llama-extracted\llama-server.exe" (
-            copy /Y "%TEMP%\llama-extracted\llama-server.exe" "bin\llama-server.exe"
-            echo llama-server downloaded to bin\llama-server.exe
+        echo Installing llama-server and dependencies to bin\...
+        xcopy /E /I /Y "%TEMP%\llama-extracted\*" "bin\" >nul
+        if exist "bin\llama-server.exe" (
+            echo llama-server and all dependencies installed to bin\.
         ) else (
-            dir "%TEMP%\llama-extracted" /b
+            dir "%TEMP%\llama-extracted" /s /b
             echo Could not find llama-server.exe in the archive. You may need to download it manually.
             echo Download from: https://github.com/ggml-org/llama.cpp/releases
         )
