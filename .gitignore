@@ -23,3 +23,12 @@ Thumbs.db
 projects/
 *.log
 
+# Binaries (llama.cpp, model DLLs)
+bin/
+
+# Large model files
+models/
+
+# External projects
+comfyui-mcp-server/
+
