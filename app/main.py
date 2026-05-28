@@ -1091,6 +1091,7 @@ async def generate_i2i_endpoint(request: Request):
 
     # Start background progress poller so /api/image/progress shows live step info
     _stop_i2i_poll = False
+    total_steps = steps or 20
     def _i2i_poll_progress():
         node_map = {
             "KSampler": "Sampling", "VAEDecode": "VAE Decode",
@@ -1100,6 +1101,7 @@ async def generate_i2i_endpoint(request: Request):
             "CLIPSetLastLayer": "Setting CLIP layer", "VAELoader": "Loading VAE",
             "ControlNetLoader": "Loading ControlNet", "LoraLoader": "Loading LoRA",
         }
+        gen_start = time.time()
         while not _stop_i2i_poll:
             try:
                 prog = comfyui_client.get_progress()
@@ -1116,6 +1118,19 @@ async def generate_i2i_endpoint(request: Request):
                         with image_engine._gen_lock:
                             image_engine._gen_progress["step_label"] = step_label
                             image_engine._gen_progress["node_label"] = node_label
+                    time.sleep(1)
+                    continue
+                # Fallback: estimate from elapsed time when /progress is unavailable
+                elapsed = time.time() - gen_start
+                est_per_step = 2.0  # seconds per step (rough estimate for flux workflows)
+                est_step = min(int(elapsed / est_per_step) + 1, total_steps)
+                pct = round((est_step / total_steps) * 100)
+                if image_engine:
+                    step_label = f"Step ~{est_step}/{total_steps}"
+                    image_engine._update_gen_progress(pct, "running", step_label)
+                    with image_engine._gen_lock:
+                        image_engine._gen_progress["step_label"] = step_label
+                        image_engine._gen_progress["node_label"] = ""
             except Exception:
                 pass
             time.sleep(1)
@@ -1124,8 +1139,21 @@ async def generate_i2i_endpoint(request: Request):
     if image_engine:
         image_engine._update_gen_progress(0, "running", "Starting generation...")
     poll_thread.start()
+
+    # Run blocking generation in thread pool so event loop stays free
+    # (allows /api/image/progress polling to work during generation)
+    import asyncio
+    loop = asyncio.get_event_loop()
     try:
-        return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, steps=steps, cfg=cfg, input_images=abs_paths if abs_paths else None, aspect_ratio=aspect_ratio, resolution=resolution)
+        result = await loop.run_in_executor(
+            None,
+            lambda: comfyui_client.generate_with_workflow(
+                prompt, workflow_name, seed=seed, steps=steps, cfg=cfg,
+                input_images=abs_paths if abs_paths else None,
+                aspect_ratio=aspect_ratio, resolution=resolution
+            )
+        )
+        return result
     finally:
         _stop_i2i_poll = True
         if image_engine:

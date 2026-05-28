@@ -175,7 +175,9 @@ class ImageEngine:
         self._update_gen_progress(0, "running", "Starting generation...")
 
         _stop_polling = False
+        total_steps = steps or 20
         def _poll_progress():
+            gen_start = time.time()
             while not _stop_polling:
                 try:
                     prog = self.comfyui.get_progress()
@@ -184,21 +186,12 @@ class ImageEngine:
                         step = prog.get("current", 0)
                         total = prog.get("max", 0)
                         step_label = f"Step {step}/{total}"
-                        # Map ComfyUI node_type to readable labels
                         node_type = prog.get("node_type", "") or prog.get("node", "") or ""
                         node_map = {
-                            "KSampler": "Sampling",
-                            "VAEDecode": "VAE Decode",
-                            "VAEEncode": "VAE Encode",
-                            "CLIPTextEncode": "Encoding prompt",
-                            "EmptyLatentImage": "Preparing",
-                            "LoadImage": "Loading image",
-                            "SaveImage": "Saving",
-                            "CheckpointLoaderSimple": "Loading model",
-                            "CLIPSetLastLayer": "Setting CLIP layer",
-                            "VAELoader": "Loading VAE",
-                            "ControlNetLoader": "Loading ControlNet",
-                            "LoraLoader": "Loading LoRA",
+                            "KSampler": "Sampling", "VAEDecode": "VAE Decode",
+                            "VAEEncode": "VAE Encode", "CLIPTextEncode": "Encoding prompt",
+                            "EmptyLatentImage": "Preparing", "LoadImage": "Loading image",
+                            "SaveImage": "Saving", "CheckpointLoaderSimple": "Loading model",
                         }
                         readable = node_map.get(node_type, node_type.replace("_", " ").title() if node_type else "")
                         node_label = f" — {readable}" if readable else ""
@@ -206,6 +199,17 @@ class ImageEngine:
                         with self._gen_lock:
                             self._gen_progress["step_label"] = step_label
                             self._gen_progress["node_label"] = node_label
+                    else:
+                        # Fallback: estimate from elapsed time when /progress is unavailable
+                        elapsed = time.time() - gen_start
+                        est_per_step = 2.0
+                        est_step = min(int(elapsed / est_per_step) + 1, total_steps)
+                        pct = round((est_step / total_steps) * 100)
+                        step_label = f"Step ~{est_step}/{total_steps}"
+                        self._update_gen_progress(pct, "running", step_label)
+                        with self._gen_lock:
+                            self._gen_progress["step_label"] = step_label
+                            self._gen_progress["node_label"] = ""
                 except Exception:
                     pass
                 time.sleep(1)
