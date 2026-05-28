@@ -1322,6 +1322,7 @@
                 <button class="btn btn-secondary" type="button" onclick="generateStoryboardPromptsPhase()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all image prompts">🧠 Img Pr</button>
                 <button class="btn btn-secondary" type="button" onclick="generateAllStoryboardVideoPrompts()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all video prompts">📝 Vid Pr</button>
                 <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all images">🎨 Gen Img</button>
+                <button class="btn btn-secondary" type="button" onclick="storyboardUpscaleAll()" style="padding:4px 8px;font-size:0.7rem;" title="Upscale all images to 4K">🔍 4K All</button>
                 <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:4px 8px;font-size:0.7rem;" title="Approve all images">✅ App Img</button>
                 <button class="btn btn-success" type="button" onclick="approveAllVideos()" style="padding:4px 8px;font-size:0.7rem;" title="Approve all videos" id="sb-approve-all-videos-btn">✔️ App Vid</button>
                 <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:4px 8px;font-size:0.7rem;opacity:0.4;pointer-events:none;" title="Generate all videos">🎥 Gen Vid</button>
@@ -10340,6 +10341,24 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             notify('Scene Upscale', 'All scene images upscaled to 4K', '🔍');
         }
 
+        async function storyboardUpscaleAll() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            let count = 0;
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh.storyboard_image || sh._temp_storyboard_image) {
+                        const ok = await storyboardUpscaleImage(sIdx, shIdx);
+                        if (ok) count++;
+                    }
+                }
+            }
+            notify('Upscale All', `Upscaled ${count} image(s) to 4K`, '🔍');
+            renderStoryboard();
+        }
+
         async function generateSceneImages(sceneIdx) {
             const s = screenplayData.scenes[sceneIdx];
             if (!s || !s.shots) return;
@@ -10437,6 +10456,33 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             const pending = s.shots.filter(sh => sh._temp_storyboard_image);
             if (!pending.length) { btn.style.display = 'none'; return; }
+
+            // Upscale warning — check if any pending image is not upscaled
+            if (currentProject?.settings?.upscaleWarning !== false) {
+                const anyNotUpscaled = pending.some(sh => {
+                    return !(sh._temp_upscaled_file && sh._temp_upscaled_file.includes('_4k_'))
+                        && !(sh.storyboard_image && sh.storyboard_image.includes('_4k_'))
+                        && !(sh._temp_storyboard_image && sh._temp_storyboard_image.includes('_4k_'));
+                });
+                if (anyNotUpscaled) {
+                    const doUpscale = await showConfirm(
+                        'Upscale to 4K?',
+                        `${pending.length} image(s) have not been upscaled to 4K. Would you like to upscale all before approving?`
+                    );
+                    if (doUpscale) {
+                        for (const sh of pending) {
+                            const shotIdx = s.shots.indexOf(sh);
+                            const ok = await storyboardUpscaleImage(sceneIdx, shotIdx);
+                            if (!ok) {
+                                notify('Upscale Failed', `Shot ${sh.shot_id} upscale failed.`, '❌');
+                            }
+                        }
+                        // Re-filter pending after upscale
+                        const stillPending = s.shots.filter(sh => sh._temp_storyboard_image || sh._temp_upscaled_file);
+                        if (!stillPending.length) { btn.style.display = 'none'; return; }
+                    }
+                }
+            }
 
             window._sceneAbortController = new AbortController();
             const signal = window._sceneAbortController.signal;
@@ -12191,6 +12237,36 @@ Raw JSON only, no markdown.`;
         async function approveAllImages() {
             if (!screenplayData || !screenplayData.scenes) return;
             let count = 0;
+
+            // Upscale warning — check all pending images once
+            if (currentProject?.settings?.upscaleWarning !== false) {
+                const allPending = [];
+                for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                    const s = screenplayData.scenes[sIdx];
+                    if (!s.shots) continue;
+                    for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                        const sh = s.shots[shIdx];
+                        if (sh._temp_storyboard_image && !sh.storyboard_image) allPending.push({ sIdx, shIdx, sh });
+                    }
+                }
+                const anyNotUpscaled = allPending.some(({ sh }) => {
+                    return !(sh._temp_upscaled_file && sh._temp_upscaled_file.includes('_4k_'))
+                        && !(sh.storyboard_image && sh.storyboard_image.includes('_4k_'))
+                        && !(sh._temp_storyboard_image && sh._temp_storyboard_image.includes('_4k_'));
+                });
+                if (anyNotUpscaled) {
+                    const doUpscale = await showConfirm(
+                        'Upscale to 4K?',
+                        `${allPending.length} image(s) have not been upscaled to 4K. Would you like to upscale all before approving?`
+                    );
+                    if (doUpscale) {
+                        for (const { sIdx, shIdx } of allPending) {
+                            await storyboardUpscaleImage(sIdx, shIdx);
+                        }
+                    }
+                }
+            }
+
             for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
                 const s = screenplayData.scenes[sIdx];
                 if (!s.shots) continue;
