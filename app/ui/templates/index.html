@@ -1116,6 +1116,16 @@
                 </div>
             </div>
 
+            <!-- Sheet Generation Controls: CFG / Steps / Seed -->
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:8px 12px;background:var(--bg-secondary);border-radius:6px;border:1px solid var(--border-color);flex-wrap:wrap;">
+                <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">CFG:</label>
+                <input type="number" id="sheet-cfg" style="width:55px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" value="1.5" min="0.5" max="3.0" step="0.5" onchange="onSheetCfgChange()">
+                <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">Steps:</label>
+                <input type="number" id="sheet-steps" style="width:55px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" value="4" min="1" max="50" step="1" onchange="onSheetStepsChange()">
+                <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">Seed:</label>
+                <input type="number" id="sheet-seed" style="width:90px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="random" min="0" step="1">
+                <button class="btn btn-secondary" onclick="document.getElementById('sheet-seed').value='';document.getElementById('sheet-cfg').value='1.5';document.getElementById('sheet-steps').value='4'" style="padding:2px 6px;font-size:0.5rem;">↺ Reset</button>
+            </div>
             <!-- Sheet Tabs -->
             <div style="display:flex;gap:8px;margin-bottom:15px;border-bottom:1px solid var(--border-color);padding-bottom:8px;">
                 <button class="btn btn-primary" onclick="switchSheetTab('characters')" id="tab-cs-btn" style="padding:8px 18px;">👤 Character Sheets (<span id="sheet-char-count">0</span>)</button>
@@ -1179,11 +1189,21 @@
                         <label style="font-size:0.75rem;font-weight:600;color:var(--accent-primary);display:block;margin-bottom:4px;" id="asset-expand-prompt-label">T2I Image Prompt:</label>
                         <textarea id="asset-expand-prompt" style="width:100%;min-height:80px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;padding:8px;font-size:0.8rem;resize:vertical;" placeholder="Generate or write image prompt..."></textarea>
                     </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;padding-top:8px;align-items:center;font-size:0.65rem;">
+                        <span style="color:var(--text-secondary);">CFG:</span>
+                        <input type="number" id="gen-cfg" style="width:55px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" value="4.0" min="0.5" max="15.0" step="0.5" onchange="onGenCfgChange()">
+                        <span style="color:var(--text-secondary);margin-left:4px;">Steps:</span>
+                        <input type="number" id="gen-steps" style="width:55px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" value="20" min="1" max="150" step="1" onchange="onGenStepsChange()">
+                        <span style="color:var(--text-secondary);margin-left:4px;">Seed:</span>
+                        <input type="number" id="gen-seed" style="width:90px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="random" min="0" step="1">
+                        <button class="btn btn-secondary" onclick="document.getElementById('gen-seed').value='';document.getElementById('gen-cfg').value='4.0';document.getElementById('gen-steps').value='20'" style="padding:2px 6px;font-size:0.5rem;">↺ Reset</button>
+                    </div>
                     <div style="display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--border-color);padding-top:10px;">
                         <button class="btn btn-primary" onclick="assetGenerateImage()" id="asset-gen-btn" style="padding:6px 12px;font-size:0.8rem;">🎨 Generate</button>
                         <button class="btn btn-secondary" onclick="showAssetVariantInput()" id="asset-variant-btn" style="padding:6px 12px;font-size:0.8rem;">✏️ Variant</button>
                         <button class="btn btn-secondary" onclick="assetGenerateTurnaround()" id="asset-turnaround-btn" style="padding:6px 12px;font-size:0.8rem;display:none;">📋 Turnaround</button>
                         <button class="btn btn-secondary" onclick="assetUploadFromModal()" id="asset-upload-btn" style="padding:6px 12px;font-size:0.8rem;">📁 Upload</button>
+                        <button class="btn btn-secondary" onclick="assetUpscaleImage()" id="asset-upscale-btn" title="Upscale current image to 4K" style="padding:6px 12px;font-size:0.8rem;">🔍 4K</button>
                         <button class="btn btn-secondary" onclick="assetApprove()" id="asset-approve-btn" style="padding:6px 12px;font-size:0.8rem;">✅ Approve</button>
                     </div>
                     <!-- Variant creation input (hidden by default) -->
@@ -1227,13 +1247,15 @@
                 <!-- Right: Metadata + Controls -->
                 <div style="width:360px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
                     <div id="storyboard-expand-metadata" style="font-size:0.85rem;line-height:1.6;"></div>
-                    <!-- Seed & Steps controls -->
-                    <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--border-color);">
-                        <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">Seed:</label>
-                        <input type="number" id="storyboard-expand-seed" style="width:90px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="random" min="0" step="1">
+                    <!-- CFG / Steps / Seed controls -->
+                    <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--border-color);flex-wrap:wrap;">
+                        <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">CFG:</label>
+                        <input type="number" id="storyboard-expand-cfg" style="width:50px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="auto" min="0.5" max="15.0" step="0.5" value="4.0">
                         <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">Steps:</label>
-                        <input type="number" id="storyboard-expand-steps" style="width:60px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="auto" min="1" max="150" value="20">
-                        <button class="btn btn-secondary" onclick="document.getElementById('storyboard-expand-seed').value='';document.getElementById('storyboard-expand-steps').value='20'" style="padding:2px 6px;font-size:0.5rem;">↺</button>
+                        <input type="number" id="storyboard-expand-steps" style="width:50px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="auto" min="1" max="150" step="1" value="20">
+                        <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">Seed:</label>
+                        <input type="number" id="storyboard-expand-seed" style="width:85px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="random" min="0" step="1">
+                        <button class="btn btn-secondary" onclick="document.getElementById('storyboard-expand-cfg').value='4.0';document.getElementById('storyboard-expand-steps').value='20';document.getElementById('storyboard-expand-seed').value=''" style="padding:2px 6px;font-size:0.5rem;">↺ Reset</button>
                     </div>
                     <div style="border-top:1px solid var(--border-color);padding-top:10px;">
                         <label style="font-size:0.75rem;font-weight:600;color:var(--accent-primary);display:block;margin-bottom:4px;" id="storyboard-expand-prompt-label">Image Prompt:</label>
@@ -1246,6 +1268,7 @@
                         <button class="btn btn-primary" onclick="storyboardExpandGenerate()" id="storyboard-expand-gen-btn" style="padding:6px 12px;font-size:0.8rem;">🎨 Generate</button>
                         <button class="btn btn-secondary" onclick="storyboardExpandRegenPrompt()" id="storyboard-expand-regen-prompt-btn" style="padding:6px 12px;font-size:0.8rem;">🔄 Regen Prompt</button>
                         <button class="btn btn-secondary" onclick="showStoryboardVariantInput()" id="storyboard-expand-variant-btn" style="padding:6px 12px;font-size:0.8rem;">✏️ Variant</button>
+                        <button class="btn btn-secondary" onclick="storyboardExpandUpscale()" id="storyboard-expand-upscale-btn" title="Upscale current image to 4K" style="padding:6px 12px;font-size:0.8rem;">🔍 4K</button>
                         <button class="btn btn-success" onclick="storyboardExpandApprove()" id="storyboard-expand-approve-btn" style="padding:6px 12px;font-size:0.8rem;">✅ Approve</button>
                     </div>
                     <!-- Variant creation input (hidden by default) -->
@@ -1286,18 +1309,30 @@
                 </div>
             </div>
 
-            <!-- Header Controls -->
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;background:var(--bg-secondary);padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);flex-wrap:wrap;">
-                <span style="font-size:0.75rem;color:var(--text-secondary);white-space:nowrap;margin-right:auto;" id="sb-description-container"><span id="storyboard-count-label">0</span> shots</span>
-                <button class="btn btn-secondary" type="button" onclick="generateStoryboardPromptsPhase()" style="padding:2px 5px;font-size:0.5rem;" title="Generate all image prompts">🧠</button>
-                <button class="btn btn-secondary" type="button" onclick="generateAllStoryboardVideoPrompts()" style="padding:2px 5px;font-size:0.5rem;" title="Generate all video prompts">📝</button>
-                <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:2px 5px;font-size:0.5rem;" title="Generate all images">🎨</button>
-                <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:2px 5px;font-size:0.5rem;" title="Approve all images">✅</button>
-                <button class="btn btn-success" type="button" onclick="approveAllVideos()" style="padding:2px 5px;font-size:0.5rem;" title="Approve all videos" id="sb-approve-all-videos-btn">✔️</button>
-                <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:2px 5px;font-size:0.5rem;opacity:0.4;pointer-events:none;" title="Generate all videos">🎥</button>
-                <button class="btn btn-secondary" type="button" onclick="clearAllTempImages()" style="padding:2px 5px;font-size:0.5rem;color:var(--accent-danger);" title="Clear temp images">🗑</button>
-                <button class="btn btn-secondary" type="button" onclick="clearAllTempVideos()" style="padding:2px 5px;font-size:0.5rem;color:var(--accent-danger);" title="Clear temp videos">📹</button>
-                <button class="btn btn-danger" type="button" id="scene-abort-btn" onclick="cancelSceneBatch()" style="padding:2px 5px;font-size:0.5rem;display:none;" title="Abort">✕</button>
+            <!-- Header Controls (bigger text buttons) -->
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;background:var(--bg-secondary);padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);flex-wrap:wrap;">
+                <span style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap;margin-right:auto;" id="sb-description-container"><span id="storyboard-count-label">0</span> shots</span>
+                <button class="btn btn-secondary" type="button" onclick="generateStoryboardPromptsPhase()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all image prompts">🧠 Img Pr</button>
+                <button class="btn btn-secondary" type="button" onclick="generateAllStoryboardVideoPrompts()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all video prompts">📝 Vid Pr</button>
+                <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all images">🎨 Gen Img</button>
+                <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:4px 8px;font-size:0.7rem;" title="Approve all images">✅ App Img</button>
+                <button class="btn btn-success" type="button" onclick="approveAllVideos()" style="padding:4px 8px;font-size:0.7rem;" title="Approve all videos" id="sb-approve-all-videos-btn">✔️ App Vid</button>
+                <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:4px 8px;font-size:0.7rem;opacity:0.4;pointer-events:none;" title="Generate all videos">🎥 Gen Vid</button>
+                <button class="btn btn-secondary" type="button" onclick="clearAllTempImages()" style="padding:4px 8px;font-size:0.7rem;color:var(--accent-danger);" title="Clear temp images">🗑 Clr Img</button>
+                <button class="btn btn-secondary" type="button" onclick="clearAllTempVideos()" style="padding:4px 8px;font-size:0.7rem;color:var(--accent-danger);" title="Clear temp videos">📹 Clr Vid</button>
+                <button class="btn btn-danger" type="button" id="scene-abort-btn" onclick="cancelSceneBatch()" style="padding:4px 8px;font-size:0.7rem;display:none;" title="Abort">✕ Abort</button>
+            </div>
+            <!-- Page-wide CFG / Steps / Seed -->
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;background:var(--bg-tertiary);padding:4px 12px;border-radius:6px;border:1px solid var(--border-color);flex-wrap:wrap;font-size:0.7rem;">
+                <span style="color:var(--text-secondary);font-weight:600;">Page:</span>
+                <label style="color:var(--text-secondary);">CFG</label>
+                <input type="number" id="sb-global-cfg" style="width:45px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" value="4.0" min="0.5" max="15.0" step="0.5">
+                <label style="color:var(--text-secondary);">St</label>
+                <input type="number" id="sb-global-steps" style="width:40px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" value="20" min="1" max="150" step="1">
+                <label style="color:var(--text-secondary);">Seed</label>
+                <input type="number" id="sb-global-seed" style="width:75px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" placeholder="rnd" min="0" step="1">
+                <button class="btn btn-secondary" onclick="storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">📥 Apply</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('sb-global-cfg').value='4.0';document.getElementById('sb-global-steps').value='20';document.getElementById('sb-global-seed').value='';storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">↺ Reset</button>
             </div>
 
             <!-- Container for Scene Rows -->
@@ -1711,6 +1746,10 @@
                                         <div class="form-group" style="margin-bottom:6px;">
                                             <label class="form-label" style="font-size:0.75rem;">Image Sheets Workflow</label>
                                             <select class="form-select" id="wf-sheet" style="font-size:0.8rem;"><option value="">-- Select --</option></select>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">4K Upscale Workflow</label>
+                                            <select class="form-select" id="wf-upscale" style="font-size:0.8rem;"><option value="">-- Select --</option></select>
                                         </div>
                                     </div>
                                     <div id="uploaded-workflows" style="margin-top:8px;">
@@ -2342,11 +2381,21 @@
                 
                 // Ensure sheet prompts are initialized on settings if missing/empty
                 if (!s.character_sheet_prompt || !s.character_sheet_prompt.trim()) {
-                    s.character_sheet_prompt = 'Transform the input reference image into a clean four-panel character turnaround sheet on a neutral studio background. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits back and front view. Maintain consistent identity, hairstyle, facial features, body proportions, clothing details, and textures across every panel. The subject stands naturally with relaxed posture and neutral expression. Soft diffused studio lighting with subtle shadows creates a professional reference-sheet appearance. Minimal composition, balanced spacing, highly detailed realistic rendering, modern studio presentation.';
+                    s.character_sheet_prompt = 'Professional character turnaround reference sheet on a neutral studio background featuring the character prominently across all panels. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits from front and back. The subject stands naturally with relaxed posture and neutral expression. All panels must maintain perfectly consistent identity with identical facial features, hairstyle, body proportions, clothing details, and material textures across every view. Soft wraparound studio lighting from above-left with gentle shadows that define form while keeping the subject clearly readable. Crisp focus, highly detailed realistic rendering, modern studio presentation with clean balanced spacing between panels.';
                 }
                 if (!s.location_sheet_prompt || !s.location_sheet_prompt.trim()) {
-                    s.location_sheet_prompt = 'Transform the input reference image into a comprehensive location reference board on a clean grid background. The layout contains multiple panels showing: wide establishing shot, moody low-key lighting variation, warm golden-hour version, and a detailed architectural feature close-up. Maintain consistent environment identity, spatial layout, key landmarks, and color palette across all panels. Professional cinematic presentation, soft atmospheric transitions between panels, studio-quality reference composition.';
+                    s.location_sheet_prompt = 'Professional location reference board on a clean grid background featuring the environment across multiple curated panels. The layout shows a wide establishing shot capturing the full scope of the location, a moody low-key lighting variation emphasizing atmosphere, a warm golden-hour version with rich warm light, and a detailed architectural feature close-up highlighting key design elements. Every panel maintains consistent spatial layout, landmark placement, architectural features, and color palette throughout all variations. The transitions between panels feel cinematic and intentional, creating a comprehensive visual reference for the environment. Professional cinematic presentation, studio-quality reference composition with balanced grid layout.';
                 }
+                // Restore sheet CFG / Steps / Seed
+                const sheetCfgEl = document.getElementById('sheet-cfg');
+                if (sheetCfgEl && s.sheetCfg) sheetCfgEl.value = s.sheetCfg;
+                const sheetStepsEl = document.getElementById('sheet-steps');
+                if (sheetStepsEl && s.sheetSteps) sheetStepsEl.value = s.sheetSteps;
+                // Restore gen CFG / Steps
+                const genCfgEl = document.getElementById('gen-cfg');
+                if (genCfgEl && s.genCfg) genCfgEl.value = s.genCfg;
+                const genStepsEl = document.getElementById('gen-steps');
+                if (genStepsEl && s.genSteps) genStepsEl.value = s.genSteps;
                 
             }
             // Restore genre chips
@@ -3396,7 +3445,7 @@
                 // Load workflows
                 await loadWorkflowList();
                 if (s.workflows) {
-                    ['t2i', 'i2i', 't2v', 'i2v', 'sheet'].forEach(k => {
+                    ['t2i', 'i2i', 't2v', 'i2v', 'sheet', 'upscale'].forEach(k => {
                         const el = document.getElementById('wf-' + k);
                         if (el && s.workflows[k]) el.value = s.workflows[k];
                     });
@@ -3441,7 +3490,8 @@
                     i2i: document.getElementById('wf-i2i').value,
                     t2v: document.getElementById('wf-t2v').value,
                     i2v: document.getElementById('wf-i2v').value,
-                    sheet: document.getElementById('wf-sheet').value
+                    sheet: document.getElementById('wf-sheet').value,
+                    upscale: document.getElementById('wf-upscale').value
                 }
             };
             try {
@@ -3561,7 +3611,7 @@
                 }
 
                 // Populate dropdowns
-                ['wf-t2i', 'wf-i2i', 'wf-t2v', 'wf-i2v', 'wf-sheet'].forEach(id => {
+                ['wf-t2i', 'wf-i2i', 'wf-t2v', 'wf-i2v', 'wf-sheet', 'wf-upscale'].forEach(id => {
                     const sel = document.getElementById(id);
                     if (!sel) return;
                     const current = sel.value;
@@ -6119,6 +6169,42 @@
             scheduleSaveState();
         }
 
+        function onSheetCfgChange() {
+            const val = parseFloat(document.getElementById('sheet-cfg')?.value);
+            if (val && currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.sheetCfg = val;
+                scheduleSaveState();
+            }
+        }
+
+        function onSheetStepsChange() {
+            const val = parseInt(document.getElementById('sheet-steps')?.value);
+            if (val && currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.sheetSteps = val;
+                scheduleSaveState();
+            }
+        }
+
+        function onGenCfgChange() {
+            const val = parseFloat(document.getElementById('gen-cfg')?.value);
+            if (val && currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.genCfg = val;
+                scheduleSaveState();
+            }
+        }
+
+        function onGenStepsChange() {
+            const val = parseInt(document.getElementById('gen-steps')?.value);
+            if (val && currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.genSteps = val;
+                scheduleSaveState();
+            }
+        }
+
         // === Asset Studio State ===
         let _assetStudioData = { characters: [], locations: [], assets: {}, approvals: {}, locks: {}, character_sheets: {}, location_sheets: {} };
         window._currentAssetExpandId = null;
@@ -6356,6 +6442,7 @@
                         <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('char','${cid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
                         <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Generate with T2I">🎨 Gen</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetUpscaleImage('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Upscale to 4K">🔍 4K</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Approve">✅</button>
                     </div>
                 `;
@@ -6445,6 +6532,7 @@
                         <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('char_sheet','${cid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
                         <button class="btn btn-primary" onclick="event.stopPropagation();generateCharacterSheet('${cid}')" id="cs-gen-${cid}" style="padding:2px 4px;font-size:0.5rem;" ${canGenerate ? '' : 'disabled'} title="${!canGenerate ? 'Approve a character image first' : ''}">🎨 Gen</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${cid}','char_sheet')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetUpscaleImage('${cid}','char_sheet')" style="padding:2px 4px;font-size:0.5rem;" title="Upscale to 4K">🔍 4K</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();approveCharacterSheet('${cid}')" id="cs-approve-${cid}" style="padding:2px 4px;font-size:0.5rem;" ${hasSheet && !sheetApproved ? '' : 'disabled'} title="Approve">✅</button>
                     </div>
                 `;
@@ -6525,6 +6613,7 @@
                         <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('loc_sheet','${lid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
                         <button class="btn btn-primary" onclick="event.stopPropagation();generateLocationSheet('${lid}')" id="ls-gen-${lid}" style="padding:2px 4px;font-size:0.5rem;" ${canGenerate ? '' : 'disabled'} title="${!canGenerate ? 'Approve a location image first' : ''}">🎨 Gen</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${lid}','loc_sheet')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetUpscaleImage('${lid}','loc_sheet')" style="padding:2px 4px;font-size:0.5rem;" title="Upscale to 4K">🔍 4K</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();approveLocationSheet('${lid}')" id="ls-approve-${lid}" style="padding:2px 4px;font-size:0.5rem;" ${hasSheet && !sheetApproved ? '' : 'disabled'} title="Approve">✅</button>
                     </div>
                 `;
@@ -6612,13 +6701,16 @@
                     const name = char.full_name || char.character_name || char.name || charId;
                     const desc = char.physical_appearance || '';
                     const clothing = char.clothing || '';
-                    characterPrompt = `Turnaround reference sheet of ${name} — ${desc}, ${clothing}. Four views: front, three-quarter, profile, back. Clean background, consistent lighting, professional character turnaround reference sheet.`;
+                    const traits = char.distinctive_traits || char.personality_traits || '';
+                    characterPrompt = `${name} — ${desc}, wearing ${clothing}`;
+                    if (traits) characterPrompt += `, with ${traits}`;
+                    characterPrompt += `. Full turnaround reference sheet rendered in a clean studio style with four consistently-lit panels showing front view, three-quarter view, side profile view, and back view. Every panel maintains identical facial features, hairstyle, body proportions, and costume details. Neutral gray background with soft wraparound studio lighting. Professional character design sheet presentation.`;
                 } else {
-                    characterPrompt = `Turnaround reference sheet of ${charId}. Four views: front, three-quarter, profile, back. Clean background, consistent lighting, professional character turnaround reference sheet.`;
+                    characterPrompt = `${charId}. Full turnaround reference sheet rendered in a clean studio style with four consistently-lit panels showing front view, three-quarter view, side profile view, and back view. Neutral gray background with soft wraparound studio lighting. Professional character design sheet presentation.`;
                 }
             }
 
-            const instructions = currentProject?.settings?.character_sheet_prompt || 'Transform the input reference image into a clean four-panel character turnaround sheet on a neutral studio background. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits back and front view. Maintain consistent identity, hairstyle, facial features, body proportions, clothing details, and textures across every panel. The subject stands naturally with relaxed posture and neutral expression. Soft diffused studio lighting with subtle shadows creates a professional reference-sheet appearance. Minimal composition, balanced spacing, highly detailed realistic rendering, modern studio presentation.';
+            const instructions = currentProject?.settings?.character_sheet_prompt || 'Professional character turnaround reference sheet on a neutral studio background featuring the character prominently across all panels. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits from front and back. The subject stands naturally with relaxed posture and neutral expression. All panels must maintain perfectly consistent identity with identical facial features, hairstyle, body proportions, clothing details, and material textures across every view. Soft wraparound studio lighting from above-left with gentle shadows that define form while keeping the subject clearly readable. Crisp focus, highly detailed realistic rendering, modern studio presentation with clean balanced spacing between panels.';
             
             let finalPrompt = characterPrompt + "\n\n" + instructions;
             const styleSuffix = [];
@@ -6663,7 +6755,10 @@
             }
             pollProgress();
 
-            const seed = Math.floor(Math.random() * 999999999) + 1;
+            const seedOverride = document.getElementById('sheet-seed')?.value;
+            const seed = seedOverride ? parseInt(seedOverride) : Math.floor(Math.random() * 999999999) + 1;
+            const cfgVal = parseFloat(document.getElementById('sheet-cfg')?.value) || 1.5;
+            const stepsVal = parseInt(document.getElementById('sheet-steps')?.value) || 4;
             try {
                 const settings = await fetch('/api/settings', { signal: abortSignal }).then(r => r.json()).catch(() => ({}));
                 const imgSettings = settings.image_gen || {};
@@ -6680,7 +6775,7 @@
                     signal: abortSignal,
                     body: JSON.stringify({
                         provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey,
-                        width: 1024, height: 1024, seed: seed,
+                        width: 1024, height: 1024, seed: seed, steps: stepsVal, cfg: cfgVal,
                         project_path: currentProject?.path || '',
                         input_images: [approvedImg]
                     })
@@ -6767,10 +6862,30 @@
                 }
                 return;
             }
+            // Upscale warning
+            if (currentProject?.settings?.upscaleWarning !== false && !isImageUpscaled(charId, 'char_sheet')) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await assetUpscaleImage(charId, 'char_sheet');
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        if (cardBtn) { cardBtn.disabled = false; cardBtn.textContent = '✅'; }
+                        if (modalBtn && window._currentAssetExpandId === charId && window._currentAssetExpandType === 'char_sheet') {
+                            modalBtn.disabled = false; modalBtn.textContent = '✅ Approve';
+                        }
+                        return;
+                    }
+                }
+            }
             try {
+                const sheets = _assetStudioData.character_sheets || {};
+                const approveImage = (sheets[charId] || {}).sheet_image || sheetImage;
                 await fetch('/api/orchestrator/save-character-sheet', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ character_id: charId, sheet_image: sheetImage, approved: true })
+                    body: JSON.stringify({ character_id: charId, sheet_image: approveImage, approved: true })
                 });
                 await loadAssetStudioData();
                 addAsset('sheet', charId + '_sheet', 'character_sheets/approved/' + charId + '.png');
@@ -6819,12 +6934,19 @@
                 const type = loc.environment_type || '';
                 const mood = loc.mood || '';
                 const details = loc.visual_details || loc.description || '';
-                locationPrompt = `Location reference board of ${name} — ${type}. Mood: ${mood}. Details: ${details}.`;
+                const architecture = loc.architecture || loc.architectural_style || '';
+                const lighting = loc.lighting || loc.lighting_style || '';
+                locationPrompt = `${name} — a ${type} environment`;
+                if (mood) locationPrompt += ` with a ${mood} atmosphere`;
+                if (details) locationPrompt += `. ${details}`;
+                if (architecture) locationPrompt += ` Featuring ${architecture} architecture`;
+                if (lighting) locationPrompt += ` with ${lighting} lighting`;
+                locationPrompt += `. Comprehensive location reference board showing the full environment across multiple curated views capturing the spatial layout, atmosphere, and key architectural details.`;
             } else {
-                locationPrompt = `Location reference board of ${locId}.`;
+                locationPrompt = `${locId}. Comprehensive location reference board showing the full environment across multiple curated views capturing the spatial layout, atmosphere, and key architectural details.`;
             }
 
-            const instructions = currentProject?.settings?.location_sheet_prompt || 'Transform the input reference image into a comprehensive location reference board on a clean grid background. The layout contains multiple panels showing: wide establishing shot, moody low-key lighting variation, warm golden-hour version, and a detailed architectural feature close-up. Maintain consistent environment identity, spatial layout, key landmarks, and color palette across all panels. Professional cinematic presentation, soft atmospheric transitions between panels, studio-quality reference composition.';
+            const instructions = currentProject?.settings?.location_sheet_prompt || 'Professional location reference board on a clean grid background featuring the environment across multiple curated panels. The layout shows a wide establishing shot capturing the full scope of the location, a moody low-key lighting variation emphasizing atmosphere, a warm golden-hour version with rich warm light, and a detailed architectural feature close-up highlighting key design elements. Every panel maintains consistent spatial layout, landmark placement, architectural features, and color palette throughout all variations. The transitions between panels feel cinematic and intentional, creating a comprehensive visual reference for the environment. Professional cinematic presentation, studio-quality reference composition with balanced grid layout.';
             
             let finalPrompt = locationPrompt + "\n\n" + instructions;
             const styleSuffix = [];
@@ -6869,7 +6991,10 @@
             }
             pollProgress();
 
-            const seed = Math.floor(Math.random() * 999999999) + 1;
+            const seedOverride = document.getElementById('sheet-seed')?.value;
+            const seed = seedOverride ? parseInt(seedOverride) : Math.floor(Math.random() * 999999999) + 1;
+            const cfgVal = parseFloat(document.getElementById('sheet-cfg')?.value) || 1.5;
+            const stepsVal = parseInt(document.getElementById('sheet-steps')?.value) || 4;
             try {
                 const settings = await fetch('/api/settings', { signal: abortSignal }).then(r => r.json()).catch(() => ({}));
                 const imgSettings = settings.image_gen || {};
@@ -6886,7 +7011,7 @@
                     signal: abortSignal,
                     body: JSON.stringify({
                         provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey,
-                        width: 1024, height: 1024, seed: seed,
+                        width: 1024, height: 1024, seed: seed, steps: stepsVal, cfg: cfgVal,
                         project_path: currentProject?.path || '',
                         input_images: [approvedImg]
                     })
@@ -6973,10 +7098,30 @@
                 }
                 return;
             }
+            // Upscale warning
+            if (currentProject?.settings?.upscaleWarning !== false && !isImageUpscaled(locId, 'loc_sheet')) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await assetUpscaleImage(locId, 'loc_sheet');
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        if (cardBtn) { cardBtn.disabled = false; cardBtn.textContent = '✅'; }
+                        if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                            modalBtn.disabled = false; modalBtn.textContent = '✅ Approve';
+                        }
+                        return;
+                    }
+                }
+            }
             try {
+                const sheets = _assetStudioData.location_sheets || {};
+                const approveImage = (sheets[locId] || {}).sheet_image || sheetImage;
                 await fetch('/api/orchestrator/save-location-sheet', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ location_id: locId, sheet_image: sheetImage, approved: true })
+                    body: JSON.stringify({ location_id: locId, sheet_image: approveImage, approved: true })
                 });
                 await loadAssetStudioData();
                 addAsset('sheet', locId + '_sheet', 'location_sheets/approved/' + locId + '.png');
@@ -7204,6 +7349,7 @@
                         <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('loc','${lid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
                         <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Generate with T2I">🎨 Gen</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetUpscaleImage('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Upscale to 4K">🔍 4K</button>
                         <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Approve">✅</button>
                     </div>
                 `;
@@ -7487,7 +7633,9 @@
             const imageUrl = savedImg
                 ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
                 : tempImg
-                    ? `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
+                    ? tempImg.includes('/')
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}`
+                        : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
                     : null;
             const videoUrl = savedVid
                 ? `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(savedVid)}${projectPathQuery}`
@@ -7515,7 +7663,8 @@
                 scheduleSaveState();
             };
 
-            // Populate seed/steps from shot data
+            // Populate cfg/seed/steps from shot data
+            document.getElementById('storyboard-expand-cfg').value = sh._genCfg || 4.0;
             document.getElementById('storyboard-expand-seed').value = sh._genSeed || '';
             document.getElementById('storyboard-expand-steps').value = sh._genSteps || 20;
 
@@ -7549,6 +7698,11 @@
             // Update button states to match current shot status
             const genBtn = document.getElementById('storyboard-expand-gen-btn');
             const approveBtn = document.getElementById('storyboard-expand-approve-btn');
+            const upscaleBtn = document.getElementById('storyboard-expand-upscale-btn');
+            if (upscaleBtn) {
+                upscaleBtn.disabled = !(savedImg || tempImg);
+                upscaleBtn.style.opacity = (savedImg || tempImg) ? '1' : '0.4';
+            }
             if (genBtn) {
                 if (sh.storyboard_status === 'approved') {
                     genBtn.textContent = '🎥 Generate Video';
@@ -7603,9 +7757,12 @@
             if (sceneIdx == null || shotIdx == null) return;
             const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
             if (!sh) return;
-            // Read seed/steps from modal inputs
+            // Read cfg/seed/steps from modal inputs
+            const cfgVal = document.getElementById('storyboard-expand-cfg')?.value;
             const seedVal = document.getElementById('storyboard-expand-seed')?.value;
             const stepsVal = document.getElementById('storyboard-expand-steps')?.value;
+            if (cfgVal) sh._genCfg = parseFloat(cfgVal);
+            else delete sh._genCfg;
             if (seedVal) sh._genSeed = parseInt(seedVal);
             else delete sh._genSeed;
             if (stepsVal) sh._genSteps = parseInt(stepsVal);
@@ -7616,6 +7773,58 @@
                 await generateShotImage(sceneIdx, shotIdx);
             }
             expandStoryboardShot(sceneIdx, shotIdx);
+        }
+
+        function storyboardApplyAllSettings() {
+            const cfg = parseFloat(document.getElementById('sb-global-cfg')?.value);
+            const steps = parseInt(document.getElementById('sb-global-steps')?.value);
+            const seed = parseInt(document.getElementById('sb-global-seed')?.value);
+            if (!screenplayData || !screenplayData.scenes) return;
+            let count = 0;
+            screenplayData.scenes.forEach((s, si) => {
+                if (!s.shots) return;
+                s.shots.forEach((sh, shi) => {
+                    if (!isNaN(cfg)) sh._genCfg = cfg;
+                    if (!isNaN(steps)) sh._genSteps = steps;
+                    if (!isNaN(seed)) sh._genSeed = seed;
+                    count++;
+                });
+            });
+            // Sync scene-level fields and shot count
+            screenplayData.scenes.forEach((s, si) => {
+                const c = document.getElementById(`scene-cfg-${si}`);
+                const st = document.getElementById(`scene-steps-${si}`);
+                const sd = document.getElementById(`scene-seed-${si}`);
+                if (c && !isNaN(cfg)) c.value = cfg;
+                if (st && !isNaN(steps)) st.value = steps;
+                if (sd && !isNaN(seed)) sd.value = seed;
+                else if (sd && isNaN(seed)) sd.value = '';
+            });
+            notify('Settings Applied', `Applied to ${count} shots across all scenes`, '⚙️');
+            scheduleSaveState();
+        }
+
+        function sceneApplySettings(sceneIdx) {
+            const cfg = parseFloat(document.getElementById(`scene-cfg-${sceneIdx}`)?.value);
+            const steps = parseInt(document.getElementById(`scene-steps-${sceneIdx}`)?.value);
+            const seed = parseInt(document.getElementById(`scene-seed-${sceneIdx}`)?.value);
+            const s = screenplayData?.scenes?.[sceneIdx];
+            if (!s || !s.shots) return;
+            s.shots.forEach((sh, shi) => {
+                if (!isNaN(cfg)) sh._genCfg = cfg;
+                if (!isNaN(steps)) sh._genSteps = steps;
+                if (!isNaN(seed)) sh._genSeed = seed;
+            });
+            notify('Scene Settings', `Applied to ${s.shots.length} shots`, '⚙️');
+            scheduleSaveState();
+        }
+
+        async function storyboardExpandUpscale() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const ok = await storyboardUpscaleImage(sceneIdx, shotIdx);
+            if (ok) expandStoryboardShot(sceneIdx, shotIdx);
         }
 
         async function storyboardExpandApprove() {
@@ -8489,11 +8698,14 @@ Project visual language: ${projVL}`;
             }
             pollProgress();
             try {
-                const seed = Math.floor(Math.random() * 999999999) + 1;
+                const seedOverride = document.getElementById('gen-seed')?.value;
+                const seed = seedOverride ? parseInt(seedOverride) : Math.floor(Math.random() * 999999999) + 1;
+                const cfgVal = parseFloat(document.getElementById('gen-cfg')?.value) || 4.0;
+                const stepsVal = parseInt(document.getElementById('gen-steps')?.value) || 20;
                 const res = await fetch('/api/image/generate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey, width: 1024, height: 1024, seed: seed }),
+                    body: JSON.stringify({ provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey, width: 1024, height: 1024, seed: seed, steps: stepsVal, cfg: cfgVal }),
                 });
                 const data = await res.json();
                 pollingActive = false;
@@ -8589,6 +8801,141 @@ Project visual language: ${projVL}`;
                 notify('Error', e.message, '❌');
             }
             if (expandBtn && id === (window._currentAssetExpandId || '')) { expandBtn.disabled = false; expandBtn.textContent = '🎨 Generate Image'; }
+        }
+
+        function isImageUpscaled(id, type) {
+            const isSheet = type === 'char_sheet' || type === 'loc_sheet';
+            let imgPath = '';
+            if (isSheet) {
+                const sheets = type === 'char_sheet'
+                    ? (_assetStudioData.character_sheets || {})
+                    : (_assetStudioData.location_sheets || {});
+                imgPath = (sheets[id] || {}).sheet_image || '';
+            } else {
+                const assets = type === 'char'
+                    ? (_assetStudioData.character_assets || {})
+                    : (_assetStudioData.location_assets || {});
+                imgPath = (assets[id] || {}).approved_image || '';
+            }
+            return imgPath.includes('_4k_');
+        }
+
+        async function assetUpscaleImage(id, type) {
+            id = id || window._currentAssetExpandId;
+            type = type || window._currentAssetExpandType;
+            if (!id) return false;
+            const isSheet = type === 'char_sheet' || type === 'loc_sheet';
+            let approvedImg = '';
+            if (isSheet) {
+                const sheets = type === 'char_sheet'
+                    ? (_assetStudioData.character_sheets || {})
+                    : (_assetStudioData.location_sheets || {});
+                approvedImg = (sheets[id] || {}).sheet_image || '';
+            } else {
+                const assets = type === 'char'
+                    ? (_assetStudioData.character_assets || {})
+                    : (_assetStudioData.location_assets || {});
+                approvedImg = (assets[id] || {}).approved_image || '';
+            }
+            if (!approvedImg) {
+                notify('Upscale Failed', 'No image to upscale. Generate an image first.', '⚠️');
+                return false;
+            }
+            const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
+            const wf = settings.workflows?.upscale;
+            if (!wf) {
+                notify('Upscale Failed', 'No upscale workflow selected. Set it in Settings > Workflows.', '⚠️');
+                return false;
+            }
+            const imgSettings = settings.image_gen || {};
+            const provider = imgSettings.provider || 'comfyui';
+            const host = imgSettings.host || '';
+            const apiKey = imgSettings.apiKey || '';
+            notify('Upscaling', 'Sending to 4K upscaler...', '🔍');
+            setAssetCardSpinner(id, type, true);
+            let pollingActive = true;
+            async function pollProgress() {
+                if (!pollingActive) return;
+                try {
+                    const pRes = await fetch('/api/image/progress');
+                    const p = await pRes.json();
+                    if (p && p.pct !== undefined && p.status === 'running') {
+                        setCardProgress(id, type, p.pct);
+                    } else if (p && (p.status === 'done' || p.status === 'error')) {
+                        pollingActive = false;
+                        return;
+                    }
+                } catch(e) {}
+                if (pollingActive) setTimeout(pollProgress, 1500);
+            }
+            pollProgress();
+            try {
+                const res = await fetch('/api/image/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider, host, api_key: apiKey, workflow_name: wf,
+                        prompt: 'upscale', width: 1024, height: 1024,
+                        project_path: currentProject?.path || '',
+                        input_images: [approvedImg]
+                    })
+                });
+                const data = await res.json();
+                pollingActive = false;
+                setAssetCardSpinner(id, type, false);
+                if (data.success && (data.image_url || data.filename)) {
+                    const tempFilename = data.filename || data.image_url;
+                    const timestamp = Date.now();
+                    const stage = isSheet ? 'character_sheets' : (type === 'char' ? 'characters' : 'locations');
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage,
+                            filename: tempFilename,
+                            subfolder: data.subfolder || '',
+                            card_name: id + '_4k_' + timestamp
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const imgUrl = stage + '/' + id + '_4k_' + timestamp + '.png';
+                        if (isSheet) {
+                            const sheets = type === 'char_sheet'
+                                ? (_assetStudioData.character_sheets || {})
+                                : (_assetStudioData.location_sheets || {});
+                            if (!sheets[id]) sheets[id] = {};
+                            sheets[id].sheet_image = imgUrl;
+                        } else {
+                            const assets = type === 'char'
+                                ? (_assetStudioData.character_assets || {})
+                                : (_assetStudioData.location_assets || {});
+                            if (!assets[id]) assets[id] = {};
+                            if (!assets[id].generation_history) assets[id].generation_history = [];
+                            if (!assets[id].generation_history.includes(imgUrl)) assets[id].generation_history.push(imgUrl);
+                            assets[id].approved_image = imgUrl;
+                        }
+                        notify('Upscaled', '4K upscale complete', '🔍');
+                        if (window._currentAssetExpandId === id) expandAssetItem(type, id);
+                        renderCharacterSheets();
+                        renderLocationSheets();
+                        renderAssetStudio();
+                        return true;
+                    } else {
+                        notify('Upscale Failed', saveData.error || 'Save failed', '❌');
+                        return false;
+                    }
+                } else {
+                    notify('Upscale Failed', data.error || 'Generation failed', '❌');
+                    return false;
+                }
+            } catch (e) {
+                pollingActive = false;
+                setAssetCardSpinner(id, type, false);
+                notify('Upscale Error', e.message, '❌');
+                return false;
+            }
         }
 
         function showAssetVariantInput(id, type) {
@@ -8733,6 +9080,21 @@ Project visual language: ${projVL}`;
             }
             if (type === 'loc_sheet') {
                 return approveLocationSheet(id);
+            }
+
+            // Upscale warning
+            if (currentProject?.settings?.upscaleWarning !== false && !isImageUpscaled(id, type)) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await assetUpscaleImage(id, type);
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        return;
+                    }
+                }
             }
             
             const assets = type === 'char'
@@ -9336,12 +9698,16 @@ Project visual language: ${projVL}`;
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
             const imgResEl = document.getElementById('sel-img-resolution');
             const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+            const stepsVal = parseInt(document.getElementById('storyboard-expand-steps')?.value) || currentProject?.settings?.steps || 20;
+            const cfgVal = parseFloat(document.getElementById('storyboard-expand-cfg')?.value) || currentProject?.settings?.cfg || 4.0;
             try {
                 const res = await fetch('/api/comfyui/generate/i2i', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         prompt: enrichedPrompt,
                         seed: seed,
+                        steps: stepsVal,
+                        cfg: cfgVal,
                         project_path: currentProject?.path || '',
                         input_images: inputImages,
                         aspect_ratio: aspectRatio,
@@ -9464,14 +9830,26 @@ Project visual language: ${projVL}`;
                         <div style="font-size:0.75rem;color:var(--text-secondary);font-style:italic;line-height:1.4;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);flex:1;min-height:50px;overflow-y:auto;">
                             ${escapeHtml(s.synopsis || 'No synopsis.')}
                         </div>
-                        ${s.shots && s.shots.length > 0 ? `<div style="display:flex;gap:2px;flex-wrap:wrap;">
-                            <button class="btn btn-secondary" onclick="event.stopPropagation();regenerateScenePrompts(${sceneIdx})" id="scene-pr-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Image prompts">🧠</button>
-                            ${s.shots.some(sh => !sh.storyboard_image && !sh._temp_storyboard_image) ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate images">🎨</button>` : ''}
-                            ${s.shots.some(sh => sh._temp_storyboard_image) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" id="scene-app-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Approve images">✅</button>` : ''}
-                            <button class="btn btn-secondary" onclick="event.stopPropagation();generateSceneVideoPrompts(${sceneIdx})" id="scene-vp-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Video prompts">📝</button>
-                            ${s.shots.every(sh => sh.storyboard_status === 'approved') ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneVideos(${sceneIdx})" id="scene-vid-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate videos">🎥</button>` : ''}
-                            ${s.shots.some(sh => sh._temp_video_clip) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneVideos(${sceneIdx})" id="scene-vapp-btn-${sceneIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Approve videos">✔️</button>` : ''}
+                        ${s.shots && s.shots.length > 0 ? `<div style="display:flex;gap:3px;flex-wrap:wrap;">
+                            <button class="btn btn-secondary" onclick="event.stopPropagation();regenerateScenePrompts(${sceneIdx})" id="scene-pr-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;" title="Image prompts">🧠 Img Pr</button>
+                            ${s.shots.some(sh => !sh.storyboard_image && !sh._temp_storyboard_image) ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;" title="Generate images">🎨 Gen Img</button>` : ''}
+                            ${s.shots.some(sh => sh._temp_storyboard_image) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" id="scene-app-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;" title="Approve images">✅ App Img</button>` : ''}
+                            ${s.shots.some(sh => sh.storyboard_image || sh._temp_storyboard_image) ? `<button class="btn btn-secondary" onclick="event.stopPropagation();storyboardUpscaleScene(${sceneIdx})" style="padding:3px 6px;font-size:0.6rem;" title="Upscale all scene images to 4K">🔍 4K</button>` : ''}
+                            <button class="btn btn-secondary" onclick="event.stopPropagation();generateSceneVideoPrompts(${sceneIdx})" id="scene-vp-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;" title="Video prompts">📝 Vid Pr</button>
+                            ${s.shots.every(sh => sh.storyboard_status === 'approved') ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneVideos(${sceneIdx})" id="scene-vid-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;" title="Generate videos">🎥 Gen Vid</button>` : ''}
+                            ${s.shots.some(sh => sh._temp_video_clip) ? `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneVideos(${sceneIdx})" id="scene-vapp-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;" title="Approve videos">✔️ App Vid</button>` : ''}
                         </div>` : ''}
+                        <!-- Scene-level CFG / Steps / Seed -->
+                        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:5px 0 0 0;font-size:0.65rem;">
+                            <span style="color:var(--text-secondary);font-weight:600;">CFG:</span>
+                            <input type="number" id="scene-cfg-${sceneIdx}" style="width:40px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.65rem;" value="4.0" min="0.5" max="15.0" step="0.5">
+                            <span style="color:var(--text-secondary);">St:</span>
+                            <input type="number" id="scene-steps-${sceneIdx}" style="width:35px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.65rem;" value="20" min="1" max="150" step="1">
+                            <span style="color:var(--text-secondary);">Seed:</span>
+                            <input type="number" id="scene-seed-${sceneIdx}" style="width:60px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.65rem;" placeholder="rnd" min="0" step="1">
+                            <button class="btn btn-secondary" onclick="sceneApplySettings(${sceneIdx})" style="padding:2px 6px;font-size:0.6rem;" title="Apply to all shots in this scene">📥 Apply</button>
+                            <button class="btn btn-secondary" onclick="document.getElementById('scene-cfg-${sceneIdx}').value='4.0';document.getElementById('scene-steps-${sceneIdx}').value='20';document.getElementById('scene-seed-${sceneIdx}').value='';sceneApplySettings(${sceneIdx})" style="padding:2px 6px;font-size:0.6rem;" title="Reset scene">↺ Rst</button>
+                        </div>
                     </div>`;
 
                 // === RIGHT: Shot Cards Grid (CSS Grid matching asset studio) ===
@@ -9496,12 +9874,16 @@ Project visual language: ${projVL}`;
                         const imageUrl = savedImg 
                             ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
                             : tempImg 
-                                ? `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
+                                ? tempImg.includes('/')
+                                    ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}`
+                                    : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
                                 : null;
                         const thumbUrl = savedImg 
                             ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}${projectPathQuery ? '&' : '?'}thumbnail=true`
                             : tempImg 
-                                ? `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}&thumbnail=true`
+                                ? tempImg.includes('/')
+                                    ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}&thumbnail=true`
+                                    : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}&thumbnail=true`
                                 : null;
 
                         // Video URLs
@@ -9542,12 +9924,13 @@ Project visual language: ${projVL}`;
                             </div>
                             <!-- Compact button row -->
                             <div style="display:flex;gap:2px;padding:3px 0;flex-wrap:wrap;">
-                                <button class="btn btn-secondary" onclick="event.stopPropagation();expandStoryboardShot(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
-                                ${!savedImg && !tempImg ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotImage(${sceneIdx}, ${shotIdx})" id="shot-t2i-btn-${sceneIdx}-${shotIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate Image">🎨 Gen</button>` : ''}
-                                ${savedImg ? `<button class="btn btn-secondary" onclick="event.stopPropagation();regenerateShotImage(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Redo">🔄 Redo</button>` : ''}
-                                <button class="btn btn-secondary" onclick="event.stopPropagation();showStoryboardVariantInput(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
-                                <button class="btn btn-success" onclick="event.stopPropagation();approveShotImage(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Approve" ${tempImg ? '' : 'disabled'}>✅</button>
-                                ${savedImg ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotVideo(${sceneIdx}, ${shotIdx})" id="shot-i2v-btn-${sceneIdx}-${shotIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate Video">🎥</button>` : ''}
+                                <button class="btn btn-secondary" onclick="event.stopPropagation();expandStoryboardShot(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Inspect">⛶ Open</button>
+                                ${!savedImg && !tempImg ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotImage(${sceneIdx}, ${shotIdx})" id="shot-t2i-btn-${sceneIdx}-${shotIdx}" style="padding:3px 5px;font-size:0.55rem;" title="Generate Image">🎨 Gen</button>` : ''}
+                                ${savedImg ? `<button class="btn btn-secondary" onclick="event.stopPropagation();regenerateShotImage(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Redo">🔄 Redo</button>` : ''}
+                                <button class="btn btn-secondary" onclick="event.stopPropagation();showStoryboardVariantInput(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Variants">✏️ Var</button>
+                                ${hasImage ? `<button class="btn btn-secondary" onclick="event.stopPropagation();storyboardUpscaleImage(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Upscale to 4K">🔍 4K</button>` : ''}
+                                <button class="btn btn-success" onclick="event.stopPropagation();approveShotImage(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Approve" ${tempImg ? '' : 'disabled'}>✅ App</button>
+                                ${savedImg ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotVideo(${sceneIdx}, ${shotIdx})" id="shot-i2v-btn-${sceneIdx}-${shotIdx}" style="padding:3px 5px;font-size:0.55rem;" title="Generate Video">🎥 Vid</button>` : ''}
                             </div>
                             ${renderLocationRefStrip(s.location_id, projName, projectPathQuery)}
                             ${renderCharacterRefStrip(shotCharNames, projName, projectPathQuery)}
@@ -9771,6 +10154,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
             const imgResEl = document.getElementById('sel-img-resolution');
             const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+            const cfgOverride = sh._genCfg || parseFloat(document.getElementById('storyboard-expand-cfg')?.value) || currentProject?.settings?.cfg || 4.0;
             const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps || 20;
             const seedOverride = sh._genSeed || seed;
 
@@ -9781,6 +10165,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         prompt: enrichedPrompt,
                         seed: seedOverride,
                         steps: stepsOverride,
+                        cfg: cfgOverride,
                         project_path: currentProject?.path || '',
                         input_images: inputImages,
                         aspect_ratio: aspectRatio,
@@ -9808,6 +10193,92 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 btn.textContent = '🎨 Generate Image';
                 hideShotSpinner(sceneIdx, shotIdx);
             }
+        }
+
+        async function storyboardUpscaleImage(sceneIdx, shotIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            const activeImage = sh.storyboard_image || sh._temp_storyboard_image;
+            if (!activeImage) {
+                notify('Upscale Failed', 'No image to upscale.', '⚠️');
+                return false;
+            }
+            const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
+            const wf = settings.workflows?.upscale;
+            if (!wf) {
+                notify('Upscale Failed', 'No upscale workflow selected. Set it in Settings > Workflows.', '⚠️');
+                return false;
+            }
+            const imgSettings = settings.image_gen || {};
+            const provider = imgSettings.provider || 'comfyui';
+            const host = imgSettings.host || '';
+            const apiKey = imgSettings.apiKey || '';
+            const inputPath = sh.storyboard_image
+                ? 'scenes/' + sh.storyboard_image
+                : activeImage;
+            notify('Upscaling', 'Sending to 4K upscaler...', '🔍');
+            try {
+                const res = await fetch('/api/image/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider, host, api_key: apiKey, workflow_name: wf,
+                        prompt: 'upscale', width: 1024, height: 1024,
+                        project_path: currentProject?.path || '',
+                        input_images: [inputPath]
+                    })
+                });
+                const data = await res.json();
+                if (data.success && (data.image_url || data.filename)) {
+                    const tempFilename = data.filename || data.image_url;
+                    // Save upscaled result to project scenes/
+                    const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}_4k_${Date.now()}`;
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: 'scenes',
+                            filename: tempFilename,
+                            subfolder: data.subfolder || '',
+                            card_name: cardName
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const savedFile = saveData.path.split(/[\\/]/).pop();
+                        sh._temp_storyboard_image = tempFilename;
+                        sh._temp_upscaled_file = savedFile;
+                        sh.storyboard_status = 'generated';
+                        sh.storyboard_history = sh.storyboard_history || [];
+                        if (!sh.storyboard_history.includes(tempFilename)) sh.storyboard_history.push(tempFilename);
+                        notify('Upscaled', '4K upscale complete', '🔍');
+                        renderStoryboard();
+                        return true;
+                    } else {
+                        notify('Upscale Failed', saveData.error || 'Save failed', '❌');
+                        return false;
+                    }
+                } else {
+                    notify('Upscale Failed', data.error || 'Generation failed', '❌');
+                    return false;
+                }
+            } catch (e) {
+                notify('Upscale Error', e.message, '❌');
+                return false;
+            }
+        }
+
+        async function storyboardUpscaleScene(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            for (let i = 0; i < s.shots.length; i++) {
+                const sh = s.shots[i];
+                if (sh.storyboard_image || sh._temp_storyboard_image) {
+                    await storyboardUpscaleImage(sceneIdx, i);
+                }
+            }
+            notify('Scene Upscale', 'All scene images upscaled to 4K', '🔍');
         }
 
         async function generateSceneImages(sceneIdx) {
@@ -10212,8 +10683,39 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             const tempFilename = sh._temp_storyboard_image;
             if (!tempFilename) return;
 
+            // Upscale warning — check both temp and saved paths for _4k_ marker
+            const isUpscaled = (sh._temp_upscaled_file && sh._temp_upscaled_file.includes('_4k_'))
+                || (sh.storyboard_image && sh.storyboard_image.includes('_4k_'))
+                || (sh._temp_storyboard_image && sh._temp_storyboard_image.includes('_4k_'));
+            if (currentProject?.settings?.upscaleWarning !== false && !isUpscaled) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await storyboardUpscaleImage(sceneIdx, shotIdx);
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        return;
+                    }
+                }
+            }
+
             const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
             try {
+                // If image was already saved by the upscale, skip re-saving
+                if (sh._temp_upscaled_file) {
+                    sh.storyboard_image = sh._temp_upscaled_file;
+                    sh.storyboard_status = 'approved';
+                    sh._temp_storyboard_image = null;
+                    sh._temp_upscaled_file = null;
+                    const relativePath = 'scenes/' + sh.storyboard_image;
+                    addAsset('scene', cardName, relativePath);
+                    notify('✅ Approved', `Upscaled image saved as ${sh.storyboard_image}`);
+                    renderStoryboard();
+                    scheduleSaveState();
+                    return;
+                }
                 const res = await fetch('/api/projects/save-image', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({

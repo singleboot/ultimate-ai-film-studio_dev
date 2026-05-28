@@ -1730,12 +1730,20 @@ Each variant must be meaningfully different from the original and from each othe
         if not character:
             return {"success": False, "error": f"Character {character_id} not found in bible"}
 
+        name = character.get("full_name", character.get("character_name", ""))
+        appearance = character.get("physical_appearance", "")
+        clothing = character.get("clothing", "")
+        traits = character.get("distinctive_traits", character.get("personality_traits", ""))
+        prompt = f"{name} — {appearance}, wearing {clothing}"
+        if traits:
+            prompt += f", with {traits}"
+        prompt += ". Full turnaround reference sheet rendered in a clean studio style. The composition shows four consistently-lit panels arranged in a professional layout: front view, three-quarter view, side profile view, and back view of the full body. Every panel maintains perfectly identical facial features, hairstyle, body proportions, and costume details across all angles. The subject stands naturally with relaxed posture and neutral expression. Neutral gray background with soft wraparound studio lighting from above-left creating gentle form-defining shadows. Professional character design sheet presentation, clean composition with balanced spacing between panels, crisp focus, highly detailed realistic rendering."
         return {
             "success": True,
             "turnaround_request": {
                 "character_id": character_id,
-                "character_name": character.get("full_name", character.get("character_name", "")),
-                "prompt": f"Turnaround reference sheet of {character.get('full_name', character.get('character_name', ''))} — {character.get('physical_appearance', '')}, {character.get('clothing', '')}. Four views: front, three-quarter, profile, back. Clean background, consistent lighting, professional character turnaround reference sheet. ZImage Turbo.",
+                "character_name": name,
+                "prompt": prompt,
             }
         }
 

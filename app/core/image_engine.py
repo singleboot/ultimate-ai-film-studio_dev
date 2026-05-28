@@ -163,7 +163,7 @@ class ImageEngine:
     def _generate_comfyui_image(self, provider: Dict, model: str, prompt: str, host: str = None,
                                  workflow_name: str = None, input_images: List[str] = None,
                                  aspect_ratio: str = None, resolution: str = None,
-                                 seed: int = None, steps: int = None, **kwargs) -> Dict:
+                                 seed: int = None, steps: int = None, cfg: float = None, **kwargs) -> Dict:
         if not self.comfyui:
             return {"success": False, "error": "ComfyUI client not initialized. Please start ComfyUI."}
         if host:
@@ -191,7 +191,7 @@ class ImageEngine:
                 result = self.comfyui.generate_with_workflow(
                     prompt=prompt, workflow_name=workflow_name,
                     input_images=input_images, aspect_ratio=aspect_ratio,
-                    resolution=resolution, seed=seed, steps=steps
+                    resolution=resolution, seed=seed, steps=steps, cfg=cfg
                 )
             else:
                 result = self.comfyui.generate_image(prompt, model, 1024, 1024, seed or -1)

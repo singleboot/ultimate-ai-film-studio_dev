@@ -925,7 +925,9 @@ def generate_image_endpoint(data: dict):
         input_images=data.get("input_images"),
         aspect_ratio=data.get("aspect_ratio"),
         resolution=data.get("resolution"),
-        seed=data.get("seed")
+        seed=data.get("seed"),
+        steps=data.get("steps"),
+        cfg=data.get("cfg")
     )
 
 @app.get("/api/image/progress")

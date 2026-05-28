@@ -315,7 +315,7 @@ class ComfyUIClient:
         
         return workflow
 
-    def generate_with_workflow(self, prompt: str, workflow_name: str, negative_prompt: str = None, seed: int = None, input_images: List[str] = None, aspect_ratio: str = None, resolution: str = None, steps: int = None) -> Dict:
+    def generate_with_workflow(self, prompt: str, workflow_name: str, negative_prompt: str = None, seed: int = None, input_images: List[str] = None, aspect_ratio: str = None, resolution: str = None, steps: int = None, cfg: float = None) -> Dict:
         """Generate using a custom workflow JSON from the workflows folder.
         UAIImageSlot nodes get their image_path set directly from input_images paths.
         Unused slots default to empty string (1x1 black image = bypass)."""
@@ -440,15 +440,41 @@ class ComfyUIClient:
 
             # Phase 3b: set steps
             if steps is not None:
+                print(f"[DEBUG Phase 3b] steps={steps}, type={type(steps).__name__}")
+                for node_id, node_data in workflow.items():
+                    if not isinstance(node_data, dict):
+                        print(f"[DEBUG Phase 3b] skip non-dict node {node_id}: {type(node_data).__name__}")
+                        continue
+                    ct = node_data.get("class_type", "")
+                    inputs = node_data.get("inputs", {})
+                    print(f"[DEBUG Phase 3b] node {node_id} ({ct}) has steps? {'steps' in inputs}, inputs keys={list(inputs.keys())}")
+                    if "steps" in inputs:
+                        try:
+                            old = inputs["steps"]
+                            inputs["steps"] = int(steps)
+                            print(f"[DEBUG Phase 3b] OVERRIDE {ct} {node_id}: steps {old} -> {int(steps)}")
+                            debug_log.append(f"Set steps for {ct} {node_id}: {old} -> {int(steps)}")
+                        except (ValueError, TypeError) as e:
+                            print(f"[DEBUG Phase 3b] ERROR setting steps: {e}")
+                            pass
+
+            # Phase 3c: set cfg / guidance
+            if cfg is not None:
                 for node_id, node_data in workflow.items():
                     if not isinstance(node_data, dict):
                         continue
                     ct = node_data.get("class_type", "")
                     inputs = node_data.get("inputs", {})
-                    if "steps" in inputs:
+                    if "cfg" in inputs:
                         try:
-                            inputs["steps"] = int(steps)
-                            debug_log.append(f"Set steps for {ct} {node_id} to {steps}")
+                            inputs["cfg"] = float(cfg)
+                            debug_log.append(f"Set cfg for {ct} {node_id} to {cfg}")
+                        except (ValueError, TypeError):
+                            pass
+                    if ct == "Flux2Scheduler" and "guidance" in inputs:
+                        try:
+                            inputs["guidance"] = float(cfg)
+                            debug_log.append(f"Set guidance for Flux2Scheduler {node_id} to {cfg}")
                         except (ValueError, TypeError):
                             pass
 
