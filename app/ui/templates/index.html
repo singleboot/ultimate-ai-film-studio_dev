@@ -9648,8 +9648,16 @@ Project visual language: ${projVL}`;
             document.getElementById('asset-char-approved-badge').textContent = `✅ Approved(${charApproved})`;
             document.getElementById('asset-loc-pending-badge').textContent = `⏳ Pending(${locPending})`;
             document.getElementById('asset-loc-approved-badge').textContent = `✅ Approved(${locApproved})`;
+            const allCharsApproved = charBible.length > 0 && charBible.every(ch => {
+                const id = ch.character_id || ch.id || '';
+                return !!(charAssets[id]?.approved);
+            });
+            const allLocsApproved = locBible.length > 0 && locBible.every(loc => {
+                const id = loc.location_id || loc.id || '';
+                return !!(locAssets[id]?.approved);
+            });
             const proceedBtn = document.getElementById('proceed-to-storyboard-btn');
-            if (ap.characters && ap.locations) {
+            if (allCharsApproved && allLocsApproved) {
                 proceedBtn.disabled = false;
                 proceedBtn.style.opacity = '1';
             } else {
@@ -9658,8 +9666,19 @@ Project visual language: ${projVL}`;
             }
         }
         function proceedToStoryboard() {
-            const approvals = window._assetStudioApprovals || {};
-            if (!approvals.characters || !approvals.locations) {
+            const charBible = _assetStudioData?.character_bible || [];
+            const locBible = _assetStudioData?.location_bible || [];
+            const charAssets = _assetStudioData?.character_assets || {};
+            const locAssets = _assetStudioData?.location_assets || {};
+            const allCharsApproved = charBible.length > 0 && charBible.every(ch => {
+                const id = ch.character_id || ch.id || '';
+                return !!(charAssets[id]?.approved);
+            });
+            const allLocsApproved = locBible.length > 0 && locBible.every(loc => {
+                const id = loc.location_id || loc.id || '';
+                return !!(locAssets[id]?.approved);
+            });
+            if (!allCharsApproved || !allLocsApproved) {
                 alert('Please approve characters and locations first.');
                 return;
             }
