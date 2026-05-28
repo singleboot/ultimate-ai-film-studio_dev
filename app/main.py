@@ -44,7 +44,8 @@ async def lifespan(app):
                 "model": "gemma-4-E2B-it-Q4_K_M.gguf",
                 "host": "http://localhost:8081",
                 "apiKey": "",
-                "auto_start": True
+                "auto_start": True,
+                "n_gpu_layers": -1
             }
             changed = True
         else:
@@ -55,6 +56,9 @@ async def lifespan(app):
                 changed = True
             if "auto_start" not in llm_settings:
                 llm_settings["auto_start"] = True
+                changed = True
+            if "n_gpu_layers" not in llm_settings:
+                llm_settings["n_gpu_layers"] = -1
                 changed = True
 
         if "comfyui" not in settings:

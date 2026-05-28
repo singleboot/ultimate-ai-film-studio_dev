@@ -806,6 +806,17 @@ class LLMEngine:
             pass
         return provider_id
 
+    def _get_gpu_layers(self) -> Optional[int]:
+        try:
+            if self._settings_path.exists():
+                with open(self._settings_path, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                val = settings.get("llm", {}).get("n_gpu_layers", -1)
+                return int(val)
+        except Exception:
+            pass
+        return -1
+
     def launch_local_llm(self, provider_id: str, model_path: str = None) -> Dict:
         status = self.get_local_status(provider_id)
         if status.get("running"):
@@ -834,6 +845,11 @@ class LLMEngine:
             if not os.path.exists(full_path):
                 return {"success": False, "error": f"Model file not found: {model_path}. Please download it first from settings."}
             cmd.extend(["--model", full_path])
+        # Append GPU layers for llama.cpp/app_llm
+        gpu_layers = self._get_gpu_layers()
+        if gpu_layers is not None and provider_id in ("llama_cpp", "app_llm"):
+            cmd.extend(["--n-gpu-layers", str(gpu_layers)])
+
         try:
             proc = subprocess.Popen(
                 cmd,
