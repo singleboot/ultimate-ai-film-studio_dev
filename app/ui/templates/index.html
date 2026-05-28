@@ -9981,6 +9981,7 @@ Project visual language: ${projVL}`;
                             <!-- Shared preview area: image first, video replaces when generated -->
                             <div id="shot-preview-${sceneIdx}-${shotIdx}" style="height:150px;background:var(--bg-primary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;margin-bottom:6px;">
                                 ${previewContent}
+                                <span id="shot-res-badge-${sceneIdx}-${shotIdx}" style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${hasImage ? ((sh._temp_upscaled_file||savedImg||tempImg||'').includes('_4k_') ? '#e74c3c' : '#222') : 'transparent'};z-index:2;">${hasImage ? getResolutionLabel(sh._temp_upscaled_file||savedImg||tempImg) : ''}</span>
                             </div>
                             <!-- Compact button row -->
                             <div style="display:flex;gap:2px;padding:3px 0;flex-wrap:wrap;">
@@ -10042,12 +10043,7 @@ Project visual language: ${projVL}`;
         function showShotSpinner(sceneIdx, shotIdx, label) {
             const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
             if (!preview) return;
-            const old = preview.querySelector('.t2i-spinner');
-            if (old) old.remove();
-            const spinner = document.createElement('div');
-            spinner.className = 't2i-spinner';
-            spinner.innerHTML = `<div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">${label || 'Generating...'}</div>`;
-            preview.appendChild(spinner);
+            preview.innerHTML = `<div class="t2i-spinner"><div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">${label || 'Generating...'}</div></div>`;
         }
 
         function hideShotSpinner(sceneIdx, shotIdx) {
@@ -10055,6 +10051,69 @@ Project visual language: ${projVL}`;
             if (!preview) return;
             const spinner = preview.querySelector('.t2i-spinner');
             if (spinner) spinner.remove();
+        }
+
+        function getResolutionLabel(filename) {
+            if (filename && filename.includes('_4k_')) return '4K';
+            const res = document.getElementById('sel-img-resolution')?.value || currentProject?.settings?.imgResolution || '1024x576';
+            const labels = { '3840x2160': '4K', '1920x1080': '1080p', '1280x720': '720p' };
+            return labels[res] || res;
+        }
+
+        function updateShotPreview(sceneIdx, shotIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s?.shots[shotIdx];
+            if (!sh) return;
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
+            if (!preview) return;
+            const savedImg = sh.storyboard_image;
+            const tempImg = sh._temp_storyboard_image;
+            const hasImage = !!(savedImg || tempImg);
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+            if (hasImage) {
+                const thumbUrl = tempImg
+                    ? tempImg.includes('/')
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}&thumbnail=true`
+                        : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}&thumbnail=true`
+                    : savedImg
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}${projectPathQuery ? '&' : '?'}thumbnail=true`
+                        : '';
+                const imageUrl = tempImg
+                    ? tempImg.includes('/')
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}`
+                        : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
+                    : savedImg
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
+                        : '';
+                preview.innerHTML = `<img src="${thumbUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage('${imageUrl}')" data-filename="${tempImg || ''}" loading="lazy">`;
+            } else {
+                preview.innerHTML = '';
+            }
+            // Update resolution badge
+            let badge = document.getElementById(`shot-res-badge-${sceneIdx}-${shotIdx}`);
+            const label = getResolutionLabel(sh._temp_upscaled_file || savedImg || tempImg);
+            const is4k = label === '4K';
+            if (!badge && hasImage) {
+                badge = document.createElement('span');
+                badge.id = `shot-res-badge-${sceneIdx}-${shotIdx}`;
+                badge.style.cssText = `position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;z-index:2;`;
+                preview.appendChild(badge);
+            }
+            if (badge) {
+                badge.textContent = label;
+                badge.style.background = is4k ? '#e74c3c' : '#222';
+            }
+            // Update button states
+            const genBtn = document.getElementById(`shot-t2i-btn-${sceneIdx}-${shotIdx}`);
+            if (genBtn) { genBtn.style.display = 'none'; }
+            const shotCard = document.getElementById(`shot-card-${sceneIdx}_${shotIdx}`);
+            if (shotCard) {
+                const approveBtn = shotCard.querySelector('.btn-success');
+                if (approveBtn) approveBtn.disabled = false;
+                const upscaleBtn = shotCard.querySelector('[title="Upscale to 4K"]');
+                if (upscaleBtn) { upscaleBtn.disabled = false; upscaleBtn.style.opacity = '1'; }
+            }
         }
 
         async function regenerateShotPrompt(sceneIdx, shotIdx) {
@@ -10241,7 +10300,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     if (!sh.storyboard_history.includes(data.filename)) {
                         sh.storyboard_history.push(data.filename);
                     }
-                    renderStoryboard();
+                    updateShotPreview(sceneIdx, shotIdx);
                 } else {
                     notify('I2I Failed', data.error || 'Generation failed');
                     btn.disabled = false;
@@ -12200,6 +12259,7 @@ Raw JSON only, no markdown.`;
                     await generateShotImage(sIdx, shIdx);
                 }
             }
+            renderStoryboard();
         }
 
         async function generateAllStoryboardVideos() {
