@@ -10383,11 +10383,34 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 shotPollingActive = false;
                 hideShotSpinner(sceneIdx, shotIdx);
                 if (data.success) {
-                    sh._temp_storyboard_image = data.filename;
+                    const tempFilename = data.filename;
+                    // Save to project scenes/ immediately so images persist across restarts
+                    const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+                    try {
+                        const saveRes = await fetch('/api/projects/save-image', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                project_name: currentProject?.name || '',
+                                project_path: currentProject?.path || '',
+                                stage: 'scenes',
+                                filename: tempFilename,
+                                card_name: cardName
+                            })
+                        });
+                        const saveData = await saveRes.json();
+                        if (saveData.success) {
+                            const savedFilename = saveData.path.split(/[\\/]/).pop();
+                            sh._temp_storyboard_image = 'scenes/' + savedFilename;
+                        } else {
+                            sh._temp_storyboard_image = tempFilename;
+                        }
+                    } catch(e) {
+                        sh._temp_storyboard_image = tempFilename;
+                    }
                     sh.storyboard_status = 'generated';
                     sh.storyboard_history = sh.storyboard_history || [];
-                    if (!sh.storyboard_history.includes(data.filename)) {
-                        sh.storyboard_history.push(data.filename);
+                    if (!sh.storyboard_history.includes(tempFilename)) {
+                        sh.storyboard_history.push(tempFilename);
                     }
                     updateShotPreview(sceneIdx, shotIdx);
                     const imgEl = document.getElementById(`shot-preview-img-${sceneIdx}-${shotIdx}`);
@@ -10597,11 +10620,35 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     hideShotSpinner(sceneIdx, i);
                     const data = await res.json();
                     if (data.success) {
-                        sh._temp_storyboard_image = data.filename;
+                        const tempFilename = data.filename;
+                        // Save to project scenes/ immediately so images persist across restarts
+                        const cardName = `scene_${sceneIdx + 1}_shot_${i + 1}`;
+                        try {
+                            const saveRes = await fetch('/api/projects/save-image', {
+                                method: 'POST', headers: {'Content-Type': 'application/json'},
+                                signal,
+                                body: JSON.stringify({
+                                    project_name: currentProject?.name || '',
+                                    project_path: currentProject?.path || '',
+                                    stage: 'scenes',
+                                    filename: tempFilename,
+                                    card_name: cardName
+                                })
+                            });
+                            const saveData = await saveRes.json();
+                            if (saveData.success) {
+                                const savedFilename = saveData.path.split(/[\\/]/).pop();
+                                sh._temp_storyboard_image = 'scenes/' + savedFilename;
+                            } else {
+                                sh._temp_storyboard_image = tempFilename;
+                            }
+                        } catch(e) {
+                            sh._temp_storyboard_image = tempFilename;
+                        }
                         sh.storyboard_status = 'generated';
                         sh.storyboard_history = sh.storyboard_history || [];
-                        if (!sh.storyboard_history.includes(data.filename)) {
-                            sh.storyboard_history.push(data.filename);
+                        if (!sh.storyboard_history.includes(tempFilename)) {
+                            sh.storyboard_history.push(tempFilename);
                         }
                         updateShotPreview(sceneIdx, i);
                         // Wait for image to load in browser before next generation
@@ -10693,6 +10740,21 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
                 const tempFilename = sh._temp_storyboard_image;
                 const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+
+                // If image is already saved to project (contains /), just approve it
+                if (tempFilename && tempFilename.includes('/')) {
+                    const savedFilename = tempFilename.split('/').pop();
+                    sh.storyboard_image = savedFilename;
+                    sh.storyboard_status = 'approved';
+                    sh._temp_storyboard_image = null;
+                    const relativePath = 'scenes/' + savedFilename;
+                    addAsset('scene', cardName, relativePath);
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    completed++;
+                    btn.textContent = `⏳ ${completed}/${pending.length}`;
+                    continue;
+                }
+
                 try {
                     const res = await fetch('/api/projects/save-image', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -11014,6 +11076,19 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                     const relativePath = 'scenes/' + sh.storyboard_image;
                     addAsset('scene', cardName, relativePath);
                     notify('✅ Approved', `Upscaled image saved as ${sh.storyboard_image}`);
+                    renderStoryboard();
+                    scheduleSaveState();
+                    return;
+                }
+                // If image is already saved to project (contains /), just approve it
+                if (tempFilename && tempFilename.includes('/')) {
+                    const savedFilename = tempFilename.split('/').pop();
+                    sh.storyboard_image = savedFilename;
+                    sh.storyboard_status = 'approved';
+                    sh._temp_storyboard_image = null;
+                    const relativePath = 'scenes/' + savedFilename;
+                    addAsset('scene', cardName, relativePath);
+                    notify('✅ Approved', `Approved ${savedFilename}`);
                     renderStoryboard();
                     scheduleSaveState();
                     return;
