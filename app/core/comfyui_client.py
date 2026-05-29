@@ -166,6 +166,7 @@ class ComfyUIClient:
         to detect external cancellation (interrupt or queue clear)."""
         start_time = time.time()
         grace_period = 10  # seconds before we check for cancellation
+        last_queue_check = 0  # track when we last saw empty queue
         while time.time() - start_time < timeout:
             history = self.get_history(prompt_id)
             if history and prompt_id in history:
@@ -181,17 +182,22 @@ class ComfyUIClient:
                 if "outputs" in prompt_data:
                     return prompt_data["outputs"]
             elapsed = time.time() - start_time
-            # Only check for cancellation after grace period
+            # Only check for cancellation after grace period AND confirm
+            # ComfyUI is truly idle (not just in transition between queue and history)
             if elapsed > grace_period:
-                prog = self.get_progress()
-                is_running = prog.get("running", False)
-                if not is_running and (not history or prompt_id not in (history or {})):
-                    q = self.get_queue()
-                    running = q.get("queue_running", [])
-                    pending = q.get("queue_pending", [])
-                    if not running and not pending:
-                        logger.info("get_output: ComfyUI idle and prompt not in history — cancelled")
+                q = self.get_queue()
+                running = q.get("queue_running", [])
+                pending = q.get("queue_pending", [])
+                if not running and not pending:
+                    if last_queue_check == 0:
+                        # First time seeing empty queue — start a secondary grace period
+                        last_queue_check = time.time()
+                    elif time.time() - last_queue_check > 5:
+                        # Queue has been empty for 5+ seconds and still no history
+                        logger.info("get_output: Queue empty for 5s and prompt not in history — cancelled")
                         return {"_cancelled": True}
+                else:
+                    last_queue_check = 0  # reset if queue fills up again
             time.sleep(1)
         return None
 
