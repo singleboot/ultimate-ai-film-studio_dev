@@ -1308,10 +1308,13 @@
             </div>
 
             <!-- Progress Bar -->
-            <div id="storyboard-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <div id="storyboard-progress" style="display:none;margin-bottom:15px;background:var(--bg-secondary);padding:12px;border-radius:8px;border:1px solid var(--border-color);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:12px;">
                     <span style="font-weight:600;" id="sb-progress-title">Generating...</span>
-                    <span style="color:var(--accent-primary);font-weight:700;" id="sb-progress-pct">0%</span>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span style="color:var(--accent-primary);font-weight:700;" id="sb-progress-pct">0%</span>
+                        <button class="btn btn-danger" onclick="cancelSceneBatch()" style="padding:2px 8px;font-size:0.65rem;border-radius:4px;line-height:1.2;">✕ Cancel</button>
+                    </div>
                 </div>
                 <div style="width:100%;height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
                     <div id="sb-progress-bar" style="width:0%;height:100%;background:var(--accent-primary);border-radius:3px;transition:width 0.3s;"></div>
@@ -10305,7 +10308,32 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             if (btn) { btn.disabled = false; btn.textContent = '🔄 Regenerate Prompt'; }
         }
 
-        async function generateShotImage(sceneIdx, shotIdx) {
+        function updateStoryboardProgressUI() {
+            const pb = document.getElementById('storyboard-progress');
+            if (!pb) return;
+            pb.style.display = 'block';
+            
+            const total = window._sbBatchTotal || 1;
+            const completed = window._sbBatchCompleted || 0;
+            const overallPct = Math.round(completed / total * 100);
+            
+            const bar = document.getElementById('sb-progress-bar');
+            if (bar) bar.style.width = overallPct + '%';
+            
+            const pctText = document.getElementById('sb-progress-pct');
+            if (pctText) pctText.textContent = overallPct + '%';
+            
+            const titleEl = document.getElementById('sb-progress-title');
+            if (titleEl) {
+                if (total > 1) {
+                    titleEl.textContent = `Generating shot ${completed + 1} of ${total}...`;
+                } else {
+                    titleEl.textContent = `Generating shot image...`;
+                }
+            }
+        }
+
+        async function generateShotImage(sceneIdx, shotIdx, abortSignal) {
             const s = screenplayData.scenes[sceneIdx];
             const sh = s.shots[shotIdx];
             const btn = document.getElementById(`shot-t2i-btn-${sceneIdx}-${shotIdx}`);
@@ -10339,6 +10367,14 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             btn.disabled = true;
             btn.textContent = '⏳...';
             showShotSpinner(sceneIdx, shotIdx);
+            
+            if (!window._sbBatchTotal) {
+                window._sbBatchTotal = 1;
+                window._sbBatchCompleted = 0;
+            }
+
+            updateStoryboardProgressUI();
+
             const seed = Math.floor(Math.random() * 999999999) + 1;
             const inputImages = getSavedInputImages();
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
@@ -10348,26 +10384,10 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps || 20;
             const seedOverride = sh._genSeed || seed;
 
-            // Poll progress and update spinner text
-            let shotPollingActive = true;
-            async function shotPollProgress() {
-                if (!shotPollingActive) return;
-                try {
-                    const pRes = await fetch('/api/image/progress');
-                    const p = await pRes.json();
-                    if (p && p.step_label) {
-                        const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
-                        const textEl = preview ? preview.querySelector('.t2i-spinner-text') : null;
-                        if (textEl) textEl.textContent = p.step_label + (p.node_label || '');
-                    }
-                } catch(e) {}
-                if (shotPollingActive) setTimeout(shotPollProgress, 1500);
-            }
-            shotPollProgress();
-
             try {
                 const res = await fetch('/api/comfyui/generate/i2i', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
+                    signal: abortSignal,
                     body: JSON.stringify({
                         prompt: enrichedPrompt,
                         seed: seedOverride,
@@ -10380,7 +10400,6 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     })
                 });
                 const data = await res.json();
-                shotPollingActive = false;
                 hideShotSpinner(sceneIdx, shotIdx);
                 if (data.success) {
                     const tempFilename = data.filename;
@@ -10389,6 +10408,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     try {
                         const saveRes = await fetch('/api/projects/save-image', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
+                            signal: abortSignal,
                             body: JSON.stringify({
                                 project_name: currentProject?.name || '',
                                 project_path: currentProject?.path || '',
@@ -10413,6 +10433,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         sh.storyboard_history.push(tempFilename);
                     }
                     updateShotPreview(sceneIdx, shotIdx);
+                    scheduleSaveState();
                     const imgEl = document.getElementById(`shot-preview-img-${sceneIdx}-${shotIdx}`);
                     if (imgEl && !imgEl.complete) {
                         await new Promise(resolve => { imgEl.onload = resolve; imgEl.onerror = resolve; });
@@ -10422,12 +10443,33 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     btn.disabled = false;
                     btn.textContent = '🎨 Generate Image';
                 }
+                
+                if (!window._sbBatchTotal || window._sbBatchCompleted + 1 >= window._sbBatchTotal) {
+                    const pb = document.getElementById('storyboard-progress');
+                    if (pb) {
+                        document.getElementById('sb-progress-bar').style.width = '100%';
+                        document.getElementById('sb-progress-pct').textContent = '100%';
+                        document.getElementById('sb-progress-title').textContent = data.success ? '✅ Complete!' : '❌ Failed';
+                        setTimeout(() => { pb.style.display = 'none'; }, 1500);
+                    }
+                    window._sbBatchTotal = 0;
+                    window._sbBatchCompleted = 0;
+                }
             } catch(e) {
-                shotPollingActive = false;
+                hideShotSpinner(sceneIdx, shotIdx);
+                if (!window._sbBatchTotal || window._sbBatchCompleted + 1 >= window._sbBatchTotal) {
+                    const pb = document.getElementById('storyboard-progress');
+                    if (pb) {
+                        document.getElementById('sb-progress-title').textContent = '❌ Errored';
+                        setTimeout(() => { pb.style.display = 'none'; }, 1500);
+                    }
+                    window._sbBatchTotal = 0;
+                    window._sbBatchCompleted = 0;
+                }
+                if (e.name === 'AbortError') return;
                 notify('Error', e.message);
                 btn.disabled = false;
                 btn.textContent = '🎨 Generate Image';
-                hideShotSpinner(sceneIdx, shotIdx);
             }
         }
 
@@ -10490,6 +10532,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         if (!sh.storyboard_history.includes(tempFilename)) sh.storyboard_history.push(tempFilename);
                         notify('Upscaled', '4K upscale complete', '🔍');
                         renderStoryboard();
+                        scheduleSaveState();
                         return true;
                     } else {
                         notify('Upscale Failed', saveData.error || 'Save failed', '❌');
@@ -10551,124 +10594,29 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             btn.disabled = true;
             btn.textContent = `⏳ 0/${pendingShots.length}`;
-            let completed = 0;
-
-            const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
-            const imgResEl = document.getElementById('sel-img-resolution');
-            const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+            
+            window._sbBatchTotal = pendingShots.length;
+            window._sbBatchCompleted = 0;
+            const pb = document.getElementById('storyboard-progress');
+            if (pb) pb.style.display = 'block';
 
             for (const { sh, i } of pendingShots) {
                 if (signal.aborted) break;
-                showShotSpinner(sceneIdx, i);
-
-                // Poll progress and update current shot's spinner text
-                let shotPollingActive = true;
-                async function shotPollProgress() {
-                    if (!shotPollingActive) return;
-                    try {
-                        const pRes = await fetch('/api/image/progress');
-                        const p = await pRes.json();
-                        if (p && p.step_label) {
-                            const preview = document.getElementById(`shot-preview-${sceneIdx}-${i}`);
-                            const textEl = preview ? preview.querySelector('.t2i-spinner-text') : null;
-                            if (textEl) textEl.textContent = p.step_label + (p.node_label || '');
-                        }
-                    } catch(e) {}
-                    if (shotPollingActive) setTimeout(shotPollProgress, 1500);
-                }
-                shotPollProgress();
-
-                let enrichedPrompt = sh.storyboard_prompt || '';
-                const shotChars = sh.characters_present || s.characters_present || [];
-                const savedChars = charData.filter(c => c.savedImage && shotChars.includes(c.name)).map(c => {
-                    let clean = c.savedImage;
-                    if (clean.includes('/')) clean = clean.split('/').pop();
-                    else clean = clean.replace(/\s+/g, '_') + '.png';
-                    return { name: c.name, description: c.description || '', savedImage: clean.replace('.png', '') };
-                });
-                const savedLocs = locationData.filter(l => l.name === s.location_id && l.savedImage).map(l => {
-                    let clean = l.savedImage;
-                    if (clean.includes('/')) clean = clean.split('/').pop();
-                    else clean = clean.replace(/\s+/g, '_') + '.png';
-                    return { name: l.name, details: l.details || '', type: l.type || '', savedImage: clean.replace('.png', '') };
-                });
-                if (savedLocs.length) {
-                    enrichedPrompt += `\n\nThe environment image provided is: "${savedLocs[0].savedImage}.png". Environment description: ${savedLocs[0].type ? 'Type: ' + savedLocs[0].type + '. ' : ''}${savedLocs[0].details || ''}.`;
-                }
-                if (savedChars.length) {
-                    enrichedPrompt += `\n\nCharacter reference images provided: ${savedChars.map(c => `"${c.savedImage}.png" (${c.name}: ${c.description})`).join(', ')}. The character should match the appearance shown in these reference images.`;
-                }
-
-                const seed = Math.floor(Math.random() * 999999999) + 1;
-                const stepsOverride = sh._genSteps || 20;
-                const inputImages = getSavedInputImages();
-                try {
-                    const res = await fetch('/api/comfyui/generate/i2i', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        signal,
-                        body: JSON.stringify({
-                            prompt: enrichedPrompt,
-                            seed: seed,
-                            steps: stepsOverride,
-                            project_path: currentProject?.path || '',
-                            input_images: inputImages,
-                            aspect_ratio: aspectRatio,
-                            resolution: imgResolution
-                        })
-                    });
-                    shotPollingActive = false;
-                    hideShotSpinner(sceneIdx, i);
-                    const data = await res.json();
-                    if (data.success) {
-                        const tempFilename = data.filename;
-                        // Save to project scenes/ immediately so images persist across restarts
-                        const cardName = `scene_${sceneIdx + 1}_shot_${i + 1}`;
-                        try {
-                            const saveRes = await fetch('/api/projects/save-image', {
-                                method: 'POST', headers: {'Content-Type': 'application/json'},
-                                signal,
-                                body: JSON.stringify({
-                                    project_name: currentProject?.name || '',
-                                    project_path: currentProject?.path || '',
-                                    stage: 'scenes',
-                                    filename: tempFilename,
-                                    card_name: cardName
-                                })
-                            });
-                            const saveData = await saveRes.json();
-                            if (saveData.success) {
-                                const savedFilename = saveData.path.split(/[\\/]/).pop();
-                                sh._temp_storyboard_image = 'scenes/' + savedFilename;
-                            } else {
-                                sh._temp_storyboard_image = tempFilename;
-                            }
-                        } catch(e) {
-                            sh._temp_storyboard_image = tempFilename;
-                        }
-                        sh.storyboard_status = 'generated';
-                        sh.storyboard_history = sh.storyboard_history || [];
-                        if (!sh.storyboard_history.includes(tempFilename)) {
-                            sh.storyboard_history.push(tempFilename);
-                        }
-                        updateShotPreview(sceneIdx, i);
-                        // Wait for image to load in browser before next generation
-                        const imgEl = document.getElementById(`shot-preview-img-${sceneIdx}-${i}`);
-                        if (imgEl && !imgEl.complete) {
-                            await new Promise(resolve => { imgEl.onload = resolve; imgEl.onerror = resolve; });
-                        }
-                    }
-                } catch(e) {
-                    shotPollingActive = false;
-                    hideShotSpinner(sceneIdx, i);
-                    if (e.name === 'AbortError') break;
-                    notify('Error', `Shot ${sh.shot_id || i+1}: ${e.message}`);
-                }
-                completed++;
-                btn.textContent = `⏳ ${completed}/${pendingShots.length}`;
+                await generateShotImage(sceneIdx, i, signal);
+                window._sbBatchCompleted++;
+                btn.textContent = `⏳ ${window._sbBatchCompleted}/${pendingShots.length}`;
             }
 
             btn.disabled = false;
             btn.textContent = '🎨';
+            
+            if (pb) {
+                document.getElementById('sb-progress-bar').style.width = '100%';
+                document.getElementById('sb-progress-pct').textContent = '100%';
+                document.getElementById('sb-progress-title').textContent = '✅ Scene images generated!';
+                setTimeout(() => { pb.style.display = 'none'; }, 1500);
+            }
+            
             window._sceneAbortController = null;
             hideAbortButton();
             renderStoryboard();
@@ -10810,6 +10758,10 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 await fetch('/api/image/interrupt', { method: 'POST' });
             } catch(e) {}
             hideAbortButton();
+            const pb = document.getElementById('storyboard-progress');
+            if (pb) pb.style.display = 'none';
+            window._sbBatchTotal = 0;
+            window._sbBatchCompleted = 0;
             notify('Cancelled', 'Generation cancelled', '✕');
         }
 
@@ -12465,17 +12417,43 @@ Raw JSON only, no markdown.`;
             if (!screenplayData || !screenplayData.scenes) {
                 notify('No Screenplay', 'Please generate screenplay first.'); return;
             }
+            const pending = [];
             for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
                 const s = screenplayData.scenes[sIdx];
                 if (!s.shots) continue;
                 for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
                     const sh = s.shots[shIdx];
-                    if (sh.storyboard_image) continue;
-                    const btn = document.getElementById(`shot-card-${sIdx}_${shIdx}`);
-                    if (!btn) continue;
-                    await generateShotImage(sIdx, shIdx);
+                    if (!sh.storyboard_image && !sh._temp_storyboard_image) {
+                        pending.push({ sIdx, shIdx });
+                    }
                 }
             }
+            if (!pending.length) return;
+            
+            window._sbBatchTotal = pending.length;
+            window._sbBatchCompleted = 0;
+            
+            const pb = document.getElementById('storyboard-progress');
+            if (pb) pb.style.display = 'block';
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+            
+            for (const item of pending) {
+                if (signal.aborted) break;
+                await generateShotImage(item.sIdx, item.shIdx, signal);
+                window._sbBatchCompleted++;
+            }
+            
+            if (pb) {
+                document.getElementById('sb-progress-bar').style.width = '100%';
+                document.getElementById('sb-progress-pct').textContent = '100%';
+                document.getElementById('sb-progress-title').textContent = '✅ All images generated!';
+                setTimeout(() => { pb.style.display = 'none'; }, 1500);
+            }
+            window._sceneAbortController = null;
+            hideAbortButton();
             renderStoryboard();
         }
 
