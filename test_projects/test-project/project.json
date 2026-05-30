@@ -1,0 +1,26 @@
+{
+  "name": "test-project",
+  "description": "",
+  "template": null,
+  "created_at": "2026-05-22T12:03:35.279989",
+  "updated_at": "2026-05-22T12:03:35.280014",
+  "variables": {},
+  "stages": {
+    "characters": {
+      "completed": 0,
+      "total": 0
+    },
+    "locations": {
+      "completed": 0,
+      "total": 0
+    },
+    "scenes": {
+      "completed": 0,
+      "total": 0
+    },
+    "videos": {
+      "completed": 0,
+      "total": 0
+    }
+  }
+}

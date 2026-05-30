@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+projects/
+*.log
+
+# Binaries (llama.cpp, model DLLs)
+bin/
+
+# Large model files
+models/
+
+# External projects
+comfyui-mcp-server/
+

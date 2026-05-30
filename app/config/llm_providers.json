@@ -1,0 +1,100 @@
+{
+  "providers": {
+    "ollama": {
+      "name": "Ollama",
+      "type": "local",
+      "host": "http://127.0.0.1:11434",
+      "default_model": "llama3.1",
+      "api_endpoint": "/api/generate",
+      "requires_api_key": false,
+      "binary": "ollama",
+      "start_cmd": ["ollama", "serve"],
+      "health_endpoint": "/api/tags"
+    },
+    "lm_studio": {
+      "name": "LM Studio",
+      "type": "local",
+      "host": "http://127.0.0.1:1234/v1",
+      "default_model": "llama-3.1-8b",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": false
+    },
+    "llama_cpp": {
+      "name": "llama.cpp",
+      "type": "local",
+      "host": "http://127.0.0.1:8080",
+      "default_model": "models/mistral-7b.gguf",
+      "api_endpoint": "/v1/chat/completions",
+      "requires_api_key": false,
+      "binary": "llama-server",
+      "start_cmd": ["llama-server", "--host", "0.0.0.0", "--port", "8080"],
+      "health_endpoint": "/v1/models"
+    },
+    "openai": {
+      "name": "OpenAI",
+      "type": "cloud",
+      "host": "https://api.openai.com/v1",
+      "default_model": "gpt-4o",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": true,
+      "api_key_env": "OPENAI_API_KEY"
+    },
+    "claude": {
+      "name": "Claude (Anthropic)",
+      "type": "cloud",
+      "host": "https://api.anthropic.com/v1",
+      "default_model": "claude-sonnet-4-20250514",
+      "api_endpoint": "/messages",
+      "requires_api_key": true,
+      "api_key_env": "ANTHROPIC_API_KEY"
+    },
+    "openrouter": {
+      "name": "OpenRouter",
+      "type": "cloud",
+      "host": "https://openrouter.ai/api/v1",
+      "default_model": "anthropic/claude-3.5-sonnet",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": true,
+      "api_key_env": "OPENROUTER_API_KEY"
+    },
+    "gemini": {
+      "name": "Gemini",
+      "type": "cloud",
+      "host": "https://generativelanguage.googleapis.com/v1beta",
+      "default_model": "gemini-2.0-flash",
+      "api_endpoint": "/models/:runChat",
+      "requires_api_key": true,
+      "api_key_env": "GEMINI_API_KEY"
+    },
+    "opencode_zen": {
+      "name": "OpenCode Zen",
+      "type": "cloud",
+      "host": "https://opencode.ai/zen/v1",
+      "default_model": "deepseek-v4-flash-free",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": true,
+      "api_key_env": "OPENCODE_ZEN_API_KEY",
+      "models_endpoint": "/models"
+    },
+    "nvidia_nim": {
+      "name": "NVIDIA NIM",
+      "type": "cloud",
+      "host": "https://integrate.api.nvidia.com/v1",
+      "default_model": "meta/llama-3.1-70b-instruct",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": true,
+      "api_key_env": "NVIDIA_API_KEY"
+    },
+    "app_llm": {
+      "name": "App LLM (Local - Project Model)",
+      "type": "local",
+      "host": "http://127.0.0.1:8081",
+      "default_model": "gemma-4-E2B-it-Q4_K_M.gguf",
+      "api_endpoint": "/v1/chat/completions",
+      "requires_api_key": false,
+      "binary": "llama-server",
+      "start_cmd": ["llama-server", "--host", "0.0.0.0", "--port", "8081", "--ctx-size", "32768", "--n-predict", "16384"],
+      "health_endpoint": "/v1/models"
+    }
+  }
+}

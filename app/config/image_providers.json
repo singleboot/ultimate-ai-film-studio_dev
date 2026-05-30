@@ -1,0 +1,147 @@
+{
+  "providers": {
+    "comfyui": {
+      "name": "ComfyUI",
+      "type": "local",
+      "host": "http://localhost:8188",
+      "default_model": "",
+      "supports_image": true,
+      "supports_video": true,
+      "requires_api_key": false,
+      "binary": "python",
+      "start_cmd_template": ["python", "main.py", "--listen"],
+      "health_endpoint": "/system_stats"
+    },
+    "comfyui_cloud": {
+      "name": "ComfyUI Cloud",
+      "type": "cloud",
+      "host": "https://comfy.io/api",
+      "default_model": "",
+      "supports_image": true,
+      "supports_video": true,
+      "requires_api_key": true,
+      "api_key_env": "COMFYUI_CLOUD_API_KEY"
+    },
+    "openai_dalle": {
+      "name": "OpenAI DALL-E",
+      "type": "cloud",
+      "host": "https://api.openai.com/v1",
+      "default_model": "dall-e-3",
+      "supports_image": true,
+      "supports_video": false,
+      "requires_api_key": true,
+      "api_key_env": "OPENAI_API_KEY"
+    },
+    "google_imagen": {
+      "name": "Google Imagen",
+      "type": "cloud",
+      "host": "https://us-central1-aiplatform.googleapis.com/v1",
+      "default_model": "imagen-3.0-generate-001",
+      "supports_image": true,
+      "supports_video": false,
+      "requires_api_key": true,
+      "api_key_env": "GOOGLE_API_KEY"
+    },
+    "stability": {
+      "name": "Stability AI",
+      "type": "cloud",
+      "host": "https://api.stability.ai/v2beta",
+      "default_model": "stable-image-ultra",
+      "supports_image": true,
+      "supports_video": true,
+      "requires_api_key": true,
+      "api_key_env": "STABILITY_API_KEY"
+    },
+    "runway": {
+      "name": "Runway ML",
+      "type": "cloud",
+      "host": "https://api.runwayml.com/v1",
+      "default_model": "gen3a_turbo",
+      "supports_image": false,
+      "supports_video": true,
+      "requires_api_key": true,
+      "api_key_env": "RUNWAY_API_KEY"
+    },
+    "fal": {
+      "name": "FAL.ai",
+      "type": "cloud",
+      "host": "https://fal.run",
+      "default_model": "fal-ai/flux-pro",
+      "supports_image": true,
+      "supports_video": true,
+      "requires_api_key": true,
+      "api_key_env": "FAL_API_KEY"
+    },
+    "kei": {
+      "name": "Kei AI",
+      "type": "cloud",
+      "host": "https://api.kei.com/v1",
+      "default_model": "kei-image",
+      "supports_image": true,
+      "supports_video": false,
+      "requires_api_key": true,
+      "api_key_env": "KEI_API_KEY"
+    },
+    "openrouter": {
+      "name": "OpenRouter",
+      "type": "cloud",
+      "host": "https://openrouter.ai/api/v1",
+      "default_model": "black-forest-labs/flux-1.1-pro",
+      "supports_image": true,
+      "supports_video": true,
+      "requires_api_key": true,
+      "api_key_env": "OPENROUTER_API_KEY",
+      "share_llm_key": true
+    },
+    "replicate": {
+      "name": "Replicate",
+      "type": "cloud",
+      "host": "https://api.replicate.com/v1",
+      "default_model": "black-forest-labs/flux-dev",
+      "supports_image": true,
+      "supports_video": true,
+      "requires_api_key": true,
+      "api_key_env": "REPLICATE_API_KEY"
+    },
+    "together": {
+      "name": "Together AI",
+      "type": "cloud",
+      "host": "https://api.together.xyz/v1",
+      "default_model": "black-forest-labs/FLUX.1-dev",
+      "supports_image": true,
+      "supports_video": false,
+      "requires_api_key": true,
+      "api_key_env": "TOGETHER_API_KEY"
+    },
+    "deepinfra": {
+      "name": "DeepInfra",
+      "type": "cloud",
+      "host": "https://api.deepinfra.com/v1",
+      "default_model": "black-forest-labs/FLUX-1-dev",
+      "supports_image": true,
+      "supports_video": true,
+      "requires_api_key": true,
+      "api_key_env": "DEEPINFRA_API_KEY"
+    },
+    "ideogram": {
+      "name": "Ideogram",
+      "type": "cloud",
+      "host": "https://api.ideogram.ai",
+      "default_model": "V_2",
+      "supports_image": true,
+      "supports_video": false,
+      "requires_api_key": true,
+      "api_key_env": "IDEOGRAM_API_KEY"
+    },
+    "custom": {
+      "name": "Custom API",
+      "type": "cloud",
+      "host": "",
+      "default_model": "",
+      "supports_image": true,
+      "supports_video": false,
+      "requires_api_key": false,
+      "is_custom": true
+    }
+  }
+}
