@@ -2926,8 +2926,9 @@
             }
         }
 
-        function goHome() {
-            scheduleSaveState();
+        async function goHome() {
+            notify('Saving Timeline', 'Writing project state to disk...', '⏳');
+            await saveProjectState();
             currentProject = null;
             document.getElementById('project-label').textContent = 'No project';
             document.getElementById('open-folder-btn').style.display = 'none';

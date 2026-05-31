@@ -2349,12 +2349,14 @@
         }
 
         // === PAGE NAVIGATION ===
-        function navigateToWorkflow(step) {
+        async function navigateToWorkflow(step) {
             try {
                 if (step === 'video-prompts') {
                     step = 'storyboard';
                 }
                 if (step === 'videos') {
+                    notify('Saving Workspace', 'Writing project state to disk...', '⏳');
+                    await saveProjectState();
                     window.location.href = '/timeline';
                     return;
                 }
