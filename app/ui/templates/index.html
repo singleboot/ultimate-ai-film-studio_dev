@@ -1780,6 +1780,50 @@
                         <input type="range" class="resolve-inspector-slider" id="slider-opacity" min="0" max="100" value="100" oninput="applyLiveInspectorTransform()">
                     </div>
                 </div>
+
+                <!-- AI Storyboard & B-Roll Generator Section -->
+                <div id="inspector-ai-generator" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; border-top: 1px solid #333; padding-top: 10px;">
+                    <div style="font-weight: bold; font-size: 0.7rem; color: #ff6600; text-transform: uppercase; display: flex; align-items: center; gap: 4px;">
+                        <span>🪄 AI B-Roll & Shot Gen</span>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <label style="font-size: 0.6rem; color: #999;">B-Roll/Shot Prompts (prefilled or write custom):</label>
+                        <textarea id="ai-nle-prompt" style="width: 100%; height: 50px; background: #111; border: 1px solid #333; border-radius: 4px; color: #fff; font-size: 0.65rem; padding: 4px; resize: none; font-family: sans-serif;" placeholder="Type shot visual details for B-roll generation..."></textarea>
+                    </div>
+
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                            <label style="font-size: 0.55rem; color: #999;">CFG Scale</label>
+                            <input type="number" id="ai-nle-cfg" style="width: 100%; background: #111; color: #fff; border: 1px solid #333; border-radius: 3px; padding: 2px; font-size: 0.65rem;" value="1.0" min="0.5" max="15.0" step="0.5">
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                            <label style="font-size: 0.55rem; color: #999;">Steps</label>
+                            <input type="number" id="ai-nle-steps" style="width: 100%; background: #111; color: #fff; border: 1px solid #333; border-radius: 3px; padding: 2px; font-size: 0.65rem;" value="8" min="1" max="150" step="1">
+                        </div>
+                        <div style="flex: 1.2; display: flex; flex-direction: column; gap: 2px;">
+                            <label style="font-size: 0.55rem; color: #999;">Placement</label>
+                            <select id="ai-nle-placement" style="width: 100%; background: #111; color: #fff; border: 1px solid #333; border-radius: 3px; padding: 2px; font-size: 0.65rem;">
+                                <option value="append">Append to End</option>
+                                <option value="split" selected>Split & Insert Here</option>
+                                <option value="replace">Replace Selected</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 4px; margin-top: 4px;">
+                        <button class="btn btn-primary" id="ai-nle-gen-img-btn" onclick="generateNleBrollImage()" style="flex: 1; padding: 4px 6px; font-size: 0.6rem; border-radius: 4px;" title="Generate Image first">🎨 Gen Image</button>
+                        <button class="btn btn-secondary" id="ai-nle-gen-vid-btn" onclick="generateNleBrollVideo()" style="flex: 1; padding: 4px 6px; font-size: 0.6rem; border-radius: 4px; display: none;" title="Animate Image into Video">🎥 Gen Video</button>
+                    </div>
+
+                    <!-- AI Preview Display -->
+                    <div id="ai-nle-preview-container" style="display: none; height: 110px; background: #0b0b0b; border: 1px dashed #444; border-radius: 6px; align-items: center; justify-content: center; overflow: hidden; position: relative; margin-top: 4px;">
+                        <!-- Content loaded dynamically: image or video preview -->
+                    </div>
+                    <div id="ai-nle-insert-container" style="display: none; margin-top: 4px;">
+                        <button class="btn btn-success" id="ai-nle-insert-btn" onclick="insertNleBrollIntoTimeline()" style="width: 100%; padding: 5px 8px; font-size: 0.65rem; border-radius: 4px; font-weight: bold;">📥 Insert Clip into Timeline</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -14462,6 +14506,12 @@ Output all prompts in one block, separated by blank lines.`;
             if (document.getElementById('slider-crop-bottom')) document.getElementById('slider-crop-bottom').value = clip.cropBottom;
             if (document.getElementById('slider-opacity')) document.getElementById('slider-opacity').value = clip.opacity;
             
+            // Prefill AI NLE B-Roll prompt area if clip has dialogue or description
+            const promptTextArea = document.getElementById('ai-nle-prompt');
+            if (promptTextArea) {
+                promptTextArea.value = (clip.dialogue || '').replace(/^\[B-ROLL\]\s*/i, '');
+            }
+            
             updateInspectorLabels(clip);
             applyLiveInspectorTransform();
         }
@@ -14484,6 +14534,9 @@ Output all prompts in one block, separated by blank lines.`;
             if (document.getElementById('slider-crop-top')) document.getElementById('slider-crop-top').value = 0;
             if (document.getElementById('slider-crop-bottom')) document.getElementById('slider-crop-bottom').value = 0;
             if (document.getElementById('slider-opacity')) document.getElementById('slider-opacity').value = 100;
+            
+            const promptTextArea = document.getElementById('ai-nle-prompt');
+            if (promptTextArea) promptTextArea.value = '';
             
             if (document.getElementById('label-zoom-val')) document.getElementById('label-zoom-val').textContent = '1.000';
             if (document.getElementById('label-posx-val')) document.getElementById('label-posx-val').textContent = '0';
@@ -14892,6 +14945,230 @@ Output all prompts in one block, separated by blank lines.`;
             if (dbA1) dbA1.textContent = '-inf';
             if (dbA2) dbA2.textContent = '-inf';
             if (dbMst) dbMst.textContent = '-inf';
+        }
+
+        // NLE In-Timeline AI B-Roll Generator Variables
+        let nleTempImageFile = null;
+        let nleTempVideoFile = null;
+
+        async function generateNleBrollImage() {
+            const prompt = document.getElementById('ai-nle-prompt').value.trim();
+            if (!prompt) {
+                notify('Prompt Empty', 'Please enter a visual description for the B-Roll shot', '⚠️');
+                return;
+            }
+
+            const btn = document.getElementById('ai-nle-gen-img-btn');
+            const seed = Math.floor(Math.random() * 999999999);
+            const resolution = currentProject?.settings?.imgResolution || '1024x576';
+            
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+
+            const previewContainer = document.getElementById('ai-nle-preview-container');
+            previewContainer.style.display = 'flex';
+            previewContainer.innerHTML = '<div style="color:#ff6600;font-size:0.65rem;text-align:center;">⌛ Generating Image...</div>';
+
+            try {
+                const res = await fetch('/api/comfyui/generate/t2i', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: resolution })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    nleTempImageFile = data.filename;
+                    nleTempVideoFile = null; // Clear old video
+                    
+                    const thumbUrl = `/api/comfyui/view?filename=${encodeURIComponent(data.filename)}`;
+                    previewContainer.innerHTML = `<img src="${thumbUrl}" style="width:100%;height:100%;object-fit:cover;">`;
+                    
+                    // Show animation / video generation button & insert button
+                    document.getElementById('ai-nle-gen-vid-btn').style.display = 'inline-block';
+                    document.getElementById('ai-nle-insert-container').style.display = 'block';
+                    notify('B-Roll Generated', 'Image generated successfully. You can animate it or insert it.', '🎨');
+                } else {
+                    previewContainer.innerHTML = '<div style="color:#ff4444;font-size:0.65rem;text-align:center;">❌ Generation Failed</div>';
+                    notify('T2I Failed', data.error || 'Generation failed', '⚠️');
+                }
+            } catch (e) {
+                previewContainer.innerHTML = '<div style="color:#ff4444;font-size:0.65rem;text-align:center;">❌ Connection Error</div>';
+                notify('Error', e.message, '⚠️');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🎨 Gen Image';
+            }
+        }
+
+        async function generateNleBrollVideo() {
+            if (!nleTempImageFile) {
+                notify('No Image', 'Please generate a B-Roll image first', '⚠️');
+                return;
+            }
+
+            const btn = document.getElementById('ai-nle-gen-vid-btn');
+            const steps = parseInt(document.getElementById('ai-nle-steps').value || 8);
+            const seed = Math.floor(Math.random() * 999999999);
+            
+            btn.disabled = true;
+            btn.textContent = 'Animating...';
+
+            const previewContainer = document.getElementById('ai-nle-preview-container');
+            const originalContent = previewContainer.innerHTML;
+            previewContainer.innerHTML = originalContent + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#ff6600;font-size:0.55rem;text-align:center;padding:2px;">⌛ Generating Video...</div>';
+
+            try {
+                const res = await fetch('/api/comfyui/generate/i2v', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        seed: seed,
+                        project_path: currentProject?.path || '',
+                        input_image: nleTempImageFile,
+                        scene_index: 0,
+                        steps: steps
+                    })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    nleTempVideoFile = data.filename;
+                    const videoUrl = `/api/comfyui/view?filename=${encodeURIComponent(data.filename)}${data.subfolder ? '&subfolder=' + encodeURIComponent(data.subfolder) : ''}`;
+                    
+                    previewContainer.innerHTML = `<video src="${videoUrl}" autoplay loop muted style="width:100%;height:100%;object-fit:cover;"></video>`;
+                    notify('B-Roll Animated', 'Video generated successfully.', '🎥');
+                } else {
+                    previewContainer.innerHTML = originalContent + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#ff4444;font-size:0.55rem;text-align:center;padding:2px;">❌ Animate Failed</div>';
+                    notify('I2V Failed', data.error || 'Video generation failed', '⚠️');
+                }
+            } catch (e) {
+                previewContainer.innerHTML = originalContent + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#ff4444;font-size:0.55rem;text-align:center;padding:2px;">❌ Error</div>';
+                notify('Error', e.message, '⚠️');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🎥 Gen Video';
+            }
+        }
+
+        async function insertNleBrollIntoTimeline() {
+            const fileToInsert = nleTempVideoFile || nleTempImageFile;
+            if (!fileToInsert) {
+                notify('No Asset', 'Please generate an image or video first', '⚠️');
+                return;
+            }
+
+            const prompt = document.getElementById('ai-nle-prompt').value.trim();
+            const placement = document.getElementById('ai-nle-placement').value;
+            const isVideo = !!nleTempVideoFile;
+            
+            const prefix = isVideo ? 'broll_video_' : 'broll_image_';
+            const timestamp = Date.now();
+            const extension = isVideo ? '.mp4' : '.png';
+            const saveName = `${prefix}${timestamp}${extension}`;
+            
+            const endpoint = isVideo ? '/api/projects/save-video' : '/api/assets/approve-single';
+            const projName = currentProject?.name || '';
+            const projPath = currentProject?.path || '';
+            
+            const reqBody = isVideo ? {
+                project_name: projName,
+                project_path: projPath,
+                filename: fileToInsert,
+                card_name: `broll_${timestamp}`
+            } : {
+                id: `BROLL_${timestamp}`,
+                type: 'prop',
+                image_path: fileToInsert,
+                project_path: projPath
+            };
+            
+            notify('Saving Asset', 'Copying generated asset to project workspace...', '⚡');
+            
+            try {
+                const saveRes = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(reqBody)
+                });
+                const saveData = await saveRes.json();
+                
+                if (!saveData.success) {
+                    notify('Save Failed', saveData.error || 'Failed to copy asset into project', '⚠️');
+                    return;
+                }
+                
+                const finalFilename = isVideo 
+                    ? `broll_${timestamp}.mp4`
+                    : `BROLL_${timestamp}.png`;
+                
+                const finalImgUrl = isVideo
+                    ? null
+                    : `props/approved/BROLL_${timestamp}.png`;
+                
+                const newClip = {
+                    scene_idx: -1,
+                    shot_idx: -1,
+                    shot_id: `B-ROLL_${timestamp.toString().slice(-4)}`,
+                    filename: isVideo ? finalFilename : '',
+                    in_frame: 0,
+                    out_frame: 120, // 5 seconds default
+                    dialogue: `[B-ROLL] ${prompt}`,
+                    transition: 'none',
+                    volume: 1.0,
+                    image_url: finalImgUrl || ''
+                };
+                
+                if (placement === 'replace' && selectedClipIndex >= 0) {
+                    newClip.scene_idx = timelineClips[selectedClipIndex].scene_idx;
+                    newClip.shot_idx = timelineClips[selectedClipIndex].shot_idx;
+                    newClip.shot_id = timelineClips[selectedClipIndex].shot_id;
+                    timelineClips[selectedClipIndex] = newClip;
+                    notify('Clip Replaced', 'Replaced selected timeline clip with new B-Roll', '🪄');
+                } else if (placement === 'split') {
+                    let frameOffset = 0;
+                    let inserted = false;
+                    for (let i = 0; i < timelineClips.length; i++) {
+                        const clip = timelineClips[i];
+                        const duration = clip.out_frame - clip.in_frame;
+                        if (currentPlayheadFrame >= frameOffset && currentPlayheadFrame < frameOffset + duration) {
+                            const splitFrame = clip.in_frame + (currentPlayheadFrame - frameOffset);
+                            const clip2 = {
+                                ...clip,
+                                in_frame: splitFrame,
+                            };
+                            clip.out_frame = splitFrame;
+                            
+                            timelineClips.splice(i + 1, 0, newClip, clip2);
+                            inserted = true;
+                            break;
+                        }
+                        frameOffset += duration;
+                    }
+                    
+                    if (!inserted) {
+                        timelineClips.push(newClip);
+                    }
+                    notify('B-Roll Inserted', 'Inserted B-Roll clip at playhead position', '🪄');
+                } else {
+                    timelineClips.push(newClip);
+                    notify('B-Roll Appended', 'Appended B-Roll clip to end of timeline', '🪄');
+                }
+                
+                nleTempImageFile = null;
+                nleTempVideoFile = null;
+                document.getElementById('ai-nle-preview-container').style.display = 'none';
+                document.getElementById('ai-nle-insert-container').style.display = 'none';
+                document.getElementById('ai-nle-gen-vid-btn').style.display = 'none';
+                document.getElementById('ai-nle-prompt').value = '';
+                
+                updateNleTimeline();
+                populateResolveMediaPool();
+                saveProjectState();
+                
+            } catch(err) {
+                notify('Insert Error', err.message, '⚠️');
+            }
         }
 
         function uploadTimelineMusic(event) {
