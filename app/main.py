@@ -1885,6 +1885,13 @@ async def save_project_state(name: str, request: Request):
         if p_path:
             project_path = str(p_path)
 
+    # Guard against accidental state clearing from browser page reloads
+    if not state.get("topicIdeas") and not state.get("screenplayData"):
+        existing = project_manager.load_project_state(name, project_path)
+        if existing and (existing.get("topicIdeas") or existing.get("screenplayData")):
+            logger.warning("save_project_state ignored: prevented browser page overwrite of populated project data.")
+            return {"success": True, "protected": True}
+
     # Sync orchestrator memory into state for persistence
     if orchestrator:
         if state:
