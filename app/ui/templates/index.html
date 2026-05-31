@@ -2629,8 +2629,10 @@
                 if (selTS && s.totalShots) selTS.value = s.totalShots;
                 // Restore aspect ratio & resolution
                 if (s.aspectRatio) selectAspectRatio(s.aspectRatio);
-                if (s.imgResolution) document.getElementById('sel-img-resolution').value = s.imgResolution;
-                if (s.vidResolution) document.getElementById('sel-vid-resolution').value = s.vidResolution;
+                const selImgRes = document.getElementById('sel-img-resolution');
+                if (selImgRes && s.imgResolution) selImgRes.value = s.imgResolution;
+                const selVidRes = document.getElementById('sel-vid-resolution');
+                if (selVidRes && s.vidResolution) selVidRes.value = s.vidResolution;
                 if (s.dialogue) selectDialogue(s.dialogue);
                 
                 // Ensure sheet prompts are initialized on settings if missing/empty
