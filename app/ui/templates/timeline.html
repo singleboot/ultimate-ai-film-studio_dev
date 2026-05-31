@@ -1488,6 +1488,533 @@
     </div>
 
     <!-- PAGE: Videos -->
+    <div class="page" id="page-videos">
+        <style>
+            #page-videos.active {
+                display: flex !important;
+                flex-direction: column;
+                align-items: stretch !important;
+                height: 100vh;
+                width: 100vw;
+                position: fixed;
+                top: 0;
+                left: 0;
+                background: #111111;
+                z-index: 2000;
+                padding: 0;
+                margin: 0;
+                overflow: hidden;
+                color: #e0e0e0;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                font-size: 0.75rem;
+            }
+            .resolve-top-btn {
+                background: transparent;
+                border: none;
+                color: #aaa;
+                font-size: 0.7rem;
+                padding: 4px 8px;
+                cursor: pointer;
+                border-radius: 3px;
+                font-family: 'Syne', sans-serif;
+                font-weight: 700;
+                text-transform: uppercase;
+            }
+            .resolve-top-btn:hover, .resolve-top-btn.active {
+                color: #fff;
+                background: #252525;
+            }
+            .resolve-inspector-slider {
+                width: 100%;
+                accent-color: #ff6600;
+                background: #333;
+                height: 4px;
+                border-radius: 2px;
+                cursor: pointer;
+            }
+            .resolve-track-header {
+                background: #1b1b1b;
+                border-bottom: 1px solid #2d2d2d;
+                padding: 6px;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                user-select: none;
+            }
+            .track-control-btn {
+                background: transparent;
+                border: none;
+                color: #666;
+                cursor: pointer;
+                font-size: 0.7rem;
+                padding: 1px 3px;
+            }
+            .track-control-btn:hover {
+                color: #eee;
+            }
+            .track-audio-btn {
+                background: #2a2a2a;
+                border: 1px solid #3d3d3d;
+                color: #999;
+                cursor: pointer;
+                font-size: 0.6rem;
+                width: 15px;
+                height: 15px;
+                border-radius: 2px;
+                text-align: center;
+                line-height: 13px;
+                font-weight: bold;
+            }
+            .track-audio-btn:hover {
+                color: #fff;
+                border-color: #555;
+            }
+            .resolve-bottom-nav {
+                height: 40px;
+                background: #161616;
+                border-top: 1px solid #282828;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 0 15px;
+                z-index: 10;
+            }
+            .resolve-bottom-tab {
+                background: transparent;
+                border: none;
+                color: #888;
+                font-size: 0.7rem;
+                padding: 6px 12px;
+                cursor: pointer;
+                text-transform: uppercase;
+                font-weight: 700;
+                font-family: 'Syne', sans-serif;
+            }
+            .resolve-bottom-tab:hover, .resolve-bottom-tab.active {
+                color: #ff6600;
+                background: #1c1c1c;
+                border-bottom: 2px solid #ff6600;
+            }
+        </style>
+
+        <!-- 1. TOP HEADER MENU BAR -->
+        <div style="height: 35px; background: #1a1a1a; border-bottom: 1px solid #282828; display: flex; justify-content: space-between; align-items: center; padding: 0 12px; user-select: none;">
+            <div style="display: flex; gap: 4px; align-items: center;">
+                <button class="resolve-top-btn active">Media Pool</button>
+                <button class="resolve-top-btn">Effects</button>
+                <button class="resolve-top-btn">Index</button>
+                <button class="resolve-top-btn">Sound Library</button>
+                <button class="resolve-top-btn">Keyframes</button>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;" id="resolve-project-title-container">
+                <span style="color: #bbb; font-weight: bold; font-size: 0.75rem; letter-spacing: 0.5px;" id="resolve-project-title-label">Untitled Project 6 - Edited</span>
+                <span id="nle-timeline-duration" style="font-size: 0.65rem; color: #888; background: #222; padding: 2px 6px; border-radius: 4px; font-family: monospace;">Duration: 00:00:00:00</span>
+            </div>
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <button class="resolve-top-btn" onclick="assembleTimelineFromScript()" style="color: #ff6600; border: 1px solid #ff6600; padding: 2px 8px; border-radius: 4px; font-weight: bold;">⚡ Assemble Script</button>
+                <button class="resolve-top-btn" onclick="goHome()" style="color: #ff4444; border: 1px solid #ff4444; padding: 2px 8px; border-radius: 4px;">🏠 Close Workspace</button>
+                <button class="resolve-top-btn" onclick="toggleResolvePanel('mixer')" id="btn-toggle-mixer">Mixer</button>
+                <button class="resolve-top-btn active" onclick="toggleResolvePanel('inspector')" id="btn-toggle-inspector">Inspector</button>
+            </div>
+        </div>
+
+        <!-- 2. UPPER PANEL (Media Pool, Dual Viewers, Inspector) -->
+        <div style="display: flex; flex: 1; min-height: 0; background: #151515;">
+            
+            <!-- A. MEDIA POOL PANEL -->
+            <div id="resolve-media-pool-panel" style="width: 250px; border-right: 1px solid #282828; display: flex; flex-direction: column; background: #181818;">
+                <div style="background: #1d1d1d; border-bottom: 1px solid #282828; padding: 6px 12px; font-weight: bold; color: #ff6600; font-size: 0.7rem; letter-spacing: 0.5px; text-transform: uppercase;">
+                    📁 Media Pool Bins
+                </div>
+                <div style="display: flex; flex: 1; min-height: 0;">
+                    <!-- Folders sidebar -->
+                    <div style="width: 90px; background: #151515; border-right: 1px solid #282828; padding: 6px; font-size: 0.65rem; color: #888;">
+                        <div style="color: #ff6600; font-weight: bold; margin-bottom: 8px; cursor: pointer;">📂 Master</div>
+                        <div style="margin-left: 8px; margin-bottom: 6px; cursor: pointer;">📁 Smart Bins</div>
+                        <div style="margin-left: 8px; margin-bottom: 6px; cursor: pointer;">📁 Keywords</div>
+                    </div>
+                    <!-- Grid of files -->
+                    <div id="resolve-media-pool-grid" style="flex: 1; padding: 6px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(65px, 1fr)); gap: 6px; background: #121212;">
+                        <span style="color: #555; text-align: center; grid-column: 1/-1; font-size: 0.65rem; margin-top: 20px;">No clips imported. Click Assemble Script to load media.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- B. DUAL PLAYERS CANVAS -->
+            <div style="flex: 1.5; display: flex; flex-direction: column; border-right: 1px solid #282828; background: #0f0f0f; min-height: 0;">
+                <div style="display: flex; flex: 1; min-height: 0;">
+                    <!-- LEFT: SOURCE PLAYER -->
+                    <div style="flex: 1; border-right: 1px solid #222; display: flex; flex-direction: column; position: relative;">
+                        <div style="background: #181818; padding: 4px 10px; font-size: 0.65rem; color: #aaa; border-bottom: 1px solid #222; display: flex; justify-content: space-between;">
+                            <span>📹 Source Viewer (Asset Preview)</span>
+                            <span id="resolve-source-timecode" style="font-family: monospace; color: #aaa;">00:00:00:00</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden; position: relative;">
+                            <video id="resolve-source-player" style="max-width: 100%; max-height: 100%; object-fit: contain;" muted></video>
+                        </div>
+                        <!-- Source Controls -->
+                        <div style="background: #161616; padding: 6px 12px; display: flex; justify-content: center; align-items: center; gap: 10px; border-top: 1px solid #222;">
+                            <button onclick="document.getElementById('resolve-source-player').currentTime = 0" style="background:transparent; border:none; color:#888; cursor:pointer;" title="Go to Start">⏮</button>
+                            <button onclick="stepSourcePlayer(-1)" style="background:transparent; border:none; color:#888; cursor:pointer;" title="Prev Frame">◀</button>
+                            <button onclick="toggleSourcePlayback()" style="background:transparent; border:none; color:#ff6600; cursor:pointer; font-weight:bold;" id="resolve-source-play-btn" title="Play">▶</button>
+                            <button onclick="stepSourcePlayer(1)" style="background:transparent; border:none; color:#888; cursor:pointer;" title="Next Frame">▶</button>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: TIMELINE PLAYER (with CSS Live Transform) -->
+                    <div style="flex: 1; display: flex; flex-direction: column; position: relative;">
+                        <div style="background: #181818; padding: 4px 10px; font-size: 0.65rem; color: #ff6600; border-bottom: 1px solid #222; display: flex; justify-content: space-between;">
+                            <span>🎬 Timeline Viewer (Active Cut)</span>
+                            <span id="nle-timecode" style="font-family: monospace; font-weight: bold; color: #ff6600;">00:00:00:00</span>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden; position: relative;">
+                            <div id="resolve-preview-transform-box" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; transform-origin: center center; transition: transform 0.05s ease-out; overflow:hidden; position:relative;">
+                                <video id="nle-preview-player" style="max-width: 100%; max-height: 100%; object-fit: contain; background: #000;" muted></video>
+                            </div>
+                        </div>
+                        <!-- Timeline Controls -->
+                        <div style="background: #161616; padding: 6px 12px; display: flex; justify-content: center; align-items: center; gap: 10px; border-top: 1px solid #222;">
+                            <button onclick="stopNlePlayback()" style="background:transparent; border:none; color:#888; cursor:pointer;" title="Stop Sequence">⏹</button>
+                            <button onclick="toggleNlePlayback()" style="background:transparent; border:none; color:#ff6600; cursor:pointer; font-weight:bold;" id="nle-play-btn" title="Play Sequence">▶ Play</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- C. RESOLVE INSPECTOR PANEL -->
+            <div id="resolve-inspector-panel" style="width: 320px; border-left: 1px solid #282828; display: flex; flex-direction: column; background: #1c1c1c; overflow-y: auto; padding: 10px; gap: 12px;">
+                <div style="border-bottom: 1px solid #2d2d2d; padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: bold; color: #ff6600; font-size: 0.8rem; text-transform: uppercase;">🔍 Inspector</span>
+                    <span style="font-size: 0.6rem; color: #888; background: #282828; padding: 2px 6px; border-radius: 4px;" id="inspector-active-shot">No Selected Clip</span>
+                </div>
+
+                <!-- Tabs header -->
+                <div style="display: flex; gap: 4px; border-bottom: 1px solid #2d2d2d; padding-bottom: 4px; font-size: 0.65rem; font-weight: bold; justify-content: space-between; color: #888;">
+                    <span style="color: #ff6600; border-bottom: 1px solid #ff6600; cursor: pointer; padding-bottom: 2px;">Video</span>
+                    <span style="cursor: pointer;">Audio</span>
+                    <span style="cursor: pointer;">Effects</span>
+                    <span style="cursor: pointer;">Transition</span>
+                </div>
+
+                <!-- Transform Section -->
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="font-weight: bold; font-size: 0.7rem; color: #bbb; border-bottom: 1px solid #282828; padding-bottom: 3px; display: flex; justify-content: space-between;">
+                        <span>📐 Transform</span>
+                        <span onclick="resetInspectorTransform()" style="color: #ff6600; cursor: pointer; font-size: 0.65rem;">↺ Reset</span>
+                    </div>
+
+                    <!-- Zoom X/Y -->
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: #999;">
+                            <span>Zoom X & Y</span>
+                            <span id="label-zoom-val" style="color: #fff; font-weight: bold;">1.000</span>
+                        </div>
+                        <input type="range" class="resolve-inspector-slider" id="slider-zoom" min="0.5" max="3" step="0.05" value="1" oninput="applyLiveInspectorTransform()">
+                    </div>
+
+                    <!-- Position X / Y -->
+                    <div style="display: flex; gap: 10px;">
+                        <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: #999;">
+                                <span>Position X</span>
+                                <span id="label-posx-val" style="color: #fff; font-weight: bold;">0</span>
+                            </div>
+                            <input type="range" class="resolve-inspector-slider" id="slider-posx" min="-200" max="200" step="5" value="0" oninput="applyLiveInspectorTransform()">
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: #999;">
+                                <span>Position Y</span>
+                                <span id="label-posy-val" style="color: #fff; font-weight: bold;">0</span>
+                            </div>
+                            <input type="range" class="resolve-inspector-slider" id="slider-posy" min="-200" max="200" step="5" value="0" oninput="applyLiveInspectorTransform()">
+                        </div>
+                    </div>
+
+                    <!-- Rotation Angle -->
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: #999;">
+                            <span>Rotation Angle</span>
+                            <span id="label-rotate-val" style="color: #fff; font-weight: bold;">0.0°</span>
+                        </div>
+                        <input type="range" class="resolve-inspector-slider" id="slider-rotate" min="-180" max="180" step="5" value="0" oninput="applyLiveInspectorTransform()">
+                    </div>
+                </div>
+
+                <!-- Cropping Section -->
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 5px;">
+                    <div style="font-weight: bold; font-size: 0.7rem; color: #bbb; border-bottom: 1px solid #282828; padding-bottom: 3px; display: flex; justify-content: space-between;">
+                        <span>✂️ Cropping</span>
+                        <span onclick="resetInspectorCropping()" style="color: #ff6600; cursor: pointer; font-size: 0.65rem;">↺ Reset</span>
+                    </div>
+
+                    <!-- Crop sliders -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div style="display: flex; flex-direction: column; gap: 3px;">
+                            <span style="font-size: 0.65rem; color: #999;">Crop Left</span>
+                            <input type="range" class="resolve-inspector-slider" id="slider-crop-left" min="0" max="50" value="0" oninput="applyLiveInspectorTransform()">
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 3px;">
+                            <span style="font-size: 0.65rem; color: #999;">Crop Right</span>
+                            <input type="range" class="resolve-inspector-slider" id="slider-crop-right" min="0" max="50" value="0" oninput="applyLiveInspectorTransform()">
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 3px;">
+                            <span style="font-size: 0.65rem; color: #999;">Crop Top</span>
+                            <input type="range" class="resolve-inspector-slider" id="slider-crop-top" min="0" max="50" value="0" oninput="applyLiveInspectorTransform()">
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 3px;">
+                            <span style="font-size: 0.65rem; color: #999;">Crop Bottom</span>
+                            <input type="range" class="resolve-inspector-slider" id="slider-crop-bottom" min="0" max="50" value="0" oninput="applyLiveInspectorTransform()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compositing Section -->
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 5px;">
+                    <div style="font-weight: bold; font-size: 0.7rem; color: #bbb; border-bottom: 1px solid #282828; padding-bottom: 3px; display: flex; justify-content: space-between;">
+                        <span>🎭 Compositing</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: #999;">
+                            <span>Opacity</span>
+                            <span id="label-opacity-val" style="color: #fff; font-weight: bold;">100%</span>
+                        </div>
+                        <input type="range" class="resolve-inspector-slider" id="slider-opacity" min="0" max="100" value="100" oninput="applyLiveInspectorTransform()">
+                    </div>
+                </div>
+
+                <!-- AI Storyboard & B-Roll Generator Section -->
+                <div id="inspector-ai-generator" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; border-top: 1px solid #333; padding-top: 10px;">
+                    <div style="font-weight: bold; font-size: 0.7rem; color: #ff6600; text-transform: uppercase; display: flex; align-items: center; gap: 4px;">
+                        <span>🪄 AI B-Roll & Shot Gen</span>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <label style="font-size: 0.6rem; color: #999;">B-Roll/Shot Prompts (prefilled or write custom):</label>
+                        <textarea id="ai-nle-prompt" style="width: 100%; height: 50px; background: #111; border: 1px solid #333; border-radius: 4px; color: #fff; font-size: 0.65rem; padding: 4px; resize: none; font-family: sans-serif;" placeholder="Type shot visual details for B-roll generation..."></textarea>
+                    </div>
+
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                            <label style="font-size: 0.55rem; color: #999;">CFG Scale</label>
+                            <input type="number" id="ai-nle-cfg" style="width: 100%; background: #111; color: #fff; border: 1px solid #333; border-radius: 3px; padding: 2px; font-size: 0.65rem;" value="1.0" min="0.5" max="15.0" step="0.5">
+                        </div>
+                        <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                            <label style="font-size: 0.55rem; color: #999;">Steps</label>
+                            <input type="number" id="ai-nle-steps" style="width: 100%; background: #111; color: #fff; border: 1px solid #333; border-radius: 3px; padding: 2px; font-size: 0.65rem;" value="8" min="1" max="150" step="1">
+                        </div>
+                        <div style="flex: 1.2; display: flex; flex-direction: column; gap: 2px;">
+                            <label style="font-size: 0.55rem; color: #999;">Placement</label>
+                            <select id="ai-nle-placement" style="width: 100%; background: #111; color: #fff; border: 1px solid #333; border-radius: 3px; padding: 2px; font-size: 0.65rem;">
+                                <option value="append">Append to End</option>
+                                <option value="split" selected>Split & Insert Here</option>
+                                <option value="replace">Replace Selected</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 4px; margin-top: 4px;">
+                        <button class="btn btn-primary" id="ai-nle-gen-img-btn" onclick="generateNleBrollImage()" style="flex: 1; padding: 4px 6px; font-size: 0.6rem; border-radius: 4px;" title="Generate Image first">🎨 Gen Image</button>
+                        <button class="btn btn-secondary" id="ai-nle-gen-vid-btn" onclick="generateNleBrollVideo()" style="flex: 1; padding: 4px 6px; font-size: 0.6rem; border-radius: 4px; display: none;" title="Animate Image into Video">🎥 Gen Video</button>
+                    </div>
+
+                    <!-- AI Preview Display -->
+                    <div id="ai-nle-preview-container" style="display: none; height: 110px; background: #0b0b0b; border: 1px dashed #444; border-radius: 6px; align-items: center; justify-content: center; overflow: hidden; position: relative; margin-top: 4px;">
+                        <!-- Content loaded dynamically: image or video preview -->
+                    </div>
+                    <div id="ai-nle-insert-container" style="display: none; margin-top: 4px;">
+                        <button class="btn btn-success" id="ai-nle-insert-btn" onclick="insertNleBrollIntoTimeline()" style="width: 100%; padding: 5px 8px; font-size: 0.65rem; border-radius: 4px; font-weight: bold;">📥 Insert Clip into Timeline</button>
+                    </div>
+                    
+                    <!-- AI Extend Selected Clip -->
+                    <div style="border-top: 1px solid #333; margin-top: 8px; padding-top: 8px; display: flex; flex-direction: column; gap: 4px;">
+                        <button class="btn" onclick="extendSelectedClipNle()" id="ai-nle-extend-btn" style="width:100%; padding: 5px 8px; font-size: 0.65rem; border-radius: 4px; font-weight: bold; background: #8e44ad; border: 1px solid #7d3c98; color: #fff; cursor: pointer;">
+                            🎥 Extend Selected Clip (AI)
+                        </button>
+                    </div>
+
+                    <!-- AI Audio Generation Section -->
+                    <div style="border-top: 1px solid #333; margin-top: 8px; padding-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+                        <span style="font-weight: bold; font-size: 0.7rem; color: #00cc66; text-transform: uppercase;">🔊 AI Audio / Sound FX Gen</span>
+                        <textarea id="ai-audio-prompt" style="width: 100%; height: 40px; background: #111; border: 1px solid #333; border-radius: 4px; color: #fff; font-size: 0.65rem; padding: 4px; resize: none; font-family: sans-serif;" placeholder="SFX: heavy rain, laser gun... VO: Read script..."></textarea>
+                        <div style="display: flex; gap: 4px; align-items: center;">
+                            <select id="ai-audio-type" style="flex: 1.2; background: #111; color: #fff; border: 1px solid #333; border-radius: 3px; padding: 3px; font-size: 0.65rem;">
+                                <option value="sfx">Sound Effect (SFX)</option>
+                                <option value="vo">Voiceover (TTS)</option>
+                                <option value="music">Background Music</option>
+                            </select>
+                            <button class="btn" id="ai-audio-gen-btn" onclick="generateNleAudio()" style="flex: 1; padding: 4px 6px; font-size: 0.65rem; border-radius: 4px; font-weight: bold; background: #27ae60; border: 1px solid #219653; color: #fff; cursor: pointer;">
+                                🔊 Gen Audio
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. LOWER TIMELINE PANEL -->
+        <div style="background: #141414; border-top: 1px solid #282828; display: flex; flex-direction: column; user-select: none;">
+            
+            <!-- Timeline Edit Toolbar -->
+            <div style="background: #181818; border-bottom: 1px solid #2d2d2d; padding: 4px 12px; display: flex; justify-content: space-between; align-items: center; color: #ccc; font-size: 0.7rem;">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <!-- Resolve tool buttons -->
+                    <div style="display: flex; background: #0a0a0a; border-radius: 4px; padding: 2px; border: 1px solid #282828;">
+                        <button class="resolve-tool-btn" id="tool-select" onclick="setResolveTool('select')" style="background: #ff6600; border: none; color: #fff; padding: 3px 8px; cursor: pointer; border-radius: 2px; font-size: 0.65rem; font-weight: bold; display: flex; align-items: center; gap: 3px;" title="Selection Mode (A)">
+                            🏹 Arrow
+                        </button>
+                        <button class="resolve-tool-btn" id="tool-blade" onclick="setResolveTool('blade')" style="background: transparent; border: none; color: #888; padding: 3px 8px; cursor: pointer; border-radius: 2px; font-size: 0.65rem; display: flex; align-items: center; gap: 3px;" title="Blade Tool (B)">
+                            ✂️ Razor
+                        </button>
+                    </div>
+
+                    <!-- Snapping Magnet, Links & Marker -->
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <button class="resolve-toggle-btn active" id="btn-snapping" onclick="toggleResolveSnapping()" style="background: #0a0a0a; border: 1px solid #282828; color: #ff6600; padding: 3px 8px; cursor: pointer; border-radius: 3px; font-size: 0.65rem; font-weight: bold;" title="Toggle Snapping (N)">🧲</button>
+                        <button class="resolve-toggle-btn active" id="btn-linked" style="background: #0a0a0a; border: 1px solid #282828; color: #ff6600; padding: 3px 8px; cursor: pointer; border-radius: 3px; font-size: 0.65rem; font-weight: bold;" title="Linked Selection">🔗</button>
+                        <button onclick="addTimelineMarker()" style="background: #0a0a0a; border: 1px solid #282828; color: #aaa; padding: 3px 8px; cursor: pointer; border-radius: 3px; font-size: 0.65rem;" title="Add Marker (M)">🔖</button>
+                    </div>
+                </div>
+
+                <!-- Timeline Utilities (duration, zoom) -->
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 3px;">
+                        <span style="color:#888;">FPS:</span>
+                        <select id="nle-fps" onchange="updateNleTimeline()" style="background:#0a0a0a; color:#ccc; border:1px solid #282828; border-radius:2px; font-size:0.6rem; padding:2px;">
+                            <option value="24" selected>24</option>
+                            <option value="30">30</option>
+                            <option value="60">60</option>
+                        </select>
+                    </div>
+                    <div style="border-left: 1px solid #2a2a2a; height: 12px;"></div>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <span>zoom:</span>
+                        <input type="range" id="resolve-zoom-slider" min="0.5" max="5" step="0.1" value="1.5" oninput="changeResolveZoom(this.value)" style="width: 100px; accent-color: #ff6600; background: #333; height: 3px; border-radius: 1px; cursor: pointer;">
+                    </div>
+                    <div style="border-left: 1px solid #2a2a2a; height: 12px;"></div>
+                    <span style="font-family: monospace; color: #ff6600; font-size: 0.7rem;" id="resolve-status-indicator">Selection Mode Active</span>
+                </div>
+            </div>
+
+            <!-- Scrollable Track Layout with Pinned Headers -->
+            <div style="display: flex; overflow: hidden; height: 160px; background: #131313;">
+                
+                <!-- Left Track Headers Column -->
+                <div style="width: 140px; background: #1a1a1a; border-right: 2px solid #2d2d2d; display: flex; flex-direction: column; gap: 3px; padding-top: 24px; z-index: 10;">
+                    <!-- V1 Track Header -->
+                    <div class="resolve-track-header" style="height: 55px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: bold; font-size: 0.65rem; color: #ccc;">VIDEO 1</span>
+                            <span style="font-size: 0.55rem; background: #333; color: #ff6600; padding: 1px 3px; border-radius: 2px; font-weight: bold;">V1</span>
+                        </div>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <button class="track-control-btn" id="lock-v1" onclick="toggleTrackLock('v1', this)" title="Lock Video Track">🔓</button>
+                            <button class="track-control-btn" id="vis-v1" onclick="toggleTrackVisibility('v1', this)" title="Toggle Video Visibility" style="color:#ff6600;">👁️</button>
+                        </div>
+                    </div>
+                    <!-- A1 Track Header -->
+                    <div class="resolve-track-header" style="height: 45px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: bold; font-size: 0.65rem; color: #ccc;">DIALOGUE</span>
+                            <span style="font-size: 0.55rem; background: #333; color: #ff6600; padding: 1px 3px; border-radius: 2px; font-weight: bold;">A1</span>
+                        </div>
+                        <div style="display: flex; gap: 4px; align-items: center;">
+                            <button class="track-control-btn" id="lock-a1" onclick="toggleTrackLock('a1', this)" title="Lock Dialogue Track">🔓</button>
+                            <button class="track-audio-btn mute-btn" id="mute-a1" onclick="toggleTrackAudioMute('a1', this)" title="Mute A1">M</button>
+                            <button class="track-audio-btn solo-btn" id="solo-a1" onclick="toggleTrackAudioSolo('a1', this)" title="Solo A1">S</button>
+                        </div>
+                    </div>
+                    <!-- A2 Track Header -->
+                    <div class="resolve-track-header" style="height: 45px; border-bottom: none;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: bold; font-size: 0.65rem; color: #ccc;">MUSIC</span>
+                            <span style="font-size: 0.55rem; background: #333; color: #ff6600; padding: 1px 3px; border-radius: 2px; font-weight: bold;">A2</span>
+                        </div>
+                        <div style="display: flex; gap: 4px; align-items: center;">
+                            <button class="track-control-btn" id="lock-a2" onclick="toggleTrackLock('a2', this)" title="Lock Music Track">🔓</button>
+                            <button class="track-audio-btn mute-btn" id="mute-a2" onclick="toggleTrackAudioMute('a2', this)" title="Mute A2">M</button>
+                            <button class="track-audio-btn solo-btn" id="solo-a2" onclick="toggleTrackAudioSolo('a2', this)" title="Solo A2">S</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Scrollable Track lanes & Ruler -->
+                <div id="nle-timeline-scrollable" style="flex: 1; overflow-x: auto; display: flex; flex-direction: column; position: relative; background: #131313;">
+                    <!-- Ruler Container -->
+                    <div id="nle-ruler-container" style="position: relative; height: 24px; background: #1b1b1b; border-bottom: 1px solid #2d2d2d; cursor: ew-resize; min-width: 100%; width: 1500px;" onmousedown="startScrubPlayhead(event)">
+                        <div id="nle-ruler-ticks" style="position: absolute; inset: 0; pointer-events: none; font-size: 0.6rem; color: #888; display: flex; justify-content: space-between; padding: 4px 10px;"></div>
+                        <div id="nle-markers-container" style="position: absolute; inset: 0; pointer-events: none; z-index: 90;"></div>
+                        <!-- Playhead Pointer needle -->
+                        <div id="nle-playhead" style="position: absolute; top: 0; bottom: -150px; width: 2px; background: #ff6600; z-index: 100; pointer-events: none; left: 0%;">
+                            <div style="position: absolute; top: 0; left: -5px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 12px solid #ff6600; cursor: pointer;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Track Area lanes -->
+                    <div style="display: flex; flex-direction: column; gap: 3px; padding-top: 2px; position: relative; min-width: 100%; width: 1500px;">
+                        <!-- Track V1 Lane -->
+                        <div id="nle-track-v1" style="height: 55px; background: #171717; border-bottom: 1px solid #222; position: relative; display: flex; align-items: center; overflow: visible;"></div>
+                        <!-- Track A1 Lane -->
+                        <div id="nle-track-a1" style="height: 45px; background: #171717; border-bottom: 1px solid #222; position: relative; display: flex; align-items: center; overflow: visible;"></div>
+                        <!-- Track A2 Lane -->
+                        <div id="nle-track-a2" style="height: 45px; background: #171717; position: relative; display: flex; align-items: center; overflow: visible; padding-left: 10px;">
+                            <input type="file" id="nle-music-file" accept="audio/*" onchange="uploadTimelineMusic(event)" style="display: none;">
+                            <button class="btn btn-sm btn-secondary" onclick="document.getElementById('nle-music-file').click()" style="padding: 2px 8px; font-size: 0.6rem; background: #2a2a2a; border-color: #383838; color: #aaa; cursor: pointer;">🎵 Ambient Music</button>
+                            <span id="nle-music-filename" style="font-size: 0.65rem; color: #888; margin-left: 10px;">No music loaded</span>
+                            <audio id="nle-music-player" loop style="display: none;"></audio>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- D. DYNAMIC AUDIO MIXER SIDEBAR -->
+                <div id="resolve-mixer-panel" style="width: 120px; background: #181818; border-left: 2px solid #2d2d2d; display: flex; flex-direction: column; z-index: 15; user-select: none;">
+                    <div style="background: #202020; border-bottom: 1px solid #2d2d2d; padding: 4px; text-align: center; font-size: 0.65rem; font-weight: bold; color: #ccc;">
+                        🎛️ Audio Mixer
+                    </div>
+                    <div style="display: flex; flex: 1; min-height: 0; padding: 4px; gap: 8px;">
+                        <!-- Dialogue A1 slider -->
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                            <span style="font-size: 0.55rem; color: #888;">A1</span>
+                            <!-- VU meter box -->
+                            <div style="width: 8px; flex: 1; background: #111; border-radius: 2px; overflow: hidden; display: flex; flex-direction: column-reverse; border: 1px solid #2a2a2a;">
+                                <div id="vu-meter-a1" style="width: 100%; height: 0%; background: linear-gradient(to top, #00ff00 60%, #ffff00 85%, #ff0000 100%); transition: height 0.1s ease;"></div>
+                            </div>
+                            <span style="font-size: 0.5rem; color: #aaa;" id="mixer-a1-db">-inf</span>
+                        </div>
+                        <!-- Music A2 slider -->
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                            <span style="font-size: 0.55rem; color: #888;">A2</span>
+                            <div style="width: 8px; flex: 1; background: #111; border-radius: 2px; overflow: hidden; display: flex; flex-direction: column-reverse; border: 1px solid #2a2a2a;">
+                                <div id="vu-meter-a2" style="width: 100%; height: 0%; background: linear-gradient(to top, #00ff00 60%, #ffff00 85%, #ff0000 100%); transition: height 0.1s ease;"></div>
+                            </div>
+                            <span style="font-size: 0.5rem; color: #aaa;" id="mixer-a2-db">-inf</span>
+                        </div>
+                        <!-- Master slider -->
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; border-left: 1px solid #2a2a2a; padding-left: 4px;">
+                            <span style="font-size: 0.55rem; color: #ff6600; font-weight: bold;">MST</span>
+                            <div style="width: 10px; flex: 1; background: #111; border-radius: 2px; overflow: hidden; display: flex; flex-direction: column-reverse; border: 1px solid #2a2a2a;">
+                                <div id="vu-meter-master" style="width: 100%; height: 0%; background: linear-gradient(to top, #00ff00 60%, #ffff00 85%, #ff0000 100%); transition: height 0.1s ease;"></div>
+                            </div>
+                            <span style="font-size: 0.5rem; color: #aaa;" id="mixer-master-db">-inf</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. RESOLVE BOTTOM NAV SWITCHER BAR -->
+        <div class="resolve-bottom-nav">
+            <div style="font-size: 0.7rem; color: #999; display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 0.85rem; color: #ff6600;">⚫</span> DaVinci Resolve Studio 20
+            </div>
+            <div style="display: flex; gap: 2px; align-items: center;">
+                <button class="resolve-bottom-tab" onclick="showPage('ideas')">Media</button>
+                <button class="resolve-bottom-tab" onclick="showPage('storyboard')">Cut</button>
+                <button class="resolve-bottom-tab active" onclick="showPage('videos')">Edit</button>
+                <button class="resolve-bottom-tab" onclick="showPage('screenplay')">Fusion</button>
+                <button class="resolve-bottom-tab" onclick="showPage('asset-studio')">Color</button>
+                <button class="resolve-bottom-tab" onclick="showPage('sheets')">Fairlight</button>
+                <button class="resolve-bottom-tab" onclick="exportTimelineXML()">Deliver</button>
+            </div>
             <div style="font-size: 0.65rem; color: #666; font-family: monospace;">
                 GPU: Metal / CUDA Accelerated
             </div>
@@ -2354,10 +2881,6 @@
                 if (step === 'video-prompts') {
                     step = 'storyboard';
                 }
-                if (step === 'videos') {
-                    window.location.href = '/timeline';
-                    return;
-                }
                 const built = { ideas: 1, screenplay: 1, 'asset-studio': 1, storyboard: 1, videos: 1 };
                 if (built[step]) {
                     if (step === 'screenplay') renderScreenplay();
@@ -2409,7 +2932,7 @@
             document.getElementById('project-label').textContent = 'No project';
             document.getElementById('open-folder-btn').style.display = 'none';
             syncRecentProjectsWithBackend();
-            showPage('home');
+            window.location.href = '/';
         }
 
         async function clearSystemCache() {
@@ -14451,6 +14974,132 @@ Output all prompts in one block, separated by blank lines.`;
         // NLE In-Timeline AI B-Roll Generator Variables
         let nleTempImageFile = null;
         let nleTempVideoFile = null;
+        async function extendSelectedClipNle() {
+            if (selectedClipIndex < 0 || selectedClipIndex >= timelineClips.length) {
+                notify('Selection Required', 'Please select a timeline clip to extend', '⚠️');
+                return;
+            }
+            
+            const clip = timelineClips[selectedClipIndex];
+            if (!clip.filename) {
+                notify('Invalid Clip', 'Cannot extend image-only or empty clips via AI prediction', '⚠️');
+                return;
+            }
+            
+            const btn = document.getElementById('ai-nle-extend-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⌛ Extending Clip (AI)...';
+            
+            const projName = currentProject?.name || '';
+            const projPath = currentProject?.path || '';
+            const steps = parseInt(document.getElementById('ai-nle-steps').value || 8);
+            
+            try {
+                notify('Extending Clip', 'Extracting last frame and predicting continuous motion...', '⚡');
+                const res = await fetch(`/api/projects/${encodeURIComponent(projName)}/extend-video`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        filename: clip.filename,
+                        project_path: projPath,
+                        steps: steps
+                    })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    clip.filename = data.filename;
+                    clip.out_frame += 72; // extend duration by 3 seconds (at 24fps)
+                    
+                    updateNleTimeline();
+                    saveProjectState();
+                    notify('Clip Extended', 'Successfully extended video clip duration using AI outpainting', '✅');
+                } else {
+                    notify('Extension Failed', data.error || 'Failed to extend video clip', '⚠️');
+                }
+            } catch (err) {
+                notify('Extension Error', err.message, '⚠️');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        async function generateNleAudio() {
+            const prompt = document.getElementById('ai-audio-prompt').value.trim();
+            if (!prompt) {
+                notify('Prompt Empty', 'Please enter an audio prompt', '⚠️');
+                return;
+            }
+            
+            const btn = document.getElementById('ai-audio-gen-btn');
+            const type = document.getElementById('ai-audio-type').value;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⌛ Generating...';
+            
+            const projName = currentProject?.name || '';
+            const projPath = currentProject?.path || '';
+            
+            try {
+                notify('Generating Audio', `Running ComfyUI backend to generate ${type.toUpperCase()}...`, '⚡');
+                const res = await fetch(`/api/projects/${encodeURIComponent(projName)}/generate-audio`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        type: type,
+                        project_path: projPath
+                    })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    const saveName = data.filename;
+                    
+                    if (type === 'vo') {
+                        const audioClip = {
+                            scene_idx: -1,
+                            shot_idx: -1,
+                            shot_id: `VO_${Date.now().toString().slice(-4)}`,
+                            filename: saveName,
+                            in_frame: 0,
+                            out_frame: 120, // 5 seconds default
+                            dialogue: prompt,
+                            transition: 'none',
+                            volume: 1.0,
+                            image_url: ''
+                        };
+                        timelineClips.push(audioClip);
+                        notify('VO Added', 'AI Voiceover loaded onto Dialogue track (A1)', '🔊');
+                    } else {
+                        const musicPlayer = document.getElementById('nle-music-player');
+                        const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+                        const audioUrl = `/api/projects/${encodeURIComponent(projName)}/saved-audio/${encodeURIComponent(saveName)}${projectPathQuery}`;
+                        
+                        musicPlayer.src = audioUrl;
+                        document.getElementById('nle-music-filename').textContent = saveName;
+                        
+                        const block = document.getElementById('nle-ambient-waveform-block');
+                        if (block) block.style.display = 'flex';
+                        
+                        notify('Audio Track Loaded', `AI ${type.toUpperCase()} loaded onto ambient track (A2)`, '🎵');
+                    }
+                    
+                    document.getElementById('ai-audio-prompt').value = '';
+                    updateNleTimeline();
+                    saveProjectState();
+                } else {
+                    notify('Audio Gen Failed', data.error || 'Failed to generate audio', '⚠️');
+                }
+            } catch (err) {
+                notify('Audio Gen Error', err.message, '⚠️');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
 
         async function generateNleBrollImage() {
             const prompt = document.getElementById('ai-nle-prompt').value.trim();
@@ -15013,7 +15662,10 @@ Output all prompts in one block, separated by blank lines.`;
             const lastProjectName = localStorage.getItem('lastProjectName');
             const lastProjectPath = localStorage.getItem('lastProjectPath');
             if (lastProjectName && lastProjectPath) {
-                setTimeout(() => openProjectWorkspace(lastProjectName, lastProjectPath), 100);
+                setTimeout(() => {
+                    openProjectWorkspace(lastProjectName, lastProjectPath);
+                    showPage('videos');
+                }, 100);
             }
         });
 
