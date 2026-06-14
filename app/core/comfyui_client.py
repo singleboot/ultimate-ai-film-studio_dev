@@ -356,23 +356,21 @@ class ComfyUIClient:
             print(f"[generate_with_workflow] workflow={workflow_name}, prompt='{prompt[:60]}...'")
             print(f"[generate_with_workflow] seed={seed}, steps={steps}, input_images={input_images}, resolution={resolution}")
             # Phase 1: set prompt text
-            # If the workflow has a PrimitiveStringMultiline node, use it as the prompt source
-            # (only overwrite CLIPTextEncode direct strings when there's no PrimitiveStringMultiline)
             has_psm = any(
                 isinstance(n, dict) and n.get("class_type") == "PrimitiveStringMultiline"
                 for n in workflow.values()
             )
             debug_log.append(f"has PrimitiveStringMultiline: {has_psm}")
+            
+            # Step A: Handle PSM or CLIPTextEncode (standard SD/LTX setups)
             if has_psm:
-                # Update the PSM value — prompt flows through connection to CLIPTextEncode
                 for nid, nd in workflow.items():
                     if isinstance(nd, dict) and nd.get("class_type") == "PrimitiveStringMultiline" and "value" in nd.get("inputs", {}):
-                        nd["inputs"]["value"] = prompt
-                        debug_log.append(f"Set PrimitiveStringMultiline {nid} value: '{prompt[:50]}...'")
-                        break
+                        # Don't overwrite SCENE-NAME metadata nodes
+                        if "SCENE-NAME" not in str(nd.get("_meta", {}).get("title", "")):
+                            nd["inputs"]["value"] = prompt
+                            debug_log.append(f"Set PrimitiveStringMultiline {nid} value: '{prompt[:50]}...'")
             else:
-                # No PSM — trace LTXVConditioning to find the positive CLIPTextEncode
-                # This avoids overwriting the negative CLIPTextEncode
                 positive_nid = None
                 for nid, nd in workflow.items():
                     if not isinstance(nd, dict):
@@ -396,6 +394,25 @@ class ComfyUIClient:
                         if nd.get("class_type") == "CLIPTextEncode" and "text" in inputs and isinstance(inputs["text"], str):
                             inputs["text"] = prompt
                             debug_log.append(f"Overwrote CLIPTextEncode {nid}: '{prompt[:50]}...'")
+                            
+            # Step B: ALWAYS handle TextEncodeQwenImageEditPlus regardless of PSM/LTXV (used for 360/inpaint setups)
+            for nid, nd in workflow.items():
+                if not isinstance(nd, dict):
+                    continue
+                inputs = nd.get("inputs", {})
+                if nd.get("class_type") == "TextEncodeQwenImageEditPlus" and "prompt" in inputs and isinstance(inputs["prompt"], str):
+                    orig_prompt = inputs["prompt"]
+                    lower_orig = orig_prompt.lower()
+                    if any(k in lower_orig for k in ["transform", "input image", "source image", "360", "panoramic", "seam", "equirectangular"]):
+                        if "360" in lower_orig and "panoramic" in lower_orig:
+                            inputs["prompt"] = f"Create a 360 panoramic image of the [input image] [{prompt}]. An ultra-wide HDRI image captured on a ricoh 360 degree camera, insta 360, equirectagular projection. Keep the style the same."
+                            debug_log.append(f"Replaced TextEncodeQwenImageEditPlus {nid} with 360 template")
+                        else:
+                            inputs["prompt"] = orig_prompt.rstrip() + "\n\nSubject Description: " + prompt
+                            debug_log.append(f"Combined TextEncodeQwenImageEditPlus {nid} with original prompt")
+                    else:
+                        inputs["prompt"] = prompt
+                        debug_log.append(f"Overwrote TextEncodeQwenImageEditPlus {nid}: '{prompt[:50]}...'")
 
             # Phase 2: inject image paths into UAIImageSlot nodes
             slot_nodes = []
@@ -601,7 +618,7 @@ class ComfyUIClient:
             logger.info("ComfyUI queued [%s] id=%s", workflow_name, prompt_id)
 
             gstart = time.time()
-            output = self.get_output(prompt_id, timeout=600)
+            output = self.get_output(prompt_id, timeout=1800)
             elapsed = time.time() - gstart
             if not output:
                 logger.warning("ComfyUI timeout [%s] after %.0fs", workflow_name, elapsed)

@@ -1324,12 +1324,12 @@
                     </div>
                     <div style="display:flex;flex-wrap:wrap;gap:6px;padding-top:8px;align-items:center;font-size:0.65rem;">
                         <span style="color:var(--text-secondary);">CFG:</span>
-                        <input type="number" id="gen-cfg" style="width:55px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" value="4.0" min="0.5" max="15.0" step="0.5" onchange="onGenCfgChange()">
+                        <input type="number" id="gen-cfg" style="width:55px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" value="1.0" min="0.5" max="15.0" step="0.5" onchange="onGenCfgChange()">
                         <span style="color:var(--text-secondary);margin-left:4px;">Steps:</span>
-                        <input type="number" id="gen-steps" style="width:55px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" value="20" min="1" max="150" step="1" onchange="onGenStepsChange()">
+                        <input type="number" id="gen-steps" style="width:55px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" value="10" min="1" max="150" step="1" onchange="onGenStepsChange()">
                         <span style="color:var(--text-secondary);margin-left:4px;">Seed:</span>
                         <input type="number" id="gen-seed" style="width:90px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 6px;font-size:0.7rem;" placeholder="random" min="0" step="1">
-                        <button class="btn btn-secondary" onclick="document.getElementById('gen-seed').value='';document.getElementById('gen-cfg').value='4.0';document.getElementById('gen-steps').value='20'" style="padding:2px 6px;font-size:0.5rem;">↺ Reset</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('gen-seed').value='';document.getElementById('gen-cfg').value='1.0';document.getElementById('gen-steps').value='10'" style="padding:2px 6px;font-size:0.5rem;">↺ Reset</button>
                     </div>
                     <div style="display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--border-color);padding-top:10px;">
                         <button class="btn btn-primary" onclick="assetGenerateImage()" id="asset-gen-btn" style="padding:6px 12px;font-size:0.8rem;">🎨 Generate</button>
@@ -1897,8 +1897,12 @@
                                             <select class="form-select" id="wf-i2v" style="font-size:0.8rem;"><option value="">-- Select --</option></select>
                                         </div>
                                         <div class="form-group" style="margin-bottom:6px;">
-                                            <label class="form-label" style="font-size:0.75rem;">Image Sheets Workflow</label>
+                                            <label class="form-label" style="font-size:0.75rem;">Character Sheets Workflow</label>
                                             <select class="form-select" id="wf-sheet" style="font-size:0.8rem;"><option value="">-- Select --</option></select>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">Location Sheets Workflow</label>
+                                            <select class="form-select" id="wf-loc_sheet" style="font-size:0.8rem;"><option value="">-- Select --</option></select>
                                         </div>
                                         <div class="form-group" style="margin-bottom:6px;">
                                             <label class="form-label" style="font-size:0.75rem;">4K Upscale Workflow</label>
@@ -2640,7 +2644,7 @@
                     s.character_sheet_prompt = 'Professional character turnaround reference sheet on a neutral studio background featuring the character prominently across all panels. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits from front and back. The subject stands naturally with relaxed posture and neutral expression. All panels must maintain perfectly consistent identity with identical facial features, hairstyle, body proportions, clothing details, and material textures across every view. Soft wraparound studio lighting from above-left with gentle shadows that define form while keeping the subject clearly readable. Crisp focus, highly detailed realistic rendering, modern studio presentation with clean balanced spacing between panels.';
                 }
                 if (!s.location_sheet_prompt || !s.location_sheet_prompt.trim()) {
-                    s.location_sheet_prompt = 'Professional location reference board on a clean grid background featuring the environment across multiple curated panels. The layout shows a wide establishing shot capturing the full scope of the location, a moody low-key lighting variation emphasizing atmosphere, a warm golden-hour version with rich warm light, and a detailed architectural feature close-up highlighting key design elements. Every panel maintains consistent spatial layout, landmark placement, architectural features, and color palette throughout all variations. The transitions between panels feel cinematic and intentional, creating a comprehensive visual reference for the environment. Professional cinematic presentation, studio-quality reference composition with balanced grid layout.';
+                    s.location_sheet_prompt = 'Professional location concept art featuring a single, ultra-wide cinematic establishing shot capturing the full scope and atmosphere of the environment. High-end studio quality, perfect composition, rich lighting, single image only, no borders, no grid.';
                 }
                 // Restore sheet CFG / Steps / Seed
                 const sheetCfgEl = document.getElementById('sheet-cfg');
@@ -2729,11 +2733,12 @@
                     }
                 } else {
                     console.error("loadProjectState: success was false or state was empty");
+                    notify('Load Warning', 'Project state was empty on the server.', '⚠️');
                     clearProjectState();
                 }
             } catch(e) {
                 console.error("loadProjectState catch block triggered:", e);
-                clearProjectState();
+                notify('Load Error', 'Error restoring project: ' + e.message, '⚠️');
             }
         }
 
@@ -3866,6 +3871,7 @@
                     t2v: document.getElementById('wf-t2v').value,
                     i2v: document.getElementById('wf-i2v').value,
                     sheet: document.getElementById('wf-sheet').value,
+                    loc_sheet: document.getElementById('wf-loc_sheet').value,
                     upscale: document.getElementById('wf-upscale').value
                 },
                 telegram: {
@@ -3989,7 +3995,7 @@
                 }
 
                 // Populate dropdowns
-                ['wf-t2i', 'wf-i2i', 'wf-t2v', 'wf-i2v', 'wf-sheet', 'wf-upscale'].forEach(id => {
+                ['wf-t2i', 'wf-i2i', 'wf-t2v', 'wf-i2v', 'wf-sheet', 'wf-loc_sheet', 'wf-upscale'].forEach(id => {
                     const sel = document.getElementById(id);
                     if (!sel) return;
                     const current = sel.value;
@@ -4952,10 +4958,11 @@
 
             startProgressPolling();
 
-            const chars = parseInt(document.getElementById('sel-characters').value) || 3;
-            const locs = parseInt(document.getElementById('sel-locations').value) || 3;
-            const scenesCt = parseInt(document.getElementById('sel-scenes').value) || 10;
-            const totalShots = parseInt(document.getElementById('sel-total-shots').value) || 30;
+            const selectedIdea = topicIdeas[selectedIdeaIndex];
+            const chars = selectedIdea.character_count || parseInt(document.getElementById('sel-characters').value) || 3;
+            const locs = selectedIdea.location_count || parseInt(document.getElementById('sel-locations').value) || 3;
+            const scenesCt = selectedIdea.estimated_scene_count || parseInt(document.getElementById('sel-scenes').value) || 10;
+            const totalShots = selectedIdea.estimated_total_shots || parseInt(document.getElementById('sel-total-shots').value) || 30;
             const params = {
                 idea_index: selectedIdeaIndex,
                 character_count: chars,
@@ -6632,6 +6639,14 @@
             if (btn) btn.style.border = '2px solid var(--accent-primary)';
             // Adjust image resolution options based on aspect ratio
             const sel = document.getElementById('sel-img-resolution');
+            if (!sel) {
+                if (currentProject) {
+                    if (!currentProject.settings) currentProject.settings = {};
+                    currentProject.settings.aspectRatio = value;
+                    scheduleSaveState();
+                }
+                return;
+            }
             const current = sel.value;
             sel.innerHTML = '';
             const ratios = {
@@ -6735,12 +6750,9 @@
                 let res = await fetch('/api/orchestrator/asset-studio');
                 let data = await res.json();
                 if (!data.success) return;
-                // Auto-sync: if backend bible is empty but frontend has charData/locationData/propData (e.g. after server restart)
-                if ((!data.character_bible || !data.character_bible.length) && charData && charData.length) {
-                    await fetch('/api/orchestrator/sync-bibles', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ character_bible: charData, location_bible: locationData, prop_bible: propData })
-                    });
+                // Auto-sync: if backend bible is empty but frontend has an active project (e.g. after server restart)
+                if ((!data.character_bible || !data.character_bible.length) && currentProject && currentProject.name) {
+                    await loadProject(currentProject.name);
                     res = await fetch('/api/orchestrator/asset-studio');
                     data = await res.json();
                     if (!data.success) return;
@@ -7447,18 +7459,37 @@
         }
 
         async function generateLocationSheet(locId, abortSignal) {
-            const genBtn = document.getElementById('ls-gen-' + locId) || document.getElementById('asset-gen-btn');
+            const modalBtn = document.getElementById('asset-gen-btn');
+            const genBtn = document.getElementById('ls-gen-' + locId) || modalBtn;
             if (genBtn && genBtn.id !== 'asset-gen-btn' && genBtn.disabled) return;
+            
             if (genBtn) {
                 genBtn.disabled = true;
                 genBtn.textContent = '⏳ Generating...';
             }
+            if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                modalBtn.disabled = true;
+                modalBtn.textContent = '⏳ Generating...';
+                const spinner = document.getElementById('asset-expand-spinner');
+                if (spinner) {
+                    spinner.style.display = 'flex';
+                    const spinnerText = document.getElementById('asset-expand-spinner-text');
+                    if (spinnerText) spinnerText.textContent = 'Generating...';
+                }
+            }
+            
             const originalText = (genBtn && genBtn.id === 'asset-gen-btn') ? '🎨 Generate' : '🎨 Gen';
             const assetInfo = (_assetStudioData.location_assets || {})[locId] || {};
             const approvedImg = assetInfo.approved_image || '';
             if (!approvedImg) {
                 notify('No Image', 'No approved location image found', '❌');
                 if (genBtn) { genBtn.disabled = false; genBtn.textContent = originalText; }
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.disabled = false;
+                    modalBtn.textContent = '🎨 Generate';
+                    const spinner = document.getElementById('asset-expand-spinner');
+                    if (spinner) spinner.style.display = 'none';
+                }
                 return;
             }
 
@@ -7489,7 +7520,7 @@
                 locationPrompt = `${locId}. Comprehensive location reference board showing the full environment across multiple curated views capturing the spatial layout, atmosphere, and key architectural details.`;
             }
 
-            const instructions = currentProject?.settings?.location_sheet_prompt || 'Professional location reference board on a clean grid background featuring the environment across multiple curated panels. The layout shows a wide establishing shot capturing the full scope of the location, a moody low-key lighting variation emphasizing atmosphere, a warm golden-hour version with rich warm light, and a detailed architectural feature close-up highlighting key design elements. Every panel maintains consistent spatial layout, landmark placement, architectural features, and color palette throughout all variations. The transitions between panels feel cinematic and intentional, creating a comprehensive visual reference for the environment. Professional cinematic presentation, studio-quality reference composition with balanced grid layout.';
+            const instructions = currentProject?.settings?.location_sheet_prompt || 'Ensure the image is a seamless 360 equirectangular HDRI panorama.';
             
             let finalPrompt = locationPrompt + "\n\n" + instructions;
             const styleSuffix = [];
@@ -7545,7 +7576,7 @@
                 const model = imgSettings.model || '';
                 const host = imgSettings.host || '';
                 const apiKey = imgSettings.apiKey || '';
-                const workflowName = settings.workflows?.sheet || 'image_flux2_klein_image_sheets';
+                const workflowName = settings.workflows?.loc_sheet || settings.workflows?.sheet || '360_image_v1';
 
                 notify('Generating', `Sending to ${provider}...`, '🎨');
 
@@ -7568,6 +7599,14 @@
                 if (!isBatch) {
                     hideSheetProgress();
                 }
+                
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.disabled = false;
+                    modalBtn.textContent = '🎨 Generate';
+                    const spinner = document.getElementById('asset-expand-spinner');
+                    if (spinner) spinner.style.display = 'none';
+                }
+
                 if (data.success && (data.image_url || data.filename)) {
                     const tempFilename = data.filename || data.image_url;
                     const saveRes = await fetch('/api/projects/save-image', {
@@ -8144,7 +8183,7 @@
                     promptTextArea.value = currentProject?.settings?.character_sheet_prompt || 'Transform the input reference image into a clean four-panel character turnaround sheet on a neutral studio background. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits back and front view. Maintain consistent identity, hairstyle, facial features, body proportions, clothing details, and textures across every panel. The subject stands naturally with relaxed posture and neutral expression. Soft diffused studio lighting with subtle shadows creates a professional reference-sheet appearance. Minimal composition, balanced spacing, highly detailed realistic rendering, modern studio presentation.';
                 } else if (type === 'loc_sheet') {
                     if (promptLabel) promptLabel.textContent = 'Location Reference Board Layout Instructions:';
-                    promptTextArea.value = currentProject?.settings?.location_sheet_prompt || 'Transform the input reference image into a comprehensive location reference board on a clean grid background. The layout contains multiple panels showing: wide establishing shot, moody low-key lighting variation, warm golden-hour version, and a detailed architectural feature close-up. Maintain consistent environment identity, spatial layout, key landmarks, and color palette across all panels. Professional cinematic presentation, soft atmospheric transitions between panels, studio-quality reference composition.';
+                    promptTextArea.value = currentProject?.settings?.location_sheet_prompt || 'Professional location concept art featuring a single, ultra-wide cinematic establishing shot capturing the full scope and atmosphere of the environment. High-end studio quality, perfect composition, rich lighting, single image only, no borders, no grid.';
                 }
                 promptTextArea.oninput = function() {
                     if (type === 'char' || type === 'loc') {
@@ -8182,18 +8221,27 @@
                 }
             }
             
-            // Clear and render existing variants if present in the bible
+            // Clear and render existing variants if present in the bible (but hide for sheets)
             const gallery = document.getElementById('asset-expand-variant-gallery');
             if (gallery) {
                 gallery.innerHTML = '';
-                gallery.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:8px;width:100%;';
-                
-                const variants = asset.variants || [];
-                if (variants.length) {
-                    const header = document.createElement('div');
-                    header.style.cssText = 'font-size:0.75rem;font-weight:600;color:var(--accent-primary);margin-bottom:4px;';
-                    header.textContent = 'Select a variant option to generate the image:';
-                    gallery.appendChild(header);
+                if (type === 'char_sheet' || type === 'loc_sheet') {
+                    gallery.style.display = 'none';
+                } else {
+                    gallery.style.display = 'flex';
+                    gallery.style.flexDirection = 'column';
+                    gallery.style.gap = '8px';
+                    gallery.style.padding = '8px';
+                    gallery.style.background = 'var(--bg-secondary)';
+                    gallery.style.borderRadius = '8px';
+                    gallery.style.width = '100%';
+                    
+                    const variants = asset.variants || [];
+                    if (variants.length) {
+                        const header = document.createElement('div');
+                        header.style.cssText = 'font-size:0.75rem;font-weight:600;color:var(--accent-primary);margin-bottom:4px;';
+                        header.textContent = 'Select a variant option to generate the image:';
+                        gallery.appendChild(header);
 
                     variants.forEach((v, i) => {
                         const promptText = typeof v === 'string' ? v : v.prompt;
@@ -8221,9 +8269,16 @@
                         };
                         gallery.appendChild(card);
                     });
-                } else {
-                    gallery.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem;">Variants will appear here</span>';
+                    } else {
+                        gallery.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem;">Variants will appear here</span>';
+                    }
                 }
+            }
+            
+            // Hide Variant button for sheets
+            const variantBtn = document.getElementById('asset-variant-btn');
+            if (variantBtn) {
+                variantBtn.style.display = (type === 'char_sheet' || type === 'loc_sheet') ? 'none' : 'inline-block';
             }
             
             document.getElementById('asset-expand-modal').style.display = 'flex';
@@ -8343,9 +8398,9 @@
             }
 
             // Populate cfg/seed/steps from shot data
-            document.getElementById('storyboard-expand-cfg').value = sh._genCfg || 4.0;
+            document.getElementById('storyboard-expand-cfg').value = sh._genCfg || 1.0;
             document.getElementById('storyboard-expand-seed').value = sh._genSeed || '';
-            document.getElementById('storyboard-expand-steps').value = sh._genSteps || 20;
+            document.getElementById('storyboard-expand-steps').value = sh._genSteps || 10;
 
             // Variant gallery
             const gallery = document.getElementById('storyboard-expand-variant-gallery');
@@ -8559,7 +8614,10 @@
 
         async function storyboardSubmitVariant() {
             const instruction = document.getElementById('storyboard-variant-instruction').value.trim();
-            if (!instruction) return;
+            if (!instruction) {
+                notify('Instruction Required', 'Please describe the variant changes you want.', '⚠️');
+                return;
+            }
             const sceneIdx = window._currentSbSceneIdx;
             const shotIdx = window._currentSbShotIdx;
             if (sceneIdx == null || shotIdx == null) return;
@@ -9404,8 +9462,8 @@ Project visual language: ${projVL}`;
             try {
                 const seedOverride = document.getElementById('gen-seed')?.value;
                 const seed = seedOverride ? parseInt(seedOverride) : Math.floor(Math.random() * 999999999) + 1;
-                const cfgVal = parseFloat(document.getElementById('gen-cfg')?.value) || 4.0;
-                const stepsVal = parseInt(document.getElementById('gen-steps')?.value) || 20;
+                const cfgVal = parseFloat(document.getElementById('gen-cfg')?.value) || 1.0;
+                const stepsVal = parseInt(document.getElementById('gen-steps')?.value) || 10;
                 const imgResEl = document.getElementById('sel-img-resolution');
                 const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
                 const res = await fetch('/api/image/generate', {
@@ -9524,7 +9582,12 @@ Project visual language: ${projVL}`;
                 const assets = type === 'char'
                     ? (_assetStudioData.character_assets || {})
                     : (_assetStudioData.location_assets || {});
-                imgPath = (assets[id] || {}).approved_image || '';
+                const history = (assets[id] || {}).generation_history || [];
+                if (history.length) {
+                    imgPath = history[history.length - 1];
+                } else {
+                    imgPath = (assets[id] || {}).approved_image || '';
+                }
             }
             return imgPath.includes('_4k_');
         }
@@ -9534,19 +9597,24 @@ Project visual language: ${projVL}`;
             type = type || window._currentAssetExpandType;
             if (!id) return false;
             const isSheet = type === 'char_sheet' || type === 'loc_sheet';
-            let approvedImg = '';
+            let targetImg = '';
             if (isSheet) {
                 const sheets = type === 'char_sheet'
                     ? (_assetStudioData.character_sheets || {})
                     : (_assetStudioData.location_sheets || {});
-                approvedImg = (sheets[id] || {}).sheet_image || '';
+                targetImg = (sheets[id] || {}).sheet_image || '';
             } else {
                 const assets = type === 'char'
                     ? (_assetStudioData.character_assets || {})
                     : (_assetStudioData.location_assets || {});
-                approvedImg = (assets[id] || {}).approved_image || '';
+                const history = (assets[id] || {}).generation_history || [];
+                if (history.length) {
+                    targetImg = history[history.length - 1];
+                } else {
+                    targetImg = (assets[id] || {}).approved_image || '';
+                }
             }
-            if (!approvedImg) {
+            if (!targetImg) {
                 notify('Upscale Failed', 'No image to upscale. Generate an image first.', '⚠️');
                 return false;
             }
@@ -9586,7 +9654,7 @@ Project visual language: ${projVL}`;
                         provider, host, api_key: apiKey, workflow_name: wf,
                         prompt: 'upscale', width: 1024, height: 1024,
                         project_path: currentProject?.path || '',
-                        input_images: [approvedImg]
+                        input_images: [targetImg]
                     })
                 });
                 const data = await res.json();
@@ -9680,7 +9748,10 @@ Project visual language: ${projVL}`;
 
         async function assetSubmitVariant() {
             const instruction = document.getElementById('asset-variant-instruction').value.trim();
-            if (!instruction) return;
+            if (!instruction) {
+                notify('Instruction Required', 'Please describe the variant changes you want.', '⚠️');
+                return;
+            }
             const id = window._currentAssetExpandId;
             const type = window._currentAssetExpandType;
             if (!id) return;
@@ -9813,12 +9884,11 @@ Project visual language: ${projVL}`;
             
             // Set the approved image to the most recent generation
             const history = assets[id].generation_history || [];
-            let imageToApprove = assets[id].approved_image || '';
-            if (!imageToApprove) {
-                const history = assets[id].generation_history || [];
-                if (history.length) {
-                    imageToApprove = history[history.length - 1];
-                }
+            let imageToApprove = '';
+            if (history.length) {
+                imageToApprove = history[history.length - 1];
+            } else {
+                imageToApprove = assets[id].approved_image || '';
             }
             if (!imageToApprove) {
                 notify('Approval Failed', 'No image found to approve', '❌');
@@ -10440,8 +10510,8 @@ Project visual language: ${projVL}`;
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
             const imgResEl = document.getElementById('sel-img-resolution');
             const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
-            const stepsVal = parseInt(document.getElementById('storyboard-expand-steps')?.value) || currentProject?.settings?.steps || 20;
-            const cfgVal = parseFloat(document.getElementById('storyboard-expand-cfg')?.value) || currentProject?.settings?.cfg || 4.0;
+            const stepsVal = parseInt(document.getElementById('storyboard-expand-steps')?.value) || currentProject?.settings?.steps || 10;
+            const cfgVal = parseFloat(document.getElementById('storyboard-expand-cfg')?.value) || currentProject?.settings?.cfg || 1.0;
             try {
                 const res = await fetch('/api/comfyui/generate/i2i', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -10572,11 +10642,23 @@ Project visual language: ${projVL}`;
                         <div style="font-size:0.75rem;color:var(--text-secondary);font-style:italic;line-height:1.4;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);flex:1;min-height:50px;overflow-y:auto;">
                             ${escapeHtml(s.synopsis || 'No synopsis.')}
                         </div>
+                        <div style="font-size:0.75rem;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);">
+                            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                                <strong style="color:var(--text-primary);">360 Background Angle</strong>
+                                <span id="scene-pan-val-${sceneIdx}" style="color:var(--accent-primary);font-weight:bold;">0°</span>
+                            </div>
+                            <input type="range" id="scene-pan-slider-${sceneIdx}" min="0" max="360" value="0" style="width:100%;" oninput="document.getElementById('scene-pan-val-${sceneIdx}').innerText = this.value + '°'">
+                            <button class="btn btn-secondary" onclick="event.stopPropagation();extractSceneBackground(${sceneIdx})" style="width:100%;margin-top:4px;font-size:0.7rem;padding:4px;" id="btn-extract-bg-${sceneIdx}">📸 Extract BG</button>
+                        </div>
                         ${s.shots && s.shots.length > 0 ? `<div style="display:flex;gap:3px;flex-wrap:wrap;">
                             <button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;" title="Generate images">🎨 Gen Img</button>
                             ${(() => {
                                 const hasTemp = s.shots.some(sh => sh._temp_storyboard_image);
                                 return `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" id="scene-app-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;${hasTemp ? '' : 'opacity:0.4;pointer-events:none;'}" title="Approve images">✅ App Img</button>`;
+                            })()}
+                            ${(() => {
+                                const hasGenerated = s.shots.some(sh => sh._temp_storyboard_image || sh.storyboard_image);
+                                return `<button class="btn btn-primary" onclick="event.stopPropagation();verifySceneConsistency(${sceneIdx})" id="scene-verify-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;${hasGenerated ? '' : 'opacity:0.4;pointer-events:none;'}" title="Verify scene visual consistency">👁️ Vrfy Scene</button>`;
                             })()}
                             ${s.shots.some(sh => sh.storyboard_image || sh._temp_storyboard_image) ? `<button class="btn btn-secondary" onclick="event.stopPropagation();storyboardUpscaleScene(${sceneIdx})" style="padding:3px 6px;font-size:0.6rem;" title="Upscale all scene images to 4K">🔍 4K</button>` : ''}
                             ${(() => {
@@ -11038,7 +11120,15 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             updateStoryboardProgressUI();
 
             const seed = Math.floor(Math.random() * 999999999) + 1;
-            const inputImages = getSavedInputImages();
+            let inputImages = getSavedInputImages();
+            
+            // If the scene has an extracted 360 background, use it instead of the raw location sheet
+            if (s.scene_bg_image) {
+                // Filter out any location sheets since we have a specific background
+                inputImages = inputImages.filter(img => !img.includes('location_sheets'));
+                inputImages.unshift(s.scene_bg_image);
+            }
+            
             // Inject previous shot's image (either approved or temporary) as the first input image for continuity
             if (shotIdx > 0) {
                 const prevSh = s.shots[shotIdx - 1];
@@ -11061,12 +11151,12 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
             const imgResEl = document.getElementById('sel-img-resolution');
             const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
-            const cfgOverride = sh._genCfg || parseFloat(document.getElementById('storyboard-expand-cfg')?.value) || currentProject?.settings?.cfg || 4.0;
-            const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps || 20;
+            const cfgOverride = sh._genCfg || parseFloat(document.getElementById('storyboard-expand-cfg')?.value) || currentProject?.settings?.cfg || 1.0;
+            const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps || 10;
             const seedOverride = sh._genSeed || seed;
 
             try {
-                const res = await fetch('/api/comfyui/generate/i2i', {
+                const res = await fetch('/api/orchestrator/generate-consistent-shot', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     signal: abortSignal,
                     body: JSON.stringify({
@@ -11276,20 +11366,118 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
         async function storyboardUpscaleAll() {
             if (!screenplayData || !screenplayData.scenes) return;
-            let count = 0;
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            const pb = document.getElementById('storyboard-progress');
+            if (pb) {
+                pb.style.display = 'block';
+                document.getElementById('sb-progress-title').textContent = 'Upscaling to 4K...';
+                document.getElementById('sb-progress-bar').style.width = '0%';
+                document.getElementById('sb-progress-pct').textContent = '0%';
+            }
+
+            let totalShots = 0;
+            // Count total upscalable shots
             for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
                 const s = screenplayData.scenes[sIdx];
                 if (!s.shots) continue;
                 for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
                     const sh = s.shots[shIdx];
-                    if (sh.storyboard_image || sh._temp_storyboard_image) {
-                        const ok = await storyboardUpscaleImage(sIdx, shIdx);
-                        if (ok) count++;
+                    const activeImage = sh.storyboard_image || sh._temp_storyboard_image;
+                    if (activeImage && !activeImage.includes('_4k_')) {
+                        totalShots++;
                     }
                 }
             }
-            notify('Upscale All', `Upscaled ${count} image(s) to 4K`, '🔍');
+
+            if (totalShots === 0) {
+                if (pb) pb.style.display = 'none';
+                notify('Upscale All', 'No images found to upscale (all are already 4K).', '⚠️');
+                return;
+            }
+
+            let count = 0;
+            let completed = 0;
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                if (signal.aborted) break;
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    if (signal.aborted) break;
+                    const sh = s.shots[shIdx];
+                    const activeImage = sh.storyboard_image || sh._temp_storyboard_image;
+                    if (activeImage && !activeImage.includes('_4k_')) {
+                        const pct = Math.round((completed / totalShots) * 100);
+                        if (pb) {
+                            document.getElementById('sb-progress-bar').style.width = pct + '%';
+                            document.getElementById('sb-progress-pct').textContent = pct + '%';
+                        }
+                        const ok = await storyboardUpscaleImage(sIdx, shIdx);
+                        if (ok) count++;
+                        completed++;
+                    }
+                }
+            }
+            if (!signal.aborted) {
+                if (pb) {
+                    document.getElementById('sb-progress-bar').style.width = '100%';
+                    document.getElementById('sb-progress-pct').textContent = '100%';
+                    document.getElementById('sb-progress-title').textContent = '✅ Complete!';
+                }
+                notify('Upscale All', `Upscaled ${count} image(s) to 4K`, '🔍');
+            }
+            setTimeout(() => { if (pb) pb.style.display = 'none'; }, 1500);
             renderStoryboard();
+        }
+
+        async function extractSceneBackground(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.location_id) return notify('Error', 'No location_id found for scene.', '❌');
+            const btn = document.getElementById(`btn-extract-bg-${sceneIdx}`);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Extracting...'; }
+            
+            const panEl = document.getElementById(`scene-pan-slider-${sceneIdx}`);
+            const panAngle = panEl ? parseInt(panEl.value) : 0;
+            
+            try {
+                notify('Extracting BG', `Cropping 360 panorama at ${panAngle}°...`, '📸');
+                const res = await fetch('/api/orchestrator/crop-360', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_path: currentProject?.path || '',
+                        location_id: s.location_id,
+                        pan_angle: panAngle,
+                        scene_id: s.scene_id || s.scene_number
+                    })
+                });
+                const data = await res.json();
+                if (data.success && (data.filename || data.image_url)) {
+                    notify('Extracted', 'Background successfully extracted!', '✅');
+                    // We need to save this image as the scene background.
+                    // For now, we will associate it with the scene in screenplayData.
+                    s._temp_bg_image = data.filename || data.image_url;
+                    
+                    // Actually, let's persist it to the server so it's not lost on refresh.
+                    // Assuming we have an endpoint or we just save the project graph.
+                    s.scene_bg_image = data.filename || data.image_url;
+                    await fetch('/api/projects/save-graph', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject.name,
+                            project_path: currentProject.path,
+                            project_graph: screenplayData
+                        })
+                    });
+                    
+                    renderStoryboard();
+                } else {
+                    notify('Error', data.error || 'Failed to extract background', '❌');
+                }
+            } catch (e) {
+                notify('Error', 'Failed to extract background: ' + e, '❌');
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '📸 Extract BG'; }
         }
 
         async function generateSceneImages(sceneIdx) {
@@ -13782,15 +13970,20 @@ Output all prompts in one block, separated by blank lines.`;
         }
 
         function updateNleTimeline() {
-            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            const nleFpsEl = document.getElementById('nle-fps');
             const trackV1 = document.getElementById('nle-track-v1');
             const trackA1 = document.getElementById('nle-track-a1');
+            const scrollableContent = document.getElementById('nle-timeline-scrollable');
             
+            if (!nleFpsEl || !trackV1 || !trackA1 || !scrollableContent) {
+                return;
+            }
+            
+            const timebase = parseInt(nleFpsEl.value || 24);
             trackV1.innerHTML = '';
             trackA1.innerHTML = '';
             
             timelineTotalFrames = 0;
-            const scrollableContent = document.getElementById('nle-timeline-scrollable');
             
             const projName = currentProject?.name || '';
             const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
@@ -15303,7 +15496,109 @@ Output all prompts in one block, separated by blank lines.`;
                 xhr.setRequestHeader('Content-Type', 'application/json');
                 xhr.send(JSON.stringify({ state, project_path: currentProject.path }));
             } catch(e) {}
-        });
+        });        async function verifySceneConsistency(sceneIdx) {
+            const scene = screenplayData.scenes[sceneIdx];
+            if (!scene || !scene.shots || scene.shots.length === 0) return;
+
+            const sceneId = scene.scene_id || ('#' + (scene.scene_number || (sceneIdx + 1)));
+            const validShots = scene.shots.filter(sh => sh._temp_storyboard_image || sh.storyboard_image);
+
+            if (validShots.length === 0) {
+                notify('No Images', 'No generated images found in this scene to verify.', '⚠️');
+                return;
+            }
+
+            const payload = {
+                scene_id: sceneId,
+                shots: validShots.map(sh => ({
+                    shot_id: sh.shot_id,
+                    image_path: currentProject.path + '/.system/' + (sh._temp_storyboard_image || sh.storyboard_image)
+                }))
+            };
+
+            const btn = document.getElementById(`scene-verify-btn-${sceneIdx}`);
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳ Verifying...';
+            }
+
+            notify('Checking Consistency', `Running Vision LLM check for ${sceneId}...`, '👁️');
+            
+            try {
+                const res = await fetch('/api/orchestrator/verify-scene-consistency', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                
+                if (data.success && data.evaluations) {
+                    let passedCount = 0;
+                    const projPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+                    
+                    // Sort evaluations by score descending to find golden reference
+                    const sortedEvals = [...data.evaluations].sort((a,b) => b.score - a.score);
+                    const goldenRefShotId = sortedEvals[0]?.shot_id;
+                    const goldenRefShot = validShots.find(sh => sh.shot_id === goldenRefShotId);
+                    const goldenRefPath = goldenRefShot ? (currentProject.path + '/.system/' + (goldenRefShot._temp_storyboard_image || goldenRefShot.storyboard_image)) : '';
+                    
+                    data.evaluations.forEach(ev => {
+                        const shIdx = scene.shots.findIndex(sh => sh.shot_id === ev.shot_id);
+                        if (shIdx !== -1) {
+                            const container = document.getElementById(`storyboard-img-${sceneIdx}-${shIdx}`);
+                            if (container) {
+                                // Add visual feedback badge
+                                const badge = document.createElement('div');
+                                badge.style.cssText = `position:absolute;top:5px;right:5px;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:bold;z-index:10;background:${ev.passed ? 'rgba(0,180,0,0.8)' : 'rgba(220,0,0,0.8)'};color:white;cursor:help;`;
+                                badge.textContent = `${ev.score}/10 ${ev.passed ? '✅' : '❌'}`;
+                                badge.title = ev.feedback;
+                                container.appendChild(badge);
+                            }
+                            
+                            if (ev.passed) {
+                                passedCount++;
+                            } else {
+                                // Automatically queue regeneration for failed shots if a golden reference exists
+                                if (goldenRefPath && ev.shot_id !== goldenRefShotId) {
+                                    notify('Regenerating Shot', `Shot ${ev.shot_id} failed consistency check. Regenerating...`, '🔄');
+                                    fetch('/api/orchestrator/regenerate-shot-with-reference', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            shot_id: ev.shot_id,
+                                            reference_image_path: goldenRefPath,
+                                            feedback: ev.feedback
+                                        })
+                                    }).then(regRes => regRes.json()).then(regData => {
+                                        if(regData.success) {
+                                            // Trigger image generation with the new prompt
+                                            // The backend updated the prompt in memory, we just need to re-generate it
+                                            generateStoryboardImages(sceneIdx, shIdx);
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    });
+                    
+                    if (passedCount === validShots.length) {
+                        notify('Perfect Consistency', `All ${validShots.length} shots passed the consistency check!`, '🏆');
+                    } else {
+                        notify('Consistency Issues Found', `${validShots.length - passedCount} shots failed verification. Auto-regeneration started.`, '⚠️');
+                    }
+                } else {
+                    notify('Verification Failed', data.error || 'Failed to verify scene.', '❌');
+                }
+            } catch (err) {
+                console.error(err);
+                notify('Verification Error', err.message, '❌');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '👁️ Vrfy Scene';
+                }
+            }
+        }
     </script>
 </body>
 </html>

@@ -3,54 +3,60 @@
     "name": "test",
     "path": "F:\\000000 test\\00001\\test",
     "registered_at": "2026-05-30T00:06:59.243062",
-    "last_opened": "2026-05-31T12:09:28.847765"
+    "last_opened": "2026-06-15T04:07:56.450610"
   },
   {
     "name": "test02",
     "path": "F:\\000000 test\\00001\\test02",
     "registered_at": "2026-05-30T00:06:59.256487",
-    "last_opened": "2026-05-31T12:09:28.826323"
+    "last_opened": "2026-06-15T04:07:56.422145"
   },
   {
     "name": "MV_test_v1",
     "path": "F:\\000000 test\\MV_Test01\\MV_test_v1",
     "registered_at": "2026-05-30T00:06:59.272158",
-    "last_opened": "2026-05-31T12:09:27.468028"
+    "last_opened": "2026-06-15T04:07:56.135754"
   },
   {
     "name": "MyProject_v1",
     "path": "F:\\000000 test\\MyProject_v1\\MyProject_v1",
     "registered_at": "2026-05-30T00:06:59.285571",
-    "last_opened": "2026-05-31T12:09:28.815793"
+    "last_opened": "2026-06-15T04:07:56.404247"
   },
   {
     "name": "MyProject_v2",
     "path": "F:\\000000 test\\MyProject_v2\\MyProject_v2",
     "registered_at": "2026-05-30T00:06:59.299283",
-    "last_opened": "2026-05-31T12:09:28.743920"
+    "last_opened": "2026-06-15T04:07:56.349265"
   },
   {
     "name": "MyProject_v3",
     "path": "F:\\000000 test\\MyProject_v3\\MyProject_v3",
     "registered_at": "2026-05-30T00:06:59.313667",
-    "last_opened": "2026-05-31T12:09:28.709062"
+    "last_opened": "2026-06-15T04:07:56.273264"
   },
   {
     "name": "MyProject_v4",
     "path": "F:\\000000 test\\MyProject_v4\\MyProject_v4",
     "registered_at": "2026-05-30T00:06:59.321340",
-    "last_opened": "2026-05-31T12:09:28.673212"
+    "last_opened": "2026-06-15T04:07:52.831994"
   },
   {
     "name": "test",
     "path": "F:\\000000 test\\00001",
     "registered_at": "2026-05-30T00:24:02.742194",
-    "last_opened": "2026-05-31T12:09:28.836929"
+    "last_opened": "2026-06-15T04:07:56.438676"
   },
   {
     "name": "test",
     "path": "F:\\MY APP\\ultimate-ai-film-studio-v8\\app\\projects\\test",
     "registered_at": "2026-05-30T00:24:09.246977",
-    "last_opened": "2026-05-31T12:09:28.859237"
+    "last_opened": "2026-06-15T04:07:56.465545"
+  },
+  {
+    "name": "WORLD CUP",
+    "path": "F:\\01_PROJECT\\FIFA_V1\\WORLD CUP",
+    "registered_at": "2026-06-14T04:26:02.451346",
+    "last_opened": "2026-06-15T04:07:56.145477"
   }
 ]

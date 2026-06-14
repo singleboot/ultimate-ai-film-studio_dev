@@ -1,0 +1,34 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "location_sheet.png"
+    }
+  },
+  "2": {
+    "class_type": "ImageConcanate",
+    "inputs": {
+      "direction": "right",
+      "match_image_size": true,
+      "image1": ["1", 0],
+      "image2": ["1", 0]
+    }
+  },
+  "3": {
+    "class_type": "ImageCrop",
+    "inputs": {
+      "width": 1820,
+      "height": 1024,
+      "x": 0,
+      "y": 0,
+      "image": ["2", 0]
+    }
+  },
+  "4": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "comfyui_crop",
+      "images": ["3", 0]
+    }
+  }
+}

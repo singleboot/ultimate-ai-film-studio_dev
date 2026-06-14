@@ -214,7 +214,7 @@ class CinematicOrchestrator:
 
         return "\n".join(parts)
 
-    def _call_llm(self, prompt: str, system_suffix: str = "", json_output: bool = True) -> Dict:
+    def _call_llm(self, prompt: str, system_suffix: str = "", json_output: bool = True, **kwargs) -> Dict:
         """Call the LLM with the master system prompt plus any stage-specific suffix."""
         if not self.llm_engine:
             return {"success": False, "error": "LLM engine not available"}
@@ -377,6 +377,7 @@ class CinematicOrchestrator:
                 prompt=prompt,
                 system_prompt=system_prompt,
                 host=host or None,
+                **kwargs
             )
         finally:
             stop_event.set()
@@ -403,9 +404,12 @@ class CinematicOrchestrator:
             json_data = self._extract_json(text)
             if json_data is not None:
                 if isinstance(json_data, list) and len(json_data) > 0:
-                    print(f"[Extracted {len(json_data)} ideas]:")
-                    for idx, idea in enumerate(json_data):
-                        print(f"   {idx+1}. {idea.get('title', 'Untitled')} - {idea.get('logline', '')[:80]}...")
+                    print(f"[Extracted {len(json_data)} items]:")
+                    for idx, item in enumerate(json_data):
+                        if isinstance(item, dict):
+                            print(f"   {idx+1}. {item.get('title', 'Untitled')} - {item.get('logline', '')[:80]}...")
+                        else:
+                            print(f"   {idx+1}. {str(item)[:80]}...")
                 elif isinstance(json_data, dict):
                     print(f"[Extracted JSON keys]: {list(json_data.keys())}")
             else:
@@ -430,8 +434,12 @@ class CinematicOrchestrator:
         return result
 
     def _extract_json(self, text: str) -> Optional[Any]:
-        """Extract JSON from LLM response, handling markdown code fences."""
+        """Extract JSON from LLM response, handling markdown code fences and reasoning tags."""
         import re
+        
+        # Strip <think>...</think> tags if present
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        
         # Try ```json ... ``` block first
         match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
         if match:
@@ -793,18 +801,53 @@ Every concept must feel:
                 valid2, issues2 = self._validate_idea_counts(result["data"])
                 if not valid2:
                     for idea in result["data"]:
-                        esc = idea.get("estimated_scene_count", 0)
-                        if esc != self.memory.selected_scenes:
-                            idea["estimated_scene_count"] = self.memory.selected_scenes
-                        ets = idea.get("estimated_total_shots", 0)
-                        if ets > self.memory.selected_total_shots:
-                            idea["estimated_total_shots"] = self.memory.selected_total_shots
+                        # Always enforce hard counts
+                        idea["estimated_scene_count"] = self.memory.selected_scenes
+                        idea["estimated_total_shots"] = self.memory.selected_total_shots
                         cc = idea.get("character_count", 0)
                         if cc > self.memory.selected_characters:
                             idea["character_count"] = self.memory.selected_characters
                         lc = idea.get("location_count", 0)
                         if lc > self.memory.selected_locations:
                             idea["location_count"] = self.memory.selected_locations
+
+                # Unconditionally balance the shot distribution per scene
+                for idea in result["data"]:
+                    target_scenes = self.memory.selected_scenes
+                    target_shots = self.memory.selected_total_shots
+                    
+                    dist = idea.get("shot_distribution_per_scene", {})
+                    if not isinstance(dist, dict):
+                        dist = {}
+                        
+                    new_dist = {}
+                    for i in range(1, target_scenes + 1):
+                        key = f"Scene {i}"
+                        val = dist.get(key, dist.get(str(i), 1))
+                        if not isinstance(val, (int, float)) or val < 1:
+                            val = 1
+                        new_dist[key] = int(val)
+                        
+                    current_sum = sum(new_dist.values())
+                    diff = target_shots - current_sum
+                    
+                    keys = list(new_dist.keys())
+                    if diff > 0:
+                        idx = 0
+                        while diff > 0:
+                            new_dist[keys[idx % len(keys)]] += 1
+                            diff -= 1
+                            idx += 1
+                    elif diff < 0:
+                        idx = 0
+                        while diff < 0:
+                            k = keys[idx % len(keys)]
+                            if new_dist[k] > 1:
+                                new_dist[k] -= 1
+                                diff += 1
+                            idx += 1
+                    idea["shot_distribution_per_scene"] = new_dist
+
                 self.memory.ideas = result["data"]
                 self.set_progress(100, "Ideas generated!", f"{len(result['data'])} concepts ready")
                 logger.info("Stage 1: generate_ideas completed — %d ideas", len(result["data"]))
@@ -824,7 +867,12 @@ Every concept must feel:
         logger.info("Stage 2: generate_screenplay started — idea_index=%s",
                      params.get("idea_index", self.memory.selected_idea_index))
         self._reset_progress()
-        self.set_progress(5, "Starting screenplay generation (Phase A: Core)...")
+        char_count = params.get("character_count") or params.get("max_characters", self.memory.selected_characters)
+        loc_count = params.get("location_count") or params.get("max_locations", self.memory.selected_locations)
+        scene_count = params.get("scene_count") or params.get("scenes", self.memory.selected_scenes)
+        shot_count = params.get("total_shot_count") or params.get("max_total_shots", self.memory.selected_total_shots)
+
+        self.set_progress(5, f"Starting screenplay generation ({scene_count} scenes, {shot_count} shots)...")
 
         idea_index = params.get("idea_index", self.memory.selected_idea_index)
 
@@ -847,11 +895,6 @@ Every concept must feel:
             self.set_progress(0, "Failed", "No idea selected")
             return {"success": False, "error": "No idea selected"}
 
-        char_count = params.get("character_count") or params.get("max_characters", self.memory.selected_characters)
-        loc_count = params.get("location_count") or params.get("max_locations", self.memory.selected_locations)
-        scene_count = params.get("scene_count") or params.get("scenes", self.memory.selected_scenes)
-        shot_count = params.get("total_shot_count") or params.get("max_total_shots", self.memory.selected_total_shots)
-
         self.memory.selected_characters = int(char_count)
         self.memory.selected_locations = int(loc_count)
         self.memory.selected_scenes = int(scene_count)
@@ -863,7 +906,7 @@ Every concept must feel:
         # ─────────────────────────────────────────────────────────────
         # PHASE A: Core screenplay (lean — no visual enrichment fields)
         # ─────────────────────────────────────────────────────────────
-        self.set_progress(10, "Phase A: Generating core screenplay structure...")
+        self.set_progress(10, f"Generating outline for {scene_count} scenes & {shot_count} shots...")
 
         prompt_parts_a = [
             "Based on the selected story idea, generate a core cinematic screenplay.",
@@ -879,7 +922,7 @@ Every concept must feel:
             f"EXACTLY {char_count} characters required",
             f"EXACTLY {loc_count} locations required",
             f"EXACTLY {scene_count} scenes required",
-            f"EXACTLY {shot_count} total shots required (sum of all scene shots)",
+            f"EXACTLY {shot_count} total shots required (distribute as target_shot_count across scenes)",
             "",
             "=== PACING GUIDE ===",
             self._get_pacing_guide(genre_blend, tone),
@@ -934,32 +977,18 @@ Every concept must feel:
   - emotional_tone (string)
   - characters_present (array of character_id strings)
   - dialogue (array of dialogue lines with speaker and text; empty array [] if dialogue_enabled is false)
-  - shots (array of shot nodes, sum across ALL scenes MUST BE EXACTLY {shot_count})
-    - shot_id (string, e.g. "SHOT_001", globally unique)
-    - shot_number (number)
-    - shot_type (string, e.g. Wide Shot, Medium Shot, Close-Up)
-    - camera_language (string)
-    - lighting_language (string)
-    - emotion (string)
-    - characters_present (array of character_id strings)
-    - dialogue (array, direct dialogue in this shot)
-    - action (string)
-    - visual_motifs (array of strings)
-    - motion_opportunities (array of strings)
-    - audio_notes (array of strings)
-    - continuity_notes (string)
-    - cinematic_notes (string)
+  - target_shot_count (number, distribute the {shot_count} shots across all scenes so the sum is EXACTLY {shot_count})
+  - shots (empty array [])
 
 CONSTRAINTS:
-- Total shots MUST BE EXACTLY {shot_count}
+- Sum of target_shot_count across scenes MUST BE EXACTLY {shot_count}
 - character_bible MUST have EXACTLY {char_count} entries
 - location_bible MUST have EXACTLY {loc_count} entries
 - scenes MUST have EXACTLY {scene_count} entries
 - Each scene location_id must match location_bible
-- Shot IDs must be globally unique
 - Dialogue array is [] if dialogue_enabled is false"""
 
-        self.set_progress(20, "Calling LLM for core screenplay (Phase A)...")
+        self.set_progress(20, f"Generating outline for {scene_count} scenes & {shot_count} shots...")
         result_a = self._call_llm("\n".join(prompt_parts_a), system_suffix=system_suffix_a)
 
         if not (result_a.get("success") and result_a.get("data")):
@@ -990,6 +1019,77 @@ CONSTRAINTS:
                 while len(scenes) > self.memory.selected_scenes:
                     scenes.pop()
                 data["scenes"] = scenes
+
+        # ─────────────────────────────────────────────────────────────
+        # PHASE A.1: Expand scenes into shots (chunking)
+        # ─────────────────────────────────────────────────────────────
+        self.set_progress(48, "Phase A.1: Expanding scenes into shots...")
+        scenes = data.get("scenes", [])
+        
+        char_bible_summary = "; ".join(
+            f"{c.get('character_id')}: {c.get('full_name')} ({c.get('physical_appearance', '')[:60]})"
+            for c in data.get("character_bible", [])
+        )
+        loc_bible_summary = "; ".join(
+            f"{l.get('location_id')}: {l.get('location_name')} ({l.get('environment_type', '')})"
+            for l in data.get("location_bible", [])
+        )
+
+        for i, scene in enumerate(scenes):
+            target_shots = scene.get("target_shot_count", max(1, self.memory.selected_total_shots // len(scenes)))
+            if target_shots <= 0:
+                target_shots = 1
+                
+            self.set_progress(48 + int((i / len(scenes)) * 4), f"Phase A.1: Generating {target_shots} shots for {scene.get('scene_id')}...")
+            
+            scene_prompt = [
+                f"Generate EXACTLY {target_shots} detailed shot nodes for this scene.",
+                f"Scene: {scene.get('scene_title')} ({scene.get('scene_id')})",
+                f"Synopsis: {scene.get('synopsis')}",
+                f"Location ID: {scene.get('location_id')}",
+                f"Characters Present: {', '.join(scene.get('characters_present', []))}",
+                f"Genre: {genre_blend} | Tone: {tone} | Visual Style: {idea.get('visual_identity', '')}",
+                "",
+                f"CHARACTER BIBLE: {char_bible_summary}",
+                f"LOCATION BIBLE: {loc_bible_summary}"
+            ]
+            
+            scene_suffix = f"""You MUST respond with ONLY a JSON object containing an array of EXACTLY {target_shots} shots.
+Format:
+{{
+  "shots": [
+    {{
+      "shot_id": "string (e.g., SHOT_{scene.get('scene_id')}_001)",
+      "shot_number": "number",
+      "shot_type": "string",
+      "camera_language": "string",
+      "lighting_language": "string",
+      "emotion": "string",
+      "characters_present": ["array of character_ids"],
+      "dialogue": ["array of dialogue objects with speaker and text"],
+      "action": "string",
+      "visual_motifs": ["array of strings"],
+      "motion_opportunities": ["array of strings"],
+      "audio_notes": ["array of strings"],
+      "continuity_notes": "string",
+      "cinematic_notes": "string"
+    }}
+  ]
+}}"""
+            result_shots = self._call_llm("\n".join(scene_prompt), system_suffix=scene_suffix)
+            if result_shots.get("success") and result_shots.get("data") and isinstance(result_shots["data"], dict):
+                generated_shots = result_shots["data"].get("shots", [])
+                # Auto-pad if necessary
+                while len(generated_shots) < target_shots:
+                    generated_shots.append(generated_shots[-1].copy() if generated_shots else {"shot_id": f"SHOT_FILL_{time.time()}"})
+                while len(generated_shots) > target_shots:
+                    generated_shots.pop()
+                scene["shots"] = generated_shots
+            else:
+                logger.warning(f"Failed to generate shots for {scene.get('scene_id')}. Generating empty placeholders.")
+                scene["shots"] = [{"shot_id": f"SHOT_FAIL_{time.time()}_{j}"} for j in range(target_shots)]
+
+        data["scenes"] = scenes
 
         # ─────────────────────────────────────────────────────────────
         # PHASE B: Shot enrichment in batches of 4
@@ -1213,8 +1313,10 @@ Example format:
 
         # Shot nodes count (NOT estimated_shots)
         total_shots = 0
+        total_target_shots = 0
         for s in scenes:
             if isinstance(s, dict):
+                total_target_shots += s.get("target_shot_count", 0)
                 shots = s.get("shots", [])
                 if isinstance(shots, list):
                     total_shots += sum(1 for sh in shots if isinstance(sh, dict))
@@ -1223,8 +1325,8 @@ Example format:
             else:
                 issues.append("Scene entry in list is not a dictionary")
 
-        if total_shots != self.memory.selected_total_shots:
-            issues.append(f"Total shots: got {total_shots}, expected {self.memory.selected_total_shots}")
+        if total_shots != self.memory.selected_total_shots and total_target_shots != self.memory.selected_total_shots:
+            issues.append(f"Total shots: got {total_shots} (target sum {total_target_shots}), expected {self.memory.selected_total_shots}")
 
         # Character bible count
         cb = data.get("character_bible", [])
@@ -2246,6 +2348,129 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
             "shot": shot,
         }
 
+    def verify_scene_consistency(self, params: Dict) -> Dict:
+        """Visual Consistency Engine: Verify shots in a scene using VLM."""
+        scene_id = params.get("scene_id", "")
+        shots_data = params.get("shots", []) # List of dicts: {"shot_id": "...", "image_path": "..."}
+        if not scene_id or not shots_data:
+            return {"success": False, "error": "scene_id and shots are required"}
+        
+        self._reset_progress()
+        self.set_progress(10, f"Starting Visual Consistency Check for {scene_id}...")
+        
+        pg = self.memory.project_graph
+        scene = next((s for s in pg.get("scene_graph", []) if s.get("scene_id") == scene_id), None)
+        if not scene:
+            return {"success": False, "error": f"Scene {scene_id} not found"}
+
+        # Extract base64 images from paths
+        import os, base64
+        base64_images = []
+        valid_shots = []
+        for s in shots_data:
+            path = s.get("image_path", "")
+            if os.path.exists(path):
+                try:
+                    with open(path, "rb") as f:
+                        base64_images.append(base64.b64encode(f.read()).decode('utf-8'))
+                    valid_shots.append(s.get("shot_id"))
+                except Exception as e:
+                    logger.warning(f"Failed to read image {path}: {e}")
+        
+        if len(base64_images) == 0:
+            return {"success": False, "error": "No valid images found for consistency check"}
+
+        # Build Context
+        char_bible = "; ".join(f"{c.get('character_id')}: {c.get('physical_appearance', '')}" for c in self.memory.character_bible)
+        
+        prompt = f"""You are an expert AI Art Director. Review these {len(valid_shots)} consecutive shots for Scene {scene_id}.
+CHARACTER BIBLE REFERENCE:
+{char_bible}
+
+Do the characters, clothing, lighting, and style perfectly match across all frames? 
+Provide a JSON response with exactly one key "evaluations" containing an array of objects.
+Each object must have:
+- "shot_id": the shot id corresponding to the image (in order: {', '.join(valid_shots)})
+- "score": 1-10 integer
+- "passed": boolean (true if score >= 8, false otherwise)
+- "feedback": string detailing exactly what is inconsistent or "Perfect" if passed.
+"""
+        system_suffix = "Output ONLY valid JSON."
+        self.set_progress(50, "Analyzing images with Vision LLM...")
+        
+        result = self._call_llm(prompt, system_suffix=system_suffix, json_output=True, images=base64_images)
+        
+        if not result.get("success"):
+            self.set_progress(0, "Failed", result.get("error", "VLM check failed"))
+            return result
+        
+        evaluations = result.get("data", {}).get("evaluations", [])
+        
+        self.set_progress(100, "Consistency check complete!")
+        return {"success": True, "evaluations": evaluations}
+
+    def evaluate_vision_consistency(self, anchor_b64: str, new_img_b64: str) -> Dict:
+        """Evaluate if the new generated image matches the anchor image continuously."""
+        prompt = """You are an expert film continuity supervisor. 
+Compare Image 1 (the established Scene Anchor) and Image 2 (the newly generated Shot).
+Does Image 2 maintain strict visual consistency with Image 1 in terms of character appearance, lighting, environment, and overall aesthetic?
+
+Provide a JSON response with the following keys:
+- "consistent": boolean (true if it perfectly matches, false if there are noticeable continuity errors)
+- "inconsistencies": array of strings detailing the issues (empty if consistent)
+- "correction_prompt": a short string suggesting prompt additions to fix the issues (e.g. "make sure the jacket is leather", or "" if consistent)
+"""
+        system_suffix = "Output ONLY valid JSON."
+        # Temporarily force the model to the requested VLM if not set globally
+        old_model = self.memory.project_info.get("llm_model")
+        self.memory.project_info["llm_model"] = "gemma4-vision"
+        
+        result = self._call_llm(prompt, system_suffix=system_suffix, json_output=True, images=[anchor_b64, new_img_b64])
+        
+        # Restore the old model setting
+        if old_model:
+            self.memory.project_info["llm_model"] = old_model
+        else:
+            self.memory.project_info.pop("llm_model", None)
+            
+        if not result.get("success"):
+            return result
+            
+        data = result.get("data", {})
+        return {
+            "success": True,
+            "consistent": data.get("consistent", False),
+            "inconsistencies": data.get("inconsistencies", []),
+            "correction_prompt": data.get("correction_prompt", "")
+        }
+
+    def regenerate_shot_with_reference(self, params: Dict) -> Dict:
+        """Regenerate a failed shot using a Golden Reference image."""
+        shot_id = params.get("shot_id", "")
+        reference_path = params.get("reference_image_path", "")
+        feedback = params.get("feedback", "")
+        
+        if not shot_id or not reference_path:
+            return {"success": False, "error": "shot_id and reference_image_path required"}
+            
+        pg = self.memory.project_graph
+        shot = pg.get("shots", {}).get(shot_id)
+        if not shot:
+            return {"success": False, "error": f"Shot {shot_id} not found"}
+            
+        enrichment = pg.get("storyboards", {}).get(shot_id, {})
+        base_prompt = enrichment.get("storyboard_prompt", shot.get("storyboard_prompt", ""))
+        
+        new_prompt = f"{base_prompt} CRITICAL FIX: {feedback}"
+        
+        return {
+            "success": True,
+            "shot_id": shot_id,
+            "prompt": new_prompt,
+            "reference_image": reference_path,
+            "shot": shot
+        }
+
     def generate_shot_from_scene(self, params: Dict) -> Dict:
         """Generate 3 shot variants from scene context (no existing shot needed)."""
         self._reset_progress()
@@ -2603,7 +2828,7 @@ Write a single, rich image generation prompt for a cinematic full-body character
             storytelling = asset.get("environmental_storytelling", "")
             prompt_text = f"""Project context: {proj_context}
 
-You are a cinema visual AI. Given this location, write a detailed visual image generation prompt for a cinematic environment reference image.
+You are a cinema visual AI. Given this location, write a detailed visual image generation prompt for a 360 panoramic equirectangular HDRI image.
 
 Location: {name}
 Architecture: {arch}
@@ -2613,7 +2838,7 @@ Time period: {period}
 Cinematic features: {features}
 Environmental storytelling: {storytelling}
 
-Write a single, rich image generation prompt for a cinematic environment reference. Include: wide composition with clear foreground/midground/background depth, architectural and environmental details, lighting conditions and atmosphere, color palette, spatial readability, cinematic mood and atmosphere. Emphasize continuity-safe environment design and production-ready realism. Return ONLY the prompt text, no explanation, no JSON."""
+Write a single, rich image generation prompt for a 360 panoramic equirectangular HDRI image of the environment. Include: architectural and environmental details, lighting conditions and atmosphere, color palette, spatial readability, cinematic mood and atmosphere. Emphasize a seamless 360 projection. Return ONLY the prompt text, no explanation, no JSON."""
         else: # prop
             name = asset.get("prop_name", asset.get("name", ""))
             desc = asset.get("description", "")
@@ -2722,9 +2947,16 @@ Rules:
  
 Return a JSON array of exactly 3 variant prompt strings. No explanation."""
         result = self._call_llm(prompt_text, system_suffix="You output JSON arrays of prompts only.", json_output=True)
-        if result.get("success"):
+        if result.get("success") and result.get("data") is not None:
             try:
-                variants = result["data"]
+                data = result["data"]
+                if isinstance(data, dict) and "variants" in data:
+                    variants = data["variants"]
+                elif isinstance(data, list):
+                    variants = data
+                else:
+                    variants = []
+                
                 if isinstance(variants, list) and len(variants) >= 3:
                     if asset_type in ["shot_image", "shot_video"]:
                         return {"success": True, "variants": variants[:3]}

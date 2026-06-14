@@ -3151,8 +3151,10 @@
                 if (selTS && s.totalShots) selTS.value = s.totalShots;
                 // Restore aspect ratio & resolution
                 if (s.aspectRatio) selectAspectRatio(s.aspectRatio);
-                if (s.imgResolution) document.getElementById('sel-img-resolution').value = s.imgResolution;
-                if (s.vidResolution) document.getElementById('sel-vid-resolution').value = s.vidResolution;
+                const selImgRes = document.getElementById('sel-img-resolution');
+                if (selImgRes && s.imgResolution) selImgRes.value = s.imgResolution;
+                const selVidRes = document.getElementById('sel-vid-resolution');
+                if (selVidRes && s.vidResolution) selVidRes.value = s.vidResolution;
                 if (s.dialogue) selectDialogue(s.dialogue);
                 
                 // Ensure sheet prompts are initialized on settings if missing/empty
@@ -3249,11 +3251,12 @@
                     }
                 } else {
                     console.error("loadProjectState: success was false or state was empty");
+                    notify('Load Warning', 'Project state was empty on the server.', '⚠️');
                     clearProjectState();
                 }
             } catch(e) {
                 console.error("loadProjectState catch block triggered:", e);
-                clearProjectState();
+                notify('Load Error', 'Error restoring project: ' + e.message, '⚠️');
             }
         }
 
@@ -7152,6 +7155,14 @@
             if (btn) btn.style.border = '2px solid var(--accent-primary)';
             // Adjust image resolution options based on aspect ratio
             const sel = document.getElementById('sel-img-resolution');
+            if (!sel) {
+                if (currentProject) {
+                    if (!currentProject.settings) currentProject.settings = {};
+                    currentProject.settings.aspectRatio = value;
+                    scheduleSaveState();
+                }
+                return;
+            }
             const current = sel.value;
             sel.innerHTML = '';
             const ratios = {

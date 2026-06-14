@@ -962,6 +962,18 @@ def regenerate_shot(data: dict):
         return {"success": False, "error": "Orchestrator not available"}
     return orchestrator.regenerate_shot(data)
 
+@app.post("/api/orchestrator/verify-scene-consistency")
+def verify_scene_consistency(data: dict):
+    """Verify visual consistency of all shots in a scene using Vision LLM."""
+    logger.info(f"POST /api/orchestrator/verify-scene-consistency: {data.get('scene_id')}")
+    return orchestrator.verify_scene_consistency(data)
+
+@app.post("/api/orchestrator/regenerate-shot-with-reference")
+def regenerate_shot_with_reference(data: dict):
+    """Regenerate a shot with a golden reference image and feedback."""
+    logger.info(f"POST /api/orchestrator/regenerate-shot-with-reference: {data.get('shot_id')}")
+    return orchestrator.regenerate_shot_with_reference(data)
+
 @app.post("/api/orchestrator/shot-approve")
 def approve_shot(data: dict):
     """Mark a shot as approved for timeline."""
@@ -986,6 +998,80 @@ def generate_shot_image(data: dict):
 @app.post("/api/orchestrator/generate-shot-from-scene")
 def generate_shot_from_scene(data: dict):
     """Generate 3 shot variants from scene context (no existing shot needed)."""
+    return orchestrator.generate_shot_from_scene(data)
+
+@app.post("/api/orchestrator/crop-360")
+async def crop_360_background(data: dict):
+    """Crop a 360 panorama using the crop workflow."""
+    import asyncio
+    location_id = data.get("location_id")
+    pan_angle = data.get("pan_angle", 0)  # 0 to 360
+    project_path = data.get("project_path")
+    
+    if not location_id or not project_path:
+        return {"success": False, "error": "Missing location_id or project_path"}
+        
+    # Get the location image from project manager state
+    state = project_manager.load_project_state(project_manager.current_project, project_path) or {}
+    locs = state.get("location_sheets", {})
+    if location_id not in locs:
+        return {"success": False, "error": f"No location sheet found for {location_id}"}
+        
+    img_path = locs[location_id].get("approved_image", "")
+    if not img_path:
+        return {"success": False, "error": "No approved image found for location"}
+        
+    # Calculate crop_left based on pan_angle (assuming 2048x1024 base image)
+    # The workflow concatenates the image with itself, creating a 4096x1024 image
+    # A 360 pan covers the first 2048 pixels.
+    crop_x = int((pan_angle / 360.0) * 2048)
+    
+    from app.core.comfyui_client import ComfyUIClient
+    client = ComfyUIClient()
+    
+    # Load the crop workflow, update x, and save to a temporary workflow file
+    try:
+        import json
+        with open("app/workflows/crop_360_background.json", "r") as f:
+            workflow = json.load(f)
+            
+        # Update inputs
+        for nid, nd in workflow.items():
+            if not isinstance(nd, dict): continue
+            if nd.get("class_type") == "ImageCrop":
+                nd["inputs"]["x"] = crop_x
+                
+        # Save dynamically generated workflow
+        temp_workflow_name = "crop_360_temp"
+        with open(f"app/workflows/{temp_workflow_name}.json", "w") as f:
+            json.dump(workflow, f)
+    except Exception as e:
+        return {"success": False, "error": f"Failed to load crop workflow: {str(e)}"}
+        
+    # Send to ComfyUI
+    loop = asyncio.get_event_loop()
+    res = await loop.run_in_executor(
+        None,
+        client.generate_with_workflow,
+        "crop_360", # dummy prompt
+        temp_workflow_name,
+        None, # negative prompt
+        None, # seed
+        [img_path] # input image
+    )
+    
+    # Cleanup temp workflow
+    try:
+        import os
+        os.remove(f"app/workflows/{temp_workflow_name}.json")
+    except:
+        pass
+    
+    if not res.get("success"):
+        return res
+        
+    # The output filename needs to be returned
+    return res
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
     result = orchestrator.generate_shot_from_scene(data)
@@ -1176,6 +1262,139 @@ async def generate_t2i_endpoint(request: Request):
     resolution = data.get("resolution")
     return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, resolution=resolution)
 
+import base64
+
+@app.post("/api/orchestrator/generate-consistent-shot")
+async def generate_consistent_shot(request: Request):
+    """Generate image using I2I workflow, checking consistency with the anchor shot."""
+    data = await request.json()
+    prompt = data.get("prompt", "")
+    seed = data.get("seed")
+    steps = data.get("steps")
+    cfg = data.get("cfg")
+    aspect_ratio = data.get("aspect_ratio")
+    resolution = data.get("resolution")
+    input_images = data.get("input_images", [])
+    
+    project_path = data.get("project_path", "")
+    if not project_path:
+        p_path = project_manager.get_current_project_path()
+        if p_path:
+            project_path = str(p_path)
+
+    settings = load_settings()
+    workflow_name = data.get("workflow_name") or settings.get("workflows", {}).get("i2i", "")
+    if not workflow_name:
+        return {"success": False, "error": "No I2I workflow assigned in Settings"}
+
+    abs_paths = []
+    for rel in input_images:
+        p = Path(project_path) / rel
+        if p.exists():
+            abs_paths.append(str(p))
+
+    # The anchor is the first input image if it exists.
+    anchor_path = abs_paths[0] if abs_paths else None
+
+    # Helper to download image from ComfyUI
+    def _download_from_comfy(filename):
+        import requests, time
+        url = f"{comfyui_client.host}/view?filename={filename}&type=output"
+        for _ in range(5):
+            try:
+                resp = requests.get(url, timeout=15)
+                if resp.status_code == 200:
+                    return resp.content
+            except Exception:
+                pass
+            time.sleep(1)
+        return None
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    
+    max_retries = 2
+    current_prompt = prompt
+    best_result = None
+    
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            logger.info(f"Attempting consistency retry {attempt}/{max_retries}...")
+            
+        _stop_poll = False
+        def _poll():
+            while not _stop_poll:
+                try:
+                    prog = comfyui_client.get_progress()
+                    if prog.get("running") and prog.get("max", 0) > 0:
+                        pct = round(prog["current"] / prog["max"] * 100)
+                        if image_engine:
+                            image_engine._update_gen_progress(pct, "running", f"Attempt {attempt+1}: Gen Step {prog.get('current')}/{prog.get('max')}")
+                except Exception:
+                    pass
+                time.sleep(1)
+
+        poll_thread = threading.Thread(target=_poll, daemon=True)
+        if image_engine:
+            image_engine._update_gen_progress(0, "running", f"Attempt {attempt+1}: Generating...")
+        poll_thread.start()
+
+        try:
+            result = await loop.run_in_executor(
+                None,
+                lambda: comfyui_client.generate_with_workflow(
+                    current_prompt, workflow_name, seed=seed, steps=steps, cfg=cfg,
+                    input_images=abs_paths if abs_paths else None,
+                    aspect_ratio=aspect_ratio, resolution=resolution
+                )
+            )
+            best_result = result
+        finally:
+            _stop_poll = True
+            if image_engine:
+                image_engine._update_gen_progress(0, "idle", "")
+
+        if not result.get("success") or not anchor_path:
+            break
+            
+        # 2. Evaluate
+        if image_engine:
+            image_engine._update_gen_progress(100, "running", f"Attempt {attempt+1}: VLM evaluating consistency...")
+            
+        filename = result.get("filename")
+        new_img_bytes = await loop.run_in_executor(None, _download_from_comfy, filename)
+        if not new_img_bytes:
+            logger.warning("Failed to download generated image for VLM eval.")
+            break
+            
+        with open(anchor_path, "rb") as f:
+            anchor_b64 = base64.b64encode(f.read()).decode('utf-8')
+        new_img_b64 = base64.b64encode(new_img_bytes).decode('utf-8')
+        
+        eval_res = await loop.run_in_executor(None, lambda: orchestrator.evaluate_vision_consistency(anchor_b64, new_img_b64))
+        
+        if eval_res.get("success"):
+            if eval_res.get("consistent"):
+                logger.info(f"VLM: Shot is consistent on attempt {attempt+1}.")
+                break
+            else:
+                inc = eval_res.get("inconsistencies", [])
+                logger.info(f"VLM: Shot inconsistent. {inc}")
+                corr = eval_res.get("correction_prompt", "")
+                if attempt < max_retries:
+                    current_prompt = f"{prompt}. CRITICAL FIX: {corr}"
+                    import random
+                    seed = random.randint(1, 99999999)
+                else:
+                    logger.warning("Max consistency retries reached.")
+        else:
+            logger.warning(f"VLM evaluation failed: {eval_res.get('error')}")
+            break
+
+    if image_engine:
+        image_engine._update_gen_progress(0, "idle", "")
+    return best_result
+
 @app.post("/api/comfyui/generate/i2i")
 async def generate_i2i_endpoint(request: Request):
     """Generate image using I2I workflow from settings with reference images."""
@@ -1360,6 +1579,7 @@ async def save_project_image(request: Request):
     project_name = data.get("project_name", "")
     previous_file = data.get("previous_file")
     subfolder = data.get("subfolder", "")
+    image_type = data.get("type", "")
     import requests
     import time
     resp = None
@@ -1369,6 +1589,11 @@ async def save_project_image(request: Request):
             url = f"{comfyui_client.host}/view?filename={filename}"
             if subfolder:
                 url += f"&subfolder={subfolder}"
+            if image_type:
+                url += f"&type={image_type}"
+            elif filename.startswith("ComfyUI_temp_") or filename.startswith("clipspace"):
+                url += "&type=temp"
+            elif subfolder:
                 url += "&type=output"
             resp = requests.get(url, timeout=15)
             if resp.status_code == 200:
@@ -1886,8 +2111,8 @@ async def save_project_state(name: str, request: Request):
             project_path = str(p_path)
 
     # Guard against accidental state clearing from browser page reloads
+    existing = project_manager.load_project_state(name, project_path)
     if not state.get("topicIdeas") and not state.get("screenplayData"):
-        existing = project_manager.load_project_state(name, project_path)
         if existing and (existing.get("topicIdeas") or existing.get("screenplayData")):
             logger.warning("save_project_state ignored: prevented browser page overwrite of populated project data.")
             return {"success": True, "protected": True}
@@ -1898,6 +2123,20 @@ async def save_project_state(name: str, request: Request):
             orchestrator.memory.project_info["genres"] = state.get("selectedGenres", [])
             orchestrator.memory.project_info["visual_style"] = state.get("selectedVisualStyle", "")
             orchestrator.memory.project_info["film_aesthetic"] = state.get("selectedFilmAesthetic", "")
+            
+        # FOOLPROOF GUARD: If the backend restarted and the orchestrator is empty, but the disk has data,
+        # we MUST restore the orchestrator memory from disk before overwriting it!
+        if existing and existing.get("_orchestrator_memory"):
+            current_mem = orchestrator.to_dict()
+            current_pg = current_mem.get("project_graph", {})
+            existing_pg = existing.get("_orchestrator_memory", {}).get("project_graph", {})
+            
+            # If orchestrator lacks basic data (like bibles or assets) but disk has them, the backend likely lost its state.
+            if not current_pg.get("character_bible") and not current_pg.get("location_bible") and (existing_pg.get("character_bible") or existing_pg.get("location_bible")):
+                logger.warning(f"Orchestrator memory empty. Reloading {name} from disk before saving.")
+                orchestrator.from_dict(existing.get("_orchestrator_memory"))
+                project_manager.current_project = name
+
         state["_orchestrator_memory"] = orchestrator.to_dict()
 
     result = project_manager.save_project_state(name, state, project_path)
