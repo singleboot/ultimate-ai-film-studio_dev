@@ -105,19 +105,6 @@
       "title": "HEIGHT"
     }
   },
-  "1522": {
-    "inputs": {
-      "filename_prefix": "ComfyUI",
-      "images": [
-        "1527",
-        0
-      ]
-    },
-    "class_type": "SaveImage",
-    "_meta": {
-      "title": "Save Image"
-    }
-  },
   "1524": {
     "inputs": {
       "width": 2048,
@@ -165,19 +152,6 @@
       "title": "KSampler"
     }
   },
-  "1526": {
-    "inputs": {
-      "filename_prefix": "ComfyUI",
-      "images": [
-        "1527",
-        0
-      ]
-    },
-    "class_type": "SaveImage",
-    "_meta": {
-      "title": "Save Image"
-    }
-  },
   "1527": {
     "inputs": {
       "samples": [
@@ -192,19 +166,6 @@
     "class_type": "VAEDecode",
     "_meta": {
       "title": "VAE Decode"
-    }
-  },
-  "1530": {
-    "inputs": {
-      "filename_prefix": "ComfyUI",
-      "images": [
-        "1548",
-        0
-      ]
-    },
-    "class_type": "SaveImage",
-    "_meta": {
-      "title": "Save Image"
     }
   },
   "1532": {
@@ -478,30 +439,6 @@
       "title": "VAE Decode"
     }
   },
-  "1549": {
-    "inputs": {
-      "images": [
-        "1541",
-        0
-      ]
-    },
-    "class_type": "PreviewImage",
-    "_meta": {
-      "title": "Preview Image"
-    }
-  },
-  "1550": {
-    "inputs": {
-      "images": [
-        "1538",
-        0
-      ]
-    },
-    "class_type": "PreviewImage",
-    "_meta": {
-      "title": "Preview Image"
-    }
-  },
   "1554": {
     "inputs": {
       "lora_name": "QWEN\\251018_MICKMUMPITZ_QWEN-EDIT_360_03.safetensors",
@@ -552,18 +489,6 @@
     "class_type": "PrimitiveInt",
     "_meta": {
       "title": "Padding"
-    }
-  },
-  "1558": {
-    "inputs": {
-      "images": [
-        "1559",
-        0
-      ]
-    },
-    "class_type": "PreviewImage",
-    "_meta": {
-      "title": "Preview Image"
     }
   },
   "1559": {
@@ -641,30 +566,6 @@
     "class_type": "LoadImage",
     "_meta": {
       "title": "IMAGE 3"
-    }
-  },
-  "1704": {
-    "inputs": {
-      "images": [
-        "1562",
-        0
-      ]
-    },
-    "class_type": "PreviewImage",
-    "_meta": {
-      "title": "Preview Image"
-    }
-  },
-  "1705": {
-    "inputs": {
-      "images": [
-        "1548",
-        0
-      ]
-    },
-    "class_type": "PreviewImage",
-    "_meta": {
-      "title": "Preview Image"
     }
   },
   "1815": {

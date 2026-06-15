@@ -7457,19 +7457,60 @@
                 }
             }
         }
+        window._locationSheetControllers = window._locationSheetControllers || {};
 
         async function generateLocationSheet(locId, abortSignal) {
+            const isBatch = !!abortSignal;
+            
+            if (!isBatch && window._locationSheetControllers[locId]) {
+                window._locationSheetControllers[locId].abort();
+                delete window._locationSheetControllers[locId];
+                
+                // Tell ComfyUI to interrupt generation
+                fetch('/api/comfyui/interrupt', { method: 'POST' }).catch(() => {});
+                
+                const genBtn = document.getElementById('ls-gen-' + locId);
+                if (genBtn) {
+                    genBtn.textContent = '🎨 Gen';
+                    genBtn.classList.remove('btn-danger');
+                    genBtn.classList.add('btn-primary');
+                }
+                const modalBtn = document.getElementById('asset-gen-btn');
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.textContent = '🎨 Generate';
+                    modalBtn.classList.remove('btn-danger');
+                    modalBtn.classList.add('btn-primary');
+                }
+                setAssetCardSpinner(locId, 'loc_sheet', false);
+                notify('Cancelled', 'Generation cancelled for ' + locId, '⚠️');
+                return;
+            }
+
             const modalBtn = document.getElementById('asset-gen-btn');
             const genBtn = document.getElementById('ls-gen-' + locId) || modalBtn;
             if (genBtn && genBtn.id !== 'asset-gen-btn' && genBtn.disabled) return;
             
             if (genBtn) {
-                genBtn.disabled = true;
-                genBtn.textContent = '⏳ Generating...';
+                if (isBatch) {
+                    genBtn.disabled = true;
+                    genBtn.textContent = '⏳ Generating...';
+                } else {
+                    genBtn.disabled = false;
+                    genBtn.textContent = '🛑 Cancel';
+                    genBtn.classList.remove('btn-primary');
+                    genBtn.classList.add('btn-danger');
+                }
             }
             if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
-                modalBtn.disabled = true;
-                modalBtn.textContent = '⏳ Generating...';
+                if (isBatch) {
+                    modalBtn.disabled = true;
+                    modalBtn.textContent = '⏳ Generating...';
+                } else {
+                    modalBtn.disabled = false;
+                    modalBtn.textContent = '🛑 Cancel';
+                    modalBtn.classList.remove('btn-primary');
+                    modalBtn.classList.add('btn-danger');
+                }
                 const spinner = document.getElementById('asset-expand-spinner');
                 if (spinner) {
                     spinner.style.display = 'flex';
@@ -7483,10 +7524,16 @@
             const approvedImg = assetInfo.approved_image || '';
             if (!approvedImg) {
                 notify('No Image', 'No approved location image found', '❌');
-                if (genBtn) { genBtn.disabled = false; genBtn.textContent = originalText; }
+                if (genBtn) { 
+                    genBtn.disabled = false; genBtn.textContent = originalText; 
+                    genBtn.classList.remove('btn-danger');
+                    genBtn.classList.add('btn-primary');
+                }
                 if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
                     modalBtn.disabled = false;
                     modalBtn.textContent = '🎨 Generate';
+                    modalBtn.classList.remove('btn-danger');
+                    modalBtn.classList.add('btn-primary');
                     const spinner = document.getElementById('asset-expand-spinner');
                     if (spinner) spinner.style.display = 'none';
                 }
@@ -7494,9 +7541,8 @@
             }
 
             if (!abortSignal) {
-                cancelSheetBatch();
                 const ac = new AbortController();
-                window._sheetBatchAbortController = ac;
+                window._locationSheetControllers[locId] = ac;
                 abortSignal = ac.signal;
             }
 
@@ -7656,10 +7702,18 @@
                 if (genBtn) {
                     genBtn.disabled = false;
                     genBtn.textContent = originalText;
+                    genBtn.classList.remove('btn-danger');
+                    genBtn.classList.add('btn-primary');
+                }
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.disabled = false;
+                    modalBtn.textContent = '🎨 Generate';
+                    modalBtn.classList.remove('btn-danger');
+                    modalBtn.classList.add('btn-primary');
                 }
                 const isBatch = window._sheetBatchActive;
-                if (!isBatch && window._sheetBatchAbortController && window._sheetBatchAbortController.signal === abortSignal) {
-                    window._sheetBatchAbortController = null;
+                if (!isBatch && window._locationSheetControllers && window._locationSheetControllers[locId]) {
+                    delete window._locationSheetControllers[locId];
                 }
             }
         }
@@ -7786,10 +7840,13 @@
             
             const bible = _assetStudioData.location_bible || [];
             const assets = _assetStudioData.location_assets || {};
+            const locSheets = _assetStudioData.location_sheets || {};
             const items = bible.filter(loc => {
                 const id = loc.location_id || loc.id || '';
                 const info = assets[id] || {};
-                return info.approved_image && info.approved;
+                const sheetInfo = locSheets[id] || {};
+                const hasSheet = !!sheetInfo.sheet_image;
+                return info.approved_image && info.approved && !hasSheet;
             });
 
             if (!items.length) {
@@ -10406,7 +10463,7 @@ Project visual language: ${projVL}`;
                 return;
             }
             navigateToWorkflow('storyboard');
-            if (!imagePromptData.length) setTimeout(() => generateImagePrompts(), 300);
+            if (!imagePromptData.length) setTimeout(() => generateStoryboardPromptsPhase(), 300);
         }
 
         function proceedToVideoPrompts() {

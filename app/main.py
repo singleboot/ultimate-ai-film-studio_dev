@@ -1218,6 +1218,13 @@ async def test_comfyui():
     """Test ComfyUI connection."""
     return comfyui_client.test_connection()
 
+@app.post("/api/comfyui/interrupt")
+async def interrupt_comfyui():
+    """Interrupt the current ComfyUI generation and clear the queue."""
+    comfyui_client.clear_queue()
+    success = comfyui_client.interrupt()
+    return {"success": success}
+
 @app.get("/api/comfyui/checkpoints")
 async def get_comfyui_checkpoints():
     """Get available checkpoints from ComfyUI."""
