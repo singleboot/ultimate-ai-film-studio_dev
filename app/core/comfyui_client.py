@@ -423,9 +423,7 @@ class ComfyUIClient:
                     slot_nodes.append(node_id)
             slot_nodes.sort(key=int)
             debug_log.append(f"Found {len(slot_nodes)} UAIImageSlot nodes: {slot_nodes}")
-            if input_images and len(input_images) == 1 and len(slot_nodes) > 1:
-                debug_log.append(f"Duplicating single input image across all {len(slot_nodes)} UAIImageSlot nodes")
-                input_images = input_images * len(slot_nodes)
+            # Removed duplication logic to prevent over-conditioning IPAdapter
             for idx, nid in enumerate(slot_nodes):
                 if input_images and idx < len(input_images):
                     img_path = input_images[idx]
@@ -465,9 +463,7 @@ class ComfyUIClient:
                         load_image_nodes.append(node_id)
                 load_image_nodes.sort(key=int)
                 debug_log.append(f"Found {len(load_image_nodes)} LoadImage nodes: {load_image_nodes}")
-                if input_images and len(input_images) == 1 and len(load_image_nodes) > 1:
-                    debug_log.append(f"Duplicating single input image across all {len(load_image_nodes)} LoadImage nodes")
-                    input_images = input_images * len(load_image_nodes)
+                # Removed duplication logic to prevent over-conditioning IPAdapter
                 for idx, nid in enumerate(load_image_nodes):
                     if idx < len(input_images):
                         img_path = input_images[idx]

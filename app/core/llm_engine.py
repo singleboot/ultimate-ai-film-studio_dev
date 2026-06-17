@@ -205,7 +205,8 @@ class LLMEngine:
         models = []
         for f in self._models_dir.iterdir():
             if f.suffix.lower() in (".gguf", ".gguf", ".bin"):
-                models.append(f.name)
+                if "mmproj" not in f.name.lower():
+                    models.append(f.name)
         return sorted(models)
 
     # === Model Management ===
@@ -634,10 +635,10 @@ class LLMEngine:
             if response.status_code == 200:
                 data = response.json()
                 return {"success": True, "response": data.get("choices", [{}])[0].get("message", {}).get("content", "")}
+            else:
+                return {"success": False, "error": f"LLM Error {response.status_code}: {response.text}"}
         except Exception as e:
             return {"success": False, "error": str(e)}
-        return {"success": False, "error": "Generation failed"}
-
     def _generate_openai(self, provider: Dict, model: str, prompt: str, system_prompt: str = None,
                          images: List[str] = None, api_key: str = None, **kwargs) -> Dict:
         key = api_key or self._get_api_key("openai", provider)
@@ -918,16 +919,44 @@ class LLMEngine:
             if not os.path.exists(full_path):
                 return {"success": False, "error": f"Model file not found: {model_path}. Please download it first from settings."}
             cmd.extend(["--model", full_path])
+            
+            # Auto-detect mmproj (Multimodal Projector) file for VLMs
+            # It will look for an mmproj file that matches the model name, or fallback to any mmproj file in the folder
+            mmproj_path = None
+            models_dir = Path(full_path).parent
+            
+            # First try to find an exact matching mmproj
+            model_stem = Path(full_path).stem.split("-")[0].lower() # e.g. "qwen3vl"
+            for f in models_dir.glob("*mmproj*.gguf"):
+                if model_stem in f.name.lower():
+                    mmproj_path = str(f)
+                    break
+                    
+            # Fallback to any mmproj if no exact match is found
+            if not mmproj_path:
+                for f in models_dir.glob("*mmproj*.gguf"):
+                    mmproj_path = str(f)
+                    break
+                    
+            if mmproj_path:
+                cmd.extend(["--mmproj", mmproj_path])
         # Append GPU layers for llama.cpp/app_llm
         gpu_layers = self._get_gpu_layers()
         if gpu_layers is not None and provider_id in ("llama_cpp", "app_llm"):
             cmd.extend(["--n-gpu-layers", str(gpu_layers)])
+            
+        # Add a large context size to handle multiple HD images
+        if provider_id in ("llama_cpp", "app_llm"):
+            cmd.extend(["-c", "32768"])
 
         try:
+            project_root = Path(__file__).parent.parent.parent
+            log_file = open(project_root / "llama_server.log", "w")
             proc = subprocess.Popen(
                 cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                cwd=str(project_root),
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
             self._subprocesses[provider_id] = proc

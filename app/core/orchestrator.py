@@ -2369,45 +2369,90 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
         valid_shots = []
         for s in shots_data:
             path = s.get("image_path", "")
-            if os.path.exists(path):
+            logger.info(f"Visual Consistency Engine checking image path: {path}")
+            
+            if path.startswith("ComfyUI/output/"):
+                try:
+                    import requests
+                    filename = path.split("/")[-1]
+                    host = "http://127.0.0.1:8188"
+                    try:
+                        from app.main import comfyui_client
+                        if comfyui_client and comfyui_client.host:
+                            host = comfyui_client.host
+                    except Exception:
+                        pass
+                    
+                    response = requests.get(f"{host}/view", params={"filename": filename}, timeout=10)
+                    if response.status_code == 200:
+                        base64_images.append(base64.b64encode(response.content).decode('utf-8'))
+                        valid_shots.append(s.get("shot_id"))
+                        continue
+                    else:
+                        logger.warning(f"Failed to fetch {filename} from ComfyUI: {response.status_code}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch from ComfyUI {path}: {e}")
+            elif os.path.exists(path):
                 try:
                     with open(path, "rb") as f:
                         base64_images.append(base64.b64encode(f.read()).decode('utf-8'))
                     valid_shots.append(s.get("shot_id"))
                 except Exception as e:
                     logger.warning(f"Failed to read image {path}: {e}")
+            else:
+                logger.warning(f"Image does not exist locally: {path}")
         
         if len(base64_images) == 0:
             return {"success": False, "error": "No valid images found for consistency check"}
 
         # Build Context
-        char_bible = "; ".join(f"{c.get('character_id')}: {c.get('physical_appearance', '')}" for c in self.memory.character_bible)
+        cb = self.memory.project_graph.get("character_bible", []) or self.memory.characters or []
+        char_bible = "; ".join(f"{c.get('character_id')}: {c.get('physical_appearance', '')}" for c in cb)
         
-        prompt = f"""You are an expert AI Art Director. Review these {len(valid_shots)} consecutive shots for Scene {scene_id}.
+        evaluations_total = []
+        chunk_size = 5
+        
+        for i in range(0, len(valid_shots), chunk_size):
+            chunk_shots = valid_shots[i:i+chunk_size]
+            chunk_images = base64_images[i:i+chunk_size]
+            
+            self.set_progress(50 + int((i/len(valid_shots))*40), f"Analyzing shots {i+1} to {i+len(chunk_shots)} with Vision LLM...")
+            
+            prompt = f"""You are an expert AI Art Director. Review these {len(chunk_shots)} consecutive shots for Scene {scene_id}.
 CHARACTER BIBLE REFERENCE:
 {char_bible}
 
 Do the characters, clothing, lighting, and style perfectly match across all frames? 
 Provide a JSON response with exactly one key "evaluations" containing an array of objects.
 Each object must have:
-- "shot_id": the shot id corresponding to the image (in order: {', '.join(valid_shots)})
+- "shot_id": the shot id corresponding to the image (in order: {', '.join(chunk_shots)})
 - "score": 1-10 integer
 - "passed": boolean (true if score >= 8, false otherwise)
 - "feedback": string detailing exactly what is inconsistent or "Perfect" if passed.
 """
-        system_suffix = "Output ONLY valid JSON."
-        self.set_progress(50, "Analyzing images with Vision LLM...")
+            system_suffix = "Output ONLY valid JSON."
+            
+            result = self._call_llm(prompt, system_suffix=system_suffix, json_output=True, images=chunk_images)
+            
+            if not result.get("success"):
+                logger.warning(f"VLM chunk check failed: {result.get('error')}")
+                continue
+                
+            data = result.get("data", {})
+            if isinstance(data, list):
+                evals = data
+            else:
+                evals = data.get("evaluations", [])
+            
+            if isinstance(evals, list):
+                evaluations_total.extend(evals)
         
-        result = self._call_llm(prompt, system_suffix=system_suffix, json_output=True, images=base64_images)
-        
-        if not result.get("success"):
-            self.set_progress(0, "Failed", result.get("error", "VLM check failed"))
-            return result
-        
-        evaluations = result.get("data", {}).get("evaluations", [])
-        
+        if not evaluations_total:
+            self.set_progress(0, "Failed", "VLM check failed for all chunks")
+            return {"success": False, "error": "VLM check failed to produce evaluations"}
+            
         self.set_progress(100, "Consistency check complete!")
-        return {"success": True, "evaluations": evaluations}
+        return {"success": True, "evaluations": evaluations_total}
 
     def evaluate_vision_consistency(self, anchor_b64: str, new_img_b64: str) -> Dict:
         """Evaluate if the new generated image matches the anchor image continuously."""
@@ -2437,6 +2482,9 @@ Provide a JSON response with the following keys:
             return result
             
         data = result.get("data", {})
+        if isinstance(data, list):
+            data = data[0] if len(data) > 0 else {}
+            
         return {
             "success": True,
             "consistent": data.get("consistent", False),

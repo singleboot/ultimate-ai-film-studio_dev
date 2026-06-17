@@ -1380,6 +1380,15 @@
                 <!-- Right: Metadata + Controls -->
                 <div style="width:360px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
                     <div id="storyboard-expand-metadata" style="font-size:0.85rem;line-height:1.6;"></div>
+                    <!-- 360 Background Angle UI -->
+                    <div style="font-size:0.75rem;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                            <strong style="color:var(--text-primary);">360 Background Angle</strong>
+                            <span id="storyboard-expand-pan-val" style="color:var(--accent-primary);font-weight:bold;">0°</span>
+                        </div>
+                        <input type="range" id="storyboard-expand-pan-slider" min="0" max="360" value="0" style="width:100%;" oninput="document.getElementById('storyboard-expand-pan-val').innerText = this.value + '°'">
+                        <button class="btn btn-secondary" onclick="extractShotBackground()" style="width:100%;margin-top:4px;font-size:0.7rem;padding:4px;" id="btn-extract-bg-modal">📸 Extract BG for Shot</button>
+                    </div>
                     <!-- CFG / Steps / Seed controls -->
                     <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--border-color);flex-wrap:wrap;">
                         <label style="font-size:0.65rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;">CFG:</label>
@@ -8387,9 +8396,17 @@
                 <b>Tone:</b> ${s.emotional_tone || '—'}<br>
                 <b>Image Status:</b> ${sh.storyboard_status || 'pending'}<br>
                 <b>Video Status:</b> ${sh.video_status || 'pending'}<br>
+                ${sh.scene_bg_image ? `<b>Extracted BG:</b> ${sh.scene_bg_image}<br>` : ''}
                 ${sh.storyboard_image ? `<b>Saved Image:</b> ${sh.storyboard_image}<br>` : ''}
                 ${sh.video_clip ? `<b>Saved Video:</b> ${sh.video_clip}` : ''}
             `;
+            
+            // Populate pan angle
+            const panEl = document.getElementById('storyboard-expand-pan-slider');
+            const panValEl = document.getElementById('storyboard-expand-pan-val');
+            const savedPan = sh.pan_angle || 0;
+            if (panEl) panEl.value = savedPan;
+            if (panValEl) panValEl.innerText = savedPan + '°';
 
             // Image + Video preview area (stacked)
             const imgArea = document.getElementById('storyboard-expand-image-area');
@@ -10491,25 +10508,25 @@ Project visual language: ${projVL}`;
             return defaultFolder + '/approved/' + basename + '.png';
         }
 
-        function getSavedInputImages() {
+        function getSavedInputImages(targetChars = null, targetLocation = null) {
             const paths = [];
-            locationData.filter(l => l.savedImage).forEach(l => {
+            locationData.filter(l => l.savedImage && (!targetLocation || l.name === targetLocation)).forEach(l => {
                 const path = cleanAssetPath(l.savedImage, 'locations');
                 if (path) paths.push(path);
             });
-            charData.filter(c => c.savedImage).forEach(c => {
+            charData.filter(c => c.savedImage && (!targetChars || targetChars.includes(c.name))).forEach(c => {
                 const path = cleanAssetPath(c.savedImage, 'characters');
                 if (path) paths.push(path);
             });
             // Add approved character/location sheet images for I2I reference
             if (_assetStudioData && _assetStudioData.character_sheets) {
                 Object.entries(_assetStudioData.character_sheets).forEach(([id, s]) => {
-                    if (s.approved && s.sheet_image) paths.push(s.sheet_image);
+                    if (s.approved && s.sheet_image && (!targetChars || targetChars.includes(s.name || id))) paths.push(s.sheet_image);
                 });
             }
             if (_assetStudioData && _assetStudioData.location_sheets) {
                 Object.entries(_assetStudioData.location_sheets).forEach(([id, s]) => {
-                    if (s.approved && s.sheet_image) paths.push(s.sheet_image);
+                    if (s.approved && s.sheet_image && (!targetLocation || (s.name || id) === targetLocation)) paths.push(s.sheet_image);
                 });
             }
             return paths;
@@ -10699,14 +10716,7 @@ Project visual language: ${projVL}`;
                         <div style="font-size:0.75rem;color:var(--text-secondary);font-style:italic;line-height:1.4;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);flex:1;min-height:50px;overflow-y:auto;">
                             ${escapeHtml(s.synopsis || 'No synopsis.')}
                         </div>
-                        <div style="font-size:0.75rem;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);">
-                            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                                <strong style="color:var(--text-primary);">360 Background Angle</strong>
-                                <span id="scene-pan-val-${sceneIdx}" style="color:var(--accent-primary);font-weight:bold;">0°</span>
-                            </div>
-                            <input type="range" id="scene-pan-slider-${sceneIdx}" min="0" max="360" value="0" style="width:100%;" oninput="document.getElementById('scene-pan-val-${sceneIdx}').innerText = this.value + '°'">
-                            <button class="btn btn-secondary" onclick="event.stopPropagation();extractSceneBackground(${sceneIdx})" style="width:100%;margin-top:4px;font-size:0.7rem;padding:4px;" id="btn-extract-bg-${sceneIdx}">📸 Extract BG</button>
-                        </div>
+
                         ${s.shots && s.shots.length > 0 ? `<div style="display:flex;gap:3px;flex-wrap:wrap;">
                             <button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;" title="Generate images">🎨 Gen Img</button>
                             ${(() => {
@@ -10811,6 +10821,7 @@ Project visual language: ${projVL}`;
                                 ${previewContent}
                                 ${hasVideo ? `<span style="position:absolute;top:4px;left:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:var(--accent-primary);z-index:2;">🎬 VIDEO</span>` : (hasImage ? `<span style="position:absolute;top:4px;left:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:#34495e;z-index:2;">🖼️ IMAGE</span>` : '')}
                                 <span id="shot-res-badge-${sceneIdx}-${shotIdx}" style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${hasImage ? ((sh._temp_upscaled_file||savedImg||tempImg||'').includes('_4k_') ? '#e74c3c' : '#222') : 'transparent'};z-index:2;">${hasImage ? getResolutionLabel(sh._temp_upscaled_file||savedImg||tempImg) : ''}</span>
+                                ${sh.consistency_eval ? `<div class="consistency-badge" style="position:absolute;top:5px;right:5px;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:bold;z-index:10;background:${sh.consistency_eval.passed ? 'rgba(0,180,0,0.8)' : 'rgba(220,0,0,0.8)'};color:white;cursor:help;" title="${escapeHtml(sh.consistency_eval.feedback)}">${sh.consistency_eval.score}/10 ${sh.consistency_eval.passed ? '✅' : '❌'}</div>` : ''}
                             </div>
                             <!-- Compact button row -->
                             <div style="display:flex;gap:2px;padding:3px 0;flex-wrap:wrap;">
@@ -10902,7 +10913,9 @@ Project visual language: ${projVL}`;
         function showShotSpinner(sceneIdx, shotIdx, label) {
             const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
             if (!preview) return;
+            const badge = preview.querySelector('.consistency-badge');
             preview.innerHTML = `<div class="t2i-spinner"><div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">${label || 'Generating...'}</div></div>`;
+            if (badge) preview.appendChild(badge);
         }
 
         function hideShotSpinner(sceneIdx, shotIdx) {
@@ -11122,7 +11135,6 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const s = screenplayData.scenes[sceneIdx];
             const sh = s.shots[shotIdx];
             const btn = document.getElementById(`shot-t2i-btn-${sceneIdx}-${shotIdx}`);
-            if (!btn) return;
 
             let enrichedPrompt = sh.storyboard_prompt || sh.image_prompt || '';
             if (!enrichedPrompt) {
@@ -11137,7 +11149,6 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 enrichedPrompt = `${shotType} shot. ${action}. Mood: ${emotion}. Camera: ${camera}. Lighting: ${lighting}. ${motifs ? 'Motifs: ' + motifs + '.' : ''} Detailed cinematic frame.`;
             }
             
-            // Character/Location visual references
             const shotChars = sh.characters_present || s.characters_present || [];
             const savedChars = charData.filter(c => c.savedImage && shotChars.includes(c.name)).map(c => {
                 let clean = c.savedImage;
@@ -11160,12 +11171,14 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 enrichedPrompt += `\n\nCharacter reference images provided: ${savedChars.map(c => `"${c.savedImage}.png" (${c.name}: ${c.description})`).join(', ')}. The character should match the appearance shown in these reference images.`;
             }
 
-            btn.disabled = true;
-            btn.textContent = '⏳...';
-            const abortBtn = document.getElementById(`shot-abort-btn-${sceneIdx}-${shotIdx}`);
-            if (abortBtn) {
-                btn.style.display = 'none';
-                abortBtn.style.display = 'inline-block';
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳...';
+                const abortBtn = document.getElementById(`shot-abort-btn-${sceneIdx}-${shotIdx}`);
+                if (abortBtn) {
+                    btn.style.display = 'none';
+                    abortBtn.style.display = 'inline-block';
+                }
             }
             showShotSpinner(sceneIdx, shotIdx);
             
@@ -11177,34 +11190,24 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             updateStoryboardProgressUI();
 
             const seed = Math.floor(Math.random() * 999999999) + 1;
-            let inputImages = getSavedInputImages();
+            let inputImages = getSavedInputImages(shotChars, s.location_id);
             
-            // If the scene has an extracted 360 background, use it instead of the raw location sheet
-            if (s.scene_bg_image) {
+            const extractedBg = sh.scene_bg_image || s.scene_bg_image;
+            if (extractedBg) {
                 // Filter out any location sheets since we have a specific background
                 inputImages = inputImages.filter(img => !img.includes('location_sheets'));
-                inputImages.unshift(s.scene_bg_image);
+                inputImages.unshift(extractedBg);
+            }
+            
+            // Add golden reference from vision evaluation if present
+            if (sh.golden_reference) {
+                // Golden reference takes top priority for composition
+                inputImages.unshift(sh.golden_reference);
             }
             
             // Inject previous shot's image (either approved or temporary) as the first input image for continuity
-            if (shotIdx > 0) {
-                const prevSh = s.shots[shotIdx - 1];
-                const prevImg = prevSh.storyboard_image || prevSh._temp_storyboard_image;
-                if (prevImg) {
-                    // Prepend for high priority reference
-                    inputImages.unshift(prevImg);
-                }
-            } else if (sceneIdx > 0) {
-                // If first shot of scene, look at the last shot of the previous scene
-                const prevScene = screenplayData.scenes[sceneIdx - 1];
-                if (prevScene && prevScene.shots && prevScene.shots.length > 0) {
-                    const lastShot = prevScene.shots[prevScene.shots.length - 1];
-                    const prevImg = lastShot.storyboard_image || lastShot._temp_storyboard_image;
-                    if (prevImg) {
-                        inputImages.unshift(prevImg);
-                    }
-                }
-            }
+            // REMOVED: Injecting the previous shot breaks the composition and ignores the prompt.
+            // The system will now rely entirely on Character/Location sheets + Vision LLM auto-correction.
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
             const imgResEl = document.getElementById('sel-img-resolution');
             const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
@@ -11260,6 +11263,9 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     if (!sh.storyboard_history.includes(tempFilename)) {
                         sh.storyboard_history.push(tempFilename);
                     }
+                    // Clear the consistency evaluation since it's a brand new image
+                    sh.consistency_eval = null;
+                    
                     updateShotPreview(sceneIdx, shotIdx);
                     scheduleSaveState();
                     const imgEl = document.getElementById(`shot-preview-img-${sceneIdx}-${shotIdx}`);
@@ -11488,14 +11494,19 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             renderStoryboard();
         }
 
-        async function extractSceneBackground(sceneIdx) {
+        async function extractShotBackground() {
+            if (window._currentSbSceneIdx === undefined || window._currentSbShotIdx === undefined) return notify('Error', 'No shot selected.', '❌');
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
             const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
             if (!s || !s.location_id) return notify('Error', 'No location_id found for scene.', '❌');
-            const btn = document.getElementById(`btn-extract-bg-${sceneIdx}`);
+            const btn = document.getElementById('btn-extract-bg-modal');
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Extracting...'; }
             
-            const panEl = document.getElementById(`scene-pan-slider-${sceneIdx}`);
+            const panEl = document.getElementById('storyboard-expand-pan-slider');
             const panAngle = panEl ? parseInt(panEl.value) : 0;
+            sh.pan_angle = panAngle; // save to shot
             
             try {
                 notify('Extracting BG', `Cropping 360 panorama at ${panAngle}°...`, '📸');
@@ -11511,13 +11522,8 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 const data = await res.json();
                 if (data.success && (data.filename || data.image_url)) {
                     notify('Extracted', 'Background successfully extracted!', '✅');
-                    // We need to save this image as the scene background.
-                    // For now, we will associate it with the scene in screenplayData.
-                    s._temp_bg_image = data.filename || data.image_url;
-                    
-                    // Actually, let's persist it to the server so it's not lost on refresh.
-                    // Assuming we have an endpoint or we just save the project graph.
-                    s.scene_bg_image = data.filename || data.image_url;
+                    sh._temp_bg_image = data.filename || data.image_url;
+                    sh.scene_bg_image = data.filename || data.image_url;
                     await fetch('/api/projects/save-graph', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
@@ -11527,6 +11533,8 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         })
                     });
                     
+                    // re-render metadata to show extracted bg
+                    expandStoryboardShot(sceneIdx, shotIdx);
                     renderStoryboard();
                 } else {
                     notify('Error', data.error || 'Failed to extract background', '❌');
@@ -11534,7 +11542,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             } catch (e) {
                 notify('Error', 'Failed to extract background: ' + e, '❌');
             }
-            if (btn) { btn.disabled = false; btn.textContent = '📸 Extract BG'; }
+            if (btn) { btn.disabled = false; btn.textContent = '📸 Extract BG for Shot'; }
         }
 
         async function generateSceneImages(sceneIdx) {
@@ -11580,6 +11588,12 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             btn.disabled = false;
             btn.textContent = '🎨';
+            
+            // Perform automated scene consistency check after the scene finishes
+            if (!signal.aborted) {
+                if (pb) document.getElementById('sb-progress-title').textContent = `Verifying Scene Consistency...`;
+                await verifySceneConsistency(sceneIdx);
+            }
             
             if (pb) {
                 document.getElementById('sb-progress-bar').style.width = '100%';
@@ -13389,20 +13403,23 @@ Raw JSON only, no markdown.`;
             if (!screenplayData || !screenplayData.scenes) {
                 notify('No Screenplay', 'Please generate screenplay first.'); return;
             }
-            const pending = [];
+            const pendingByScene = {};
+            let totalPending = 0;
             for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
                 const s = screenplayData.scenes[sIdx];
                 if (!s.shots) continue;
                 for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
                     const sh = s.shots[shIdx];
                     if (!sh.storyboard_image && !sh._temp_storyboard_image) {
-                        pending.push({ sIdx, shIdx });
+                        if (!pendingByScene[sIdx]) pendingByScene[sIdx] = [];
+                        pendingByScene[sIdx].push(shIdx);
+                        totalPending++;
                     }
                 }
             }
-            if (!pending.length) return;
+            if (totalPending === 0) return;
             
-            window._sbBatchTotal = pending.length;
+            window._sbBatchTotal = totalPending;
             window._sbBatchCompleted = 0;
             
             const pb = document.getElementById('storyboard-progress');
@@ -13413,27 +13430,38 @@ Raw JSON only, no markdown.`;
             showAbortButton();
             
             let imagesGeneratedInThisBatch = 0;
-            for (const item of pending) {
+            const sceneIndices = Object.keys(pendingByScene).map(Number).sort((a,b)=>a-b);
+            
+            for (const sIdx of sceneIndices) {
                 if (signal.aborted) break;
-                await generateShotImage(item.sIdx, item.shIdx, signal);
-                window._sbBatchCompleted++;
                 
-                imagesGeneratedInThisBatch++;
-                if (imagesGeneratedInThisBatch >= 6) {
-                    console.log("[VRAM Flush] Automatic batch threshold reached. Flushing system caches...");
-                    try {
-                        await fetch('/api/system/clear-cache', { method: 'POST' });
-                    } catch (e) {
-                        console.error("VRAM Flush failed", e);
+                const shots = pendingByScene[sIdx];
+                for (const shIdx of shots) {
+                    if (signal.aborted) break;
+                    await generateShotImage(sIdx, shIdx, signal);
+                    window._sbBatchCompleted++;
+                    
+                    imagesGeneratedInThisBatch++;
+                    if (imagesGeneratedInThisBatch >= 6) {
+                        console.log("[VRAM Flush] Automatic batch threshold reached. Flushing system caches...");
+                        try {
+                            await fetch('/api/system/clear-cache', { method: 'POST' });
+                        } catch (e) {}
+                        imagesGeneratedInThisBatch = 0;
                     }
-                    imagesGeneratedInThisBatch = 0;
                 }
+                
+                if (signal.aborted) break;
+                
+                // Perform automated scene consistency check after the scene finishes
+                document.getElementById('sb-progress-title').textContent = `Verifying Scene ${sIdx + 1} Consistency...`;
+                await verifySceneConsistency(sIdx, signal);
             }
             
             if (pb) {
                 document.getElementById('sb-progress-bar').style.width = '100%';
                 document.getElementById('sb-progress-pct').textContent = '100%';
-                document.getElementById('sb-progress-title').textContent = '✅ All images generated!';
+                document.getElementById('sb-progress-title').textContent = '✅ All images generated & verified!';
                 setTimeout(() => { pb.style.display = 'none'; }, 1500);
             }
             window._sceneAbortController = null;
@@ -15553,45 +15581,57 @@ Output all prompts in one block, separated by blank lines.`;
                 xhr.setRequestHeader('Content-Type', 'application/json');
                 xhr.send(JSON.stringify({ state, project_path: currentProject.path }));
             } catch(e) {}
-        });        async function verifySceneConsistency(sceneIdx) {
+        });
+
+        async function verifySceneConsistency(sceneIdx, signal = null) {
+            const btn = document.getElementById(`scene-verify-btn-${sceneIdx}`);
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳ Verifying Continuity...';
+            }
+
             const scene = screenplayData.scenes[sceneIdx];
-            if (!scene || !scene.shots || scene.shots.length === 0) return;
-
-            const sceneId = scene.scene_id || ('#' + (scene.scene_number || (sceneIdx + 1)));
-            const validShots = scene.shots.filter(sh => sh._temp_storyboard_image || sh.storyboard_image);
-
-            if (validShots.length === 0) {
-                notify('No Images', 'No generated images found in this scene to verify.', '⚠️');
+            const sceneId = scene.scene_id || scene.scene_number;
+            
+            const validShots = (scene.shots || []).filter(sh => sh._temp_storyboard_image || sh.storyboard_image);
+            if (!validShots.length) {
+                notify('No Images', `Scene ${sceneId} has no generated images to verify.`, '⚠️');
+                if (btn) { btn.disabled = false; btn.textContent = '👁️ Vrfy Scene'; }
                 return;
             }
 
             const payload = {
                 scene_id: sceneId,
-                shots: validShots.map(sh => ({
-                    shot_id: sh.shot_id,
-                    image_path: currentProject.path + '/.system/' + (sh._temp_storyboard_image || sh.storyboard_image)
-                }))
+                shots: validShots.map(sh => {
+                    // Prefer the officially saved image over the temp image
+                    const img = sh.storyboard_image || sh._temp_storyboard_image;
+                    let path = img;
+                    if (img && !img.includes('/')) {
+                        path = `ComfyUI/output/${img}`;
+                    } else if (img) {
+                        // The image is saved as 'scenes/filename.png', so it's directly in the project path
+                        path = `${currentProject.path}/${img}`;
+                    }
+                    return {
+                        shot_id: sh.shot_id,
+                        image_path: path
+                    };
+                })
             };
 
-            const btn = document.getElementById(`scene-verify-btn-${sceneIdx}`);
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = '⏳ Verifying...';
-            }
-
-            notify('Checking Consistency', `Running Vision LLM check for ${sceneId}...`, '👁️');
+            notify('Checking Visual Consistency', `The Vision AI is now reviewing all ${validShots.length} generated images for Scene ${sceneId}. \n\nIt is actively checking: \n- Character face/body consistency\n- Outfit matching\n- Lighting & Environment continuity\n\nThis may take 1-3 minutes depending on your model!`, '👁️', 0);
             
             try {
                 const res = await fetch('/api/orchestrator/verify-scene-consistency', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: signal
                 });
                 const data = await res.json();
                 
                 if (data.success && data.evaluations) {
                     let passedCount = 0;
-                    const projPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
                     
                     // Sort evaluations by score descending to find golden reference
                     const sortedEvals = [...data.evaluations].sort((a,b) => b.score - a.score);
@@ -15599,13 +15639,18 @@ Output all prompts in one block, separated by blank lines.`;
                     const goldenRefShot = validShots.find(sh => sh.shot_id === goldenRefShotId);
                     const goldenRefPath = goldenRefShot ? (currentProject.path + '/.system/' + (goldenRefShot._temp_storyboard_image || goldenRefShot.storyboard_image)) : '';
                     
-                    data.evaluations.forEach(ev => {
+                    for (const ev of data.evaluations) {
+                        if (signal && signal.aborted) break;
+                        
                         const shIdx = scene.shots.findIndex(sh => sh.shot_id === ev.shot_id);
                         if (shIdx !== -1) {
-                            const container = document.getElementById(`storyboard-img-${sceneIdx}-${shIdx}`);
+                            scene.shots[shIdx].consistency_eval = ev;
+                            
+                            const container = document.getElementById(`shot-preview-${sceneIdx}-${shIdx}`);
                             if (container) {
                                 // Add visual feedback badge
                                 const badge = document.createElement('div');
+                                badge.className = 'consistency-badge';
                                 badge.style.cssText = `position:absolute;top:5px;right:5px;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:bold;z-index:10;background:${ev.passed ? 'rgba(0,180,0,0.8)' : 'rgba(220,0,0,0.8)'};color:white;cursor:help;`;
                                 badge.textContent = `${ev.score}/10 ${ev.passed ? '✅' : '❌'}`;
                                 badge.title = ev.feedback;
@@ -15615,33 +15660,23 @@ Output all prompts in one block, separated by blank lines.`;
                             if (ev.passed) {
                                 passedCount++;
                             } else {
-                                // Automatically queue regeneration for failed shots if a golden reference exists
+                                // Automatically append critical fix feedback to the prompt
+                                const currentPrompt = scene.shots[shIdx].storyboard_prompt || '';
+                                if (!currentPrompt.includes('CRITICAL FIX:')) {
+                                    scene.shots[shIdx].storyboard_prompt = currentPrompt + ' CRITICAL FIX: ' + ev.feedback;
+                                }
+                                // Assign the golden reference if one exists
                                 if (goldenRefPath && ev.shot_id !== goldenRefShotId) {
-                                    notify('Regenerating Shot', `Shot ${ev.shot_id} failed consistency check. Regenerating...`, '🔄');
-                                    fetch('/api/orchestrator/regenerate-shot-with-reference', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({
-                                            shot_id: ev.shot_id,
-                                            reference_image_path: goldenRefPath,
-                                            feedback: ev.feedback
-                                        })
-                                    }).then(regRes => regRes.json()).then(regData => {
-                                        if(regData.success) {
-                                            // Trigger image generation with the new prompt
-                                            // The backend updated the prompt in memory, we just need to re-generate it
-                                            generateStoryboardImages(sceneIdx, shIdx);
-                                        }
-                                    });
+                                    scene.shots[shIdx].golden_reference = goldenRefPath;
                                 }
                             }
                         }
-                    });
+                    }
                     
                     if (passedCount === validShots.length) {
                         notify('Perfect Consistency', `All ${validShots.length} shots passed the consistency check!`, '🏆');
                     } else {
-                        notify('Consistency Issues Found', `${validShots.length - passedCount} shots failed verification. Auto-regeneration started.`, '⚠️');
+                        notify('Consistency Issues Found', `${validShots.length - passedCount} shots failed verification. Please review the badges manually.`, '⚠️');
                     }
                 } else {
                     notify('Verification Failed', data.error || 'Failed to verify scene.', '❌');
