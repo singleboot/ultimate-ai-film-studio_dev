@@ -401,6 +401,13 @@
         .asset-tab {
             min-height: 200px;
         }
+        /* drag-to-reorder indicators for the storyboard timeline */
+        .sb-dragging { opacity: 0.45; transform: scale(0.97); }
+        .sb-drop-before { box-shadow: -3px 0 0 0 var(--accent-primary); }
+        .sb-drop-after { box-shadow: 3px 0 0 0 var(--accent-primary); }
+        [data-tl-shot] { user-select: none; }
+        [data-tl-shot] img, [data-tl-shot] video { -webkit-user-drag: none; }
+
         .storyboard-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -11763,6 +11770,181 @@ Project visual language: ${projVL}`;
             renderStoryboard();
         }
 
+        // ================= Duration-based storyboard timeline (NLE-style) =================
+        let sbTlDurationCache = {};   // sceneIdx_shotIdx -> seconds (real video duration once probed)
+        let sbTlPlayheadSec = 0;
+        let sbTlProbing = {};
+        let sbTlProbeRenderTimer = null;
+        let sbTlCacheProject = null;
+
+        function sbTlFmtTime(sec) {
+            sec = Math.max(0, sec || 0);
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            const c = Math.floor((sec - Math.floor(sec)) * 100);
+            return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + '.' + String(c).padStart(2, '0');
+        }
+
+        function sbTlShotDuration(sh, key) {
+            if (sbTlDurationCache[key] !== undefined) return sbTlDurationCache[key];
+            return 4;
+        }
+
+        function sbTlSceneDuration(scene, sceneIdx) {
+            if (!scene.shots || !scene.shots.length) return 0;
+            return scene.shots.reduce((sum, sh, i) => sum + sbTlShotDuration(sh, sceneIdx + '_' + i), 0);
+        }
+
+        function sbTlGetPxPerSec() {
+            try { return Math.max(20, Math.min(200, parseInt(localStorage.getItem('storyboardTimelinePxPerSec')) || 60)); }
+            catch(e) { return 60; }
+        }
+
+        function sbTlProbeVideoDurations(entries) {
+            for (const ent of entries) {
+                if (sbTlDurationCache[ent.key] !== undefined || sbTlProbing[ent.key]) continue;
+                sbTlProbing[ent.key] = true;
+                const v = document.createElement('video');
+                v.preload = 'metadata';
+                v.muted = true;
+                v.onloadedmetadata = () => {
+                    const d = Math.min(Math.max(v.duration || 4, 0.5), 120);
+                    sbTlDurationCache[ent.key] = d;
+                    delete sbTlProbing[ent.key];
+                    // Debounced re-render: batch bursts of metadata so scrolling/panning isn't interrupted
+                    clearTimeout(sbTlProbeRenderTimer);
+                    sbTlProbeRenderTimer = setTimeout(() => {
+                        if (getStoryboardViewMode() === 'timeline') {
+                            const cont = document.getElementById('storyboard-container');
+                            if (cont && document.getElementById('sb-timeline-root')) renderStoryboardTimeline(cont);
+                        }
+                    }, 500);
+                };
+                v.onerror = () => { sbTlDurationCache[ent.key] = 4; delete sbTlProbing[ent.key]; };
+                v.src = ent.url;
+            }
+        }
+
+        function sbTlBuildRuler(totalSec, pps) {
+            const candidates = [0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60];
+            let step = 60;
+            for (const c of candidates) { if (c * pps >= 80) { step = c; break; } }
+            const minorStep = step / 5;
+            let html = `<div id="sb-tl-ruler" style="position:relative;height:26px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color);width:${Math.max(totalSec * pps + 40, 100)}px;cursor:ew-resize;flex-shrink:0;">`;
+            let mi = 0;
+            for (let t = 0; t <= totalSec + 0.0001; t += minorStep) {
+                const isMajor = (mi % 5) === 0;
+                const x = t * pps;
+                html += `<div style="position:absolute;left:${x.toFixed(1)}px;top:${isMajor ? 0 : 14}px;width:1px;height:${isMajor ? 12 : 6}px;background:var(--text-secondary);opacity:${isMajor ? 0.9 : 0.4};"></div>`;
+                if (isMajor) html += `<div style="position:absolute;left:${(x + 3).toFixed(1)}px;top:1px;font-size:0.6rem;color:var(--text-secondary);white-space:nowrap;">${sbTlFmtTime(t)}</div>`;
+                mi++;
+            }
+            html += `</div>`;
+            return html;
+        }
+
+        function sbTlUpdatePlayhead() {
+            const root = document.getElementById('sb-timeline-root');
+            if (!root) return;
+            const pps = sbTlGetPxPerSec();
+            const line = document.getElementById('sb-tl-playhead');
+            if (line) line.style.left = (sbTlPlayheadSec * pps) + 'px';
+            const total = parseFloat(root.dataset.totalSec || '0');
+            const readout = document.getElementById('sb-tl-time');
+            if (readout) readout.textContent = sbTlFmtTime(sbTlPlayheadSec) + ' / ' + sbTlFmtTime(total);
+        }
+
+        function sbTlAttachInteractions(root, totalSec) {
+            const pps = () => sbTlGetPxPerSec();
+            // Playhead scrub on the ruler (pointer-capture, works outside the window too)
+            const ruler = document.getElementById('sb-tl-ruler');
+            if (ruler && !ruler.dataset.scrubBound) {
+                ruler.dataset.scrubBound = '1';
+                ruler.addEventListener('pointerdown', (ev) => {
+                    ev.preventDefault();
+                    try { ruler.setPointerCapture(ev.pointerId); } catch(e) {}
+                    const seek = (clientX) => {
+                        const rect = root.getBoundingClientRect();
+                        const x = clientX - rect.left + root.scrollLeft;
+                        sbTlPlayheadSec = Math.max(0, Math.min(totalSec, x / pps()));
+                        sbTlUpdatePlayhead();
+                    };
+                    seek(ev.clientX);
+                    const move = (e2) => seek(e2.clientX);
+                    const up = () => {
+                        ruler.removeEventListener('pointermove', move);
+                        ruler.removeEventListener('pointerup', up);
+                        ruler.removeEventListener('pointercancel', up);
+                    };
+                    ruler.addEventListener('pointermove', move);
+                    ruler.addEventListener('pointerup', up);
+                    ruler.addEventListener('pointercancel', up);
+                });
+            }
+            // Grab-to-pan on empty space (tracks, gaps, container)
+            let pan = null;
+            root.addEventListener('mousedown', (ev) => {
+                if (ev.button !== 0) return;
+                if (ev.target.closest('[data-tl-shot],button,input,select,#sb-tl-ruler,#sb-tl-playhead')) return;
+                pan = { x: ev.clientX, sl: root.scrollLeft };
+                root.style.cursor = 'grabbing';
+                ev.preventDefault();
+            });
+            window.addEventListener('mousemove', (ev) => {
+                if (pan) root.scrollLeft = pan.sl - (ev.clientX - pan.x);
+            });
+            window.addEventListener('mouseup', () => { if (pan) { pan = null; root.style.cursor = ''; } });
+            // Wheel: horizontal pan (NLE-style), Shift+wheel = fine/vertical-free
+            root.addEventListener('wheel', (ev) => {
+                ev.preventDefault();
+                root.scrollLeft += (Math.abs(ev.deltaY) > Math.abs(ev.deltaX) ? ev.deltaY : ev.deltaX);
+            }, { passive: false });
+            // Keyboard nav + Alt+Arrow reorder
+            root.addEventListener('keydown', (ev) => {
+                const cards = [...root.querySelectorAll('[data-tl-shot]')];
+                if (!cards.length) return;
+                const cur = document.activeElement && document.activeElement.closest ? document.activeElement.closest('[data-tl-shot]') : null;
+                if ((ev.altKey || ev.metaKey) && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && cur) {
+                    ev.preventDefault();
+                    const key = cur.dataset.tlShot;
+                    const parts = key.split('_').map(Number);
+                    const scene = screenplayData && screenplayData.scenes ? screenplayData.scenes[parts[0]] : null;
+                    if (scene && scene.shots) {
+                        const dst = parts[1] + (ev.key === 'ArrowRight' ? 1 : -1);
+                        if (dst >= 0 && dst < scene.shots.length && moveStoryboardShot(key, parts[0] + '_' + dst, ev.key === 'ArrowRight')) {
+                            renderStoryboard();
+                            persistShotOrder();
+                            const nc = document.querySelector(`[data-tl-shot="${parts[0]}_${dst}"]`);
+                            if (nc) { nc.focus(); nc.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); }
+                        }
+                    }
+                    return;
+                }
+                let next = null;
+                if (ev.key === 'ArrowRight') next = cur ? cards[Math.min(cards.indexOf(cur) + 1, cards.length - 1)] : cards[0];
+                else if (ev.key === 'ArrowLeft') next = cur ? cards[Math.max(cards.indexOf(cur) - 1, 0)] : cards[0];
+                else if (ev.key === 'Enter' && cur) { expandStoryboardShot(...cur.dataset.tlShot.split('_').map(Number)); ev.preventDefault(); return; }
+                if (next) { next.focus(); next.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); ev.preventDefault(); }
+            });
+        }
+
+        function storyboardTimelineScrollScene(dir) {
+            const root = document.getElementById('sb-timeline-root');
+            if (!root) return;
+            const scenes = [...root.querySelectorAll('[data-tl-scene]')];
+            if (!scenes.length) return;
+            const cur = root.scrollLeft;
+            let target;
+            if (dir > 0) {
+                const nxt = scenes.find(el => el.offsetLeft > cur + 8);
+                target = nxt ? nxt.offsetLeft - 12 : root.scrollWidth;
+            } else {
+                const prev = [...scenes].reverse().find(el => el.offsetLeft < cur - 8);
+                target = prev ? prev.offsetLeft - 12 : 0;
+            }
+            root.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+        }
+
         function updateStoryboardViewToggle() {
             const t = document.getElementById('sb-view-timeline-btn');
             const c = document.getElementById('sb-view-cards-btn');
@@ -11772,149 +11954,224 @@ Project visual language: ${projVL}`;
             c.className = mode === 'cards' ? 'btn btn-primary' : 'btn btn-secondary';
         }
 
-        function storyboardTimelineScrollScene(dir) {
-            const wrap = document.getElementById('sb-timeline-scenes');
-            if (!wrap) return;
-            const cur = wrap.scrollLeft;
-            const scenes = [...wrap.querySelectorAll('[data-tl-scene]')];
-            if (!scenes.length) return;
-            let target = cur + dir * 40;
-            if (dir > 0) {
-                const nxt = scenes.find(el => el.offsetLeft > cur + 4);
-                target = nxt ? nxt.offsetLeft - 12 : wrap.scrollWidth;
-            } else {
-                const prev = [...scenes].reverse().find(el => el.offsetLeft < cur - 4);
-                target = prev ? prev.offsetLeft - 12 : 0;
+        function renumberStoryboardSceneIds(scene) {
+            if (!scene || !scene.shots) return;
+            const sid = scene.scene_id || (scene.scene_number ? 'SC_' + String(scene.scene_number).padStart(3, '0') : null);
+            if (!sid) return;
+            scene.shots.forEach((sh, i) => { sh.shot_id = `SHOT_${sid}_${String(i + 1).padStart(3, '0')}`; });
+        }
+
+        function persistShotOrder() {
+            scheduleSaveState();
+            try {
+                fetch('/api/orchestrator/sync-shots', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ screenplay: screenplayData })
+                }).catch(() => {});
+            } catch(e) {}
+        }
+
+        function moveStoryboardShot(srcKey, dstKey, insertAfter) {
+            if (!screenplayData || !screenplayData.scenes) return false;
+            const [sScene, sShot] = srcKey.split('_').map(Number);
+            const [dScene, dShot] = dstKey.split('_').map(Number);
+            if (sScene === dScene && sShot === dShot) return false;
+            const srcScene = screenplayData.scenes[sScene];
+            const dstScene = screenplayData.scenes[dScene];
+            if (!srcScene || !dstScene || !srcScene.shots || !dstScene.shots) return false;
+            const moved = srcScene.shots.splice(sShot, 1)[0];
+            if (!moved) return false;
+            let idx = dShot;
+            if (sScene === dScene && sShot < dShot) idx -= 1;
+            if (insertAfter) idx += 1;
+            idx = Math.max(0, Math.min(idx, dstScene.shots.length));
+            dstScene.shots.splice(idx, 0, moved);
+            renumberStoryboardSceneIds(srcScene);
+            if (dstScene !== srcScene) renumberStoryboardSceneIds(dstScene);
+            return true;
+        }
+
+        function storyboardShotDragStart(ev, key) {
+            ev.stopPropagation();
+            ev.dataTransfer.setData('text/plain', key);
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.currentTarget.classList.add('sb-dragging');
+        }
+
+        function storyboardShotDragOver(ev, el) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            ev.dataTransfer.dropEffect = 'move';
+            const r = el.getBoundingClientRect();
+            el.classList.toggle('sb-drop-before', ev.clientX < r.left + r.width / 2);
+            el.classList.toggle('sb-drop-after', ev.clientX >= r.left + r.width / 2);
+        }
+
+        function storyboardShotDragLeave(ev, el) {
+            el.classList.remove('sb-drop-before', 'sb-drop-after');
+        }
+
+        function storyboardShotDrop(ev, el, key) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            el.classList.remove('sb-drop-before', 'sb-drop-after');
+            const src = ev.dataTransfer.getData('text/plain');
+            if (!src || src === key) return;
+            const r = el.getBoundingClientRect();
+            const after = ev.clientX >= r.left + r.width / 2;
+            if (moveStoryboardShot(src, key, after)) {
+                renderStoryboard();
+                persistShotOrder();
             }
-            wrap.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+        }
+
+        function storyboardShotDragEnd() {
+            document.querySelectorAll('.sb-dragging, .sb-drop-before, .sb-drop-after')
+                .forEach(el => el.classList.remove('sb-dragging', 'sb-drop-before', 'sb-drop-after'));
         }
 
         function renderStoryboardTimeline(container) {
             const projName = currentProject?.name || '';
             const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
-            let zoom = 260;
-            try { zoom = Math.max(140, Math.min(520, parseInt(localStorage.getItem('storyboardTimelineZoom')) || 260)); } catch(e) {}
+            const pps = sbTlGetPxPerSec();
+            const prevScroll = document.getElementById('sb-timeline-root')?.scrollLeft || 0;
 
-            const cardHtml = (s, sceneIdx, sh, shotIdx) => {
-                const shotKey = `${sceneIdx}_${shotIdx}`;
-                const imgStatus = sh.storyboard_status || 'pending';
-                const vidStatus = sh.video_status || 'pending';
-                const imgStatusColor = imgStatus === 'approved' ? '#4caf50' : (imgStatus === 'generated' ? '#ff9800' : '#555');
-                const vidStatusColor = vidStatus === 'approved' ? '#4caf50' : (vidStatus === 'generated' ? '#ff9800' : '#555');
-                const savedImg = sh.storyboard_image;
-                const tempImg = sh._temp_storyboard_image;
-                const imageUrl = savedImg 
-                    ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
-                    : tempImg 
-                        ? tempImg.includes('/')
-                            ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}`
-                            : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
-                        : null;
-                const thumbUrl = savedImg 
-                    ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}${projectPathQuery ? '&' : '?'}thumbnail=true`
-                    : tempImg 
-                        ? tempImg.includes('/')
-                            ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}&thumbnail=true`
-                            : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}&thumbnail=true`
-                        : null;
-                const savedVid = sh.video_clip;
-                const tempVid = sh._temp_video_clip;
-                const tempSub = sh._temp_video_subfolder;
-                const videoUrl = savedVid 
-                    ? `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(savedVid)}${projectPathQuery}`
-                    : tempVid 
-                        ? `/api/comfyui/view?filename=${encodeURIComponent(tempVid)}${tempSub ? '&subfolder=' + encodeURIComponent(tempSub) : ''}`
-                        : null;
-                const hasVideo = !!(savedVid || tempVid);
-                const hasImage = !!(savedImg || tempImg);
-                let previewContent = '';
-                if (hasVideo) {
-                    previewContent = `<video id="shot-preview-video-${sceneIdx}-${shotIdx}" src="${videoUrl}" poster="${thumbUrl || ''}" preload="metadata" loop muted style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="event.stopPropagation(); expandStoryboardShot(${sceneIdx}, ${shotIdx})"></video>`;
-                } else if (hasImage) {
-                    previewContent = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${thumbUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage('${imageUrl}')" data-filename="${tempImg || ''}" onerror="this.style.display='none';var e=document.createElement('span');e.style.cssText='color:#f87171;font-size:0.6rem';e.textContent='Image missing - click REDO';this.parentElement.appendChild(e);this.remove();">`;
-                } else {
-                    previewContent = `<span style="color:var(--text-secondary);font-size:0.7rem;">No Image</span>`;
-                }
-                return `
-                <div id="shot-card-${shotKey}" data-tl-shot="${shotKey}" tabindex="0" ondblclick="expandStoryboardShot(${sceneIdx}, ${shotIdx})" style="flex:0 0 ${zoom}px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border-color);display:flex;flex-direction:column;padding:6px;position:relative;cursor:pointer;outline:none;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;margin-bottom:3px;">
-                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sh.shot_id || 'SHOT_?'}</span>
-                        <span style="font-size:0.5rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sh.shot_type || ''}</span>
-                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:3px;background:${imgStatusColor};color:#fff;font-weight:600;flex-shrink:0;">🖼</span>
-                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:3px;background:${vidStatusColor};color:#fff;font-weight:600;flex-shrink:0;">🎬</span>
+            // Duration cache is per-project: keys are sceneIdx_shotIdx, so reset on project switch
+            if (sbTlCacheProject !== projName) { sbTlDurationCache = {}; sbTlCacheProject = projName; sbTlPlayheadSec = 0; }
+
+            if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.some(s => s.shots && s.shots.length)) {
+                container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">No shots to show on the timeline.</div>';
+                return;
+            }
+
+            const sceneEntries = [];
+            screenplayData.scenes.forEach((s, idx) => { if (s.shots && s.shots.length) sceneEntries.push({ s, idx }); });
+
+            const probeList = [];
+            const totalSec = sceneEntries.reduce((acc, en) => acc + sbTlSceneDuration(en.s, en.idx), 0);
+
+            let laneHtml = '';
+            for (const { s: scene, idx: sceneIdx } of sceneEntries) {
+                const sceneDur = sbTlSceneDuration(scene, sceneIdx);
+                const sceneId = scene.scene_id || '#' + (scene.scene_number || (sceneIdx + 1));
+                let segs = '';
+                scene.shots.forEach((sh, shotIdx) => {
+                    const shotKey = `${sceneIdx}_${shotIdx}`;
+                    const dur = sbTlShotDuration(sh, shotKey);
+                    const savedImg = sh.storyboard_image;
+                    const tempImg = sh._temp_storyboard_image;
+                    const imageUrl = savedImg
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
+                        : tempImg
+                            ? (tempImg.includes('/')
+                                ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}`
+                                : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`)
+                            : null;
+                    const thumbUrl = savedImg
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}&thumbnail=true`
+                        : tempImg
+                            ? (tempImg.includes('/')
+                                ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}&thumbnail=true`
+                                : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}&thumbnail=true`)
+                            : null;
+                    const savedVid = sh.video_clip;
+                    const tempVid = sh._temp_video_clip;
+                    const tempSub = sh._temp_video_subfolder;
+                    const videoUrl = savedVid
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(savedVid)}${projectPathQuery}`
+                        : tempVid
+                            ? `/api/comfyui/view?filename=${encodeURIComponent(tempVid)}${tempSub ? '&subfolder=' + encodeURIComponent(tempSub) : ''}`
+                            : null;
+                    if (videoUrl && sbTlDurationCache[shotKey] === undefined) probeList.push({ key: shotKey, url: videoUrl });
+                    const hasVideo = !!(savedVid || tempVid);
+                    const hasImage = !!(savedImg || tempImg);
+                    const imgStatus = sh.storyboard_status || 'pending';
+                    const borderColor = imgStatus === 'approved' ? '#4caf50' : (imgStatus === 'generated' ? '#ff9800' : 'var(--border-color)');
+                    const media = hasImage
+                        ? `<img src="${thumbUrl}" draggable="false" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">`
+                        : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:0.6rem;">No Image</div>`;
+                    segs += `
+                    <div id="shot-card-${shotKey}" data-tl-shot="${shotKey}" tabindex="0" draggable="true"
+                        title="${escapeHtml(sh.shot_id || '')} · ${sbTlFmtTime(dur)}${hasVideo ? ' (video)' : ''} · drag to reorder"
+                        ondragstart="storyboardShotDragStart(event, '${shotKey}')" ondragover="storyboardShotDragOver(event, this)" ondragleave="storyboardShotDragLeave(event, this)" ondrop="storyboardShotDrop(event, this, '${shotKey}')" ondragend="storyboardShotDragEnd()"
+                        ondblclick="expandStoryboardShot(${sceneIdx}, ${shotIdx})"
+                        style="position:relative;flex:0 0 ${Math.max(dur * pps, 34).toFixed(0)}px;height:100%;border-right:1px solid var(--bg-secondary);outline:2px solid ${borderColor};outline-offset:-2px;overflow:hidden;cursor:pointer;user-select:none;">
+                        ${media}
+                        ${hasVideo ? `<span style="position:absolute;top:2px;left:2px;font-size:0.5rem;padding:0 3px;border-radius:2px;background:var(--accent-primary);color:#fff;font-weight:700;">🎬</span>` : ''}
+                        <span style="position:absolute;top:2px;right:2px;font-size:0.5rem;padding:0 3px;border-radius:2px;background:rgba(0,0,0,0.65);color:#ddd;font-variant-numeric:tabular-nums;">${sbTlFmtTime(dur)}</span>
+                        <span style="position:absolute;bottom:2px;left:3px;font-size:0.5rem;color:#fff;background:rgba(0,0,0,0.65);padding:0 3px;border-radius:2px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(sh.shot_id || 'SHOT_?')}</span>
+                        <div style="position:absolute;bottom:2px;right:2px;display:flex;gap:1px;opacity:0.85;">
+                            ${!hasImage ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotImage(${sceneIdx}, ${shotIdx})" style="padding:0 3px;font-size:0.5rem;line-height:1.2;" title="Generate">🎨</button>` : ''}
+                            ${hasImage ? `<button class="btn btn-secondary" onclick="event.stopPropagation();regenerateShotImage(${sceneIdx}, ${shotIdx})" style="padding:0 3px;font-size:0.5rem;line-height:1.2;" title="Redo">🔄</button>` : ''}
+                            <button class="btn btn-success" onclick="event.stopPropagation();approveShotImage(${sceneIdx}, ${shotIdx})" style="padding:0 3px;font-size:0.5rem;line-height:1.2;" title="Approve" ${sh._temp_storyboard_image ? '' : 'disabled'}>✅</button>
+                            ${savedImg ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotVideo(${sceneIdx}, ${shotIdx})" id="shot-i2v-btn-${sceneIdx}-${shotIdx}" style="padding:0 3px;font-size:0.5rem;line-height:1.2;" title="Video">🎥</button>` : ''}
+                        </div>
+                    </div>`;
+                });
+                laneHtml += `
+                <div data-tl-scene="${sceneIdx}" style="flex:0 0 auto;width:${Math.max(sceneDur * pps, 60).toFixed(0)}px;height:100%;display:flex;flex-direction:column;position:relative;background:rgba(76,175,80,0.10);border-right:1px solid var(--border-color);">
+                    <div style="display:flex;align-items:center;gap:5px;padding:2px 6px;background:rgba(76,175,80,0.18);border-bottom:1px solid var(--border-color);overflow:hidden;white-space:nowrap;">
+                        <strong style="font-size:0.6rem;color:var(--accent-primary);">${sceneId}</strong>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;">${escapeHtml(scene.scene_title || '')} · ${sbTlFmtTime(sceneDur)}</span>
+                        <span style="margin-left:auto;display:inline-flex;gap:2px;">
+                            <button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" style="padding:0 3px;font-size:0.5rem;line-height:1.2;" title="Generate scene images">🎨</button>
+                            <button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" style="padding:0 3px;font-size:0.5rem;line-height:1.2;" title="Approve scene images">✅</button>
+                        </span>
                     </div>
-                    <div id="shot-preview-${sceneIdx}-${shotIdx}" onmouseover="const v=this.querySelector('video'); if(v) v.play().catch(()=>{});" onmouseout="const v=this.querySelector('video'); if(v) { v.pause(); v.currentTime=0; }" style="height:110px;background:var(--bg-primary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;margin-bottom:4px;">
-                        ${previewContent}
-                        ${hasVideo ? `<span style="position:absolute;top:3px;left:3px;font-size:0.5rem;padding:1px 4px;border-radius:3px;font-weight:700;color:#fff;background:var(--accent-primary);z-index:2;">🎬</span>` : (hasImage ? `<span style="position:absolute;top:3px;left:3px;font-size:0.5rem;padding:1px 4px;border-radius:3px;font-weight:700;color:#fff;background:#34495e;z-index:2;">🖼️</span>` : '')}
-                        <span id="shot-res-badge-${sceneIdx}-${shotIdx}" style="position:absolute;top:3px;right:3px;font-size:0.5rem;padding:1px 4px;border-radius:3px;font-weight:700;color:#fff;background:${hasImage ? ((sh._temp_upscaled_file||savedImg||tempImg||'').includes('_4k_') ? '#e74c3c' : '#222') : 'transparent'};z-index:2;">${hasImage ? getResolutionLabel(sh._temp_upscaled_file||savedImg||tempImg) : ''}</span>
-                        ${sh.consistency_eval ? `<div class="consistency-badge" style="position:absolute;bottom:3px;right:3px;padding:2px 5px;border-radius:4px;font-size:0.6rem;font-weight:bold;z-index:10;background:${sh.consistency_eval.passed ? 'rgba(0,180,0,0.85)' : 'rgba(220,0,0,0.85)'};color:white;cursor:help;" title="${escapeHtml(sh.consistency_eval.feedback || '')}">${sh.consistency_eval.score}/10 ${sh.consistency_eval.passed ? '✅' : '❌'}</div>` : ''}
-                    </div>
-                    <div style="display:flex;gap:2px;flex-wrap:wrap;">
-                        <button class="btn btn-primary" onclick="event.stopPropagation();expandStoryboardShot(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
-                        ${!hasImage ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotImage(${sceneIdx}, ${shotIdx})" id="shot-t2i-btn-${sceneIdx}-${shotIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate Image">🎨</button>` : ''}
-                        ${hasImage ? `<button class="btn btn-secondary" onclick="event.stopPropagation();regenerateShotImage(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Regenerate">🔄</button>` : ''}
-                        <button class="btn btn-success" onclick="event.stopPropagation();approveShotImage(${sceneIdx}, ${shotIdx})" style="padding:2px 4px;font-size:0.5rem;" title="Approve" ${tempImg ? '' : 'disabled'}>✅</button>
-                        ${savedImg ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotVideo(${sceneIdx}, ${shotIdx})" id="shot-i2v-btn-${sceneIdx}-${shotIdx}" style="padding:2px 4px;font-size:0.5rem;" title="Generate Video">🎥</button>` : ''}
-                    </div>
+                    <div style="flex:1;display:flex;min-height:0;">${segs}</div>
                 </div>`;
-            };
+            }
 
-            let html = `
+            const rulerHtml = sbTlBuildRuler(totalSec, pps);
+            const laneWidth = Math.max(totalSec * pps + 40, 100);
+
+            container.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:var(--bg-secondary);padding:6px 12px;border-radius:8px;border:1px solid var(--border-color);flex-wrap:wrap;">
-                <span style="font-size:0.75rem;color:var(--text-secondary);">🎞 <strong style="color:var(--accent-primary);">Timeline</strong> — scenes left to right, shots in order · click = select · double-click = inspect</span>
-                <span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;">
+                <span style="font-size:0.75rem;color:var(--text-secondary);">🎞 <strong style="color:var(--accent-primary);">Timeline</strong> — width = duration · drag ruler to scrub · drag empty space to pan · double-click shot to inspect · Alt+←/→ to reorder</span>
+                <span id="sb-tl-time" style="font-size:0.7rem;color:var(--accent-primary);font-weight:700;margin-left:auto;font-variant-numeric:tabular-nums;">${sbTlFmtTime(sbTlPlayheadSec)} / ${sbTlFmtTime(totalSec)}</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;">
                     <button class="btn btn-secondary" onclick="storyboardTimelineScrollScene(-1)" style="padding:2px 8px;font-size:0.65rem;" title="Previous scene">⏮</button>
                     <button class="btn btn-secondary" onclick="storyboardTimelineScrollScene(1)" style="padding:2px 8px;font-size:0.65rem;" title="Next scene">⏭</button>
+                    <button class="btn btn-secondary" onclick="storyboardTimelineFit()" style="padding:2px 8px;font-size:0.65rem;" title="Fit the whole timeline on screen">⤢ Fit</button>
                     <span style="color:var(--text-secondary);font-size:0.7rem;">Zoom</span>
-                    <input type="range" min="140" max="520" step="20" value="${zoom}" oninput="storyboardTimelineZoomLive(this.value)" onchange="storyboardTimelineZoom(this.value)" style="width:120px;">
+                    <input type="range" min="20" max="200" step="5" value="${pps}" oninput="storyboardTimelineZoomLive(this.value)" onchange="storyboardTimelineZoom(this.value)" style="width:110px;">
                 </span>
             </div>
-            <div id="sb-timeline-scenes" tabindex="0" style="display:flex;gap:14px;overflow-x:auto;overflow-y:hidden;padding:6px 2px 14px 2px;scroll-behavior:smooth;">`;
-
-            screenplayData.scenes.forEach((s, sceneIdx) => {
-                const sceneId = s.scene_id || '#' + (s.scene_number || (sceneIdx + 1));
-                const shotCount = s.shots ? s.shots.length : 0;
-                html += `
-                <div data-tl-scene="${sceneIdx}" style="flex:0 0 auto;display:flex;flex-direction:column;max-width:92%;">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:6px;padding:4px 10px;position:sticky;top:0;">
-                        <strong style="color:var(--accent-primary);font-size:0.75rem;white-space:nowrap;">${sceneId}</strong>
-                        <span style="font-size:0.7rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">${escapeHtml(s.scene_title || '')}</span>
-                        <span style="font-size:0.6rem;color:var(--text-secondary);white-space:nowrap;">📍 ${escapeHtml(s.location_id || '—')} · ${escapeHtml(s.time_of_day || '')} · ${shotCount} shots</span>
-                        <button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" style="padding:1px 6px;font-size:0.55rem;" title="Generate images for scene">🎨</button>
-                        <button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" style="padding:1px 6px;font-size:0.55rem;" title="Approve images">✅</button>
-                        ${(() => { const allApproved = shotCount > 0 && s.shots.every(sh => sh.storyboard_status === 'approved'); return `<button class="btn btn-primary" onclick="event.stopPropagation();generateSceneVideos(${sceneIdx})" style="padding:1px 6px;font-size:0.55rem;${allApproved ? '' : 'opacity:0.4;pointer-events:none;'}" title="Generate videos">🎥</button>`; })()}
-                    </div>
-                    <div style="display:flex;gap:8px;align-items:stretch;">${s.shots && s.shots.length ? s.shots.map((sh, i) => cardHtml(s, sceneIdx, sh, i)).join('') : '<div style="color:var(--text-secondary);font-size:0.7rem;padding:14px;">No shots</div>'}</div>
-                </div>`;
-            });
-
-            html += `</div>`;
-            container.innerHTML = html;
+            <div id="sb-timeline-root" tabindex="0" data-total-sec="${totalSec}" style="position:relative;overflow-x:auto;overflow-y:hidden;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:8px;">
+                <div id="sb-tl-scroll-inner" style="position:relative;width:${laneWidth}px;">
+                    ${rulerHtml}
+                    <div id="sb-tl-lane" style="display:flex;height:118px;width:${laneWidth}px;">${laneHtml}</div>
+                    <div id="sb-tl-playhead" style="position:absolute;top:0;left:${(sbTlPlayheadSec * pps).toFixed(1)}px;width:2px;height:100%;background:#ff5252;pointer-events:none;z-index:20;box-shadow:0 0 4px rgba(255,82,82,0.8);"><div style="position:absolute;top:0;left:-4px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #ff5252;"></div></div>
+                </div>
+            </div>`;
             updateStoryboardViewToggle();
-
-            const track = document.getElementById('sb-timeline-scenes');
-            if (track) {
-                track.addEventListener('keydown', (ev) => {
-                    const cur = document.activeElement && document.activeElement.closest ? document.activeElement.closest('[data-tl-shot]') : null;
-                    const cards = [...track.querySelectorAll('[data-tl-shot]')];
-                    if (!cards.length) return;
-                    let next = null;
-                    if (ev.key === 'ArrowRight') next = cur ? cards[Math.min(cards.indexOf(cur) + 1, cards.length - 1)] : cards[0];
-                    else if (ev.key === 'ArrowLeft') next = cur ? cards[Math.max(cards.indexOf(cur) - 1, 0)] : cards[0];
-                    else if (ev.key === 'Enter' && cur) { expandStoryboardShot(...cur.dataset.tlShot.split('_').map(Number)); ev.preventDefault(); return; }
-                    if (next) { next.focus(); next.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); ev.preventDefault(); }
-                });
-            }
+            const tlRoot = document.getElementById('sb-timeline-root');
+            sbTlAttachInteractions(tlRoot, totalSec);
+            tlRoot.scrollLeft = prevScroll;
+            sbTlUpdatePlayhead();
+            sbTlProbeVideoDurations(probeList.slice(0, 24));
         }
 
+        function storyboardTimelineFit() {
+            const root = document.getElementById('sb-timeline-root');
+            if (!root) return;
+            const total = parseFloat(root.dataset.totalSec || '0');
+            if (total <= 0) return;
+            const pps = Math.max(20, Math.min(200, Math.floor((root.clientWidth - 48) / total)));
+            try { localStorage.setItem('storyboardTimelinePxPerSec', String(pps)); } catch(e) {}
+            renderStoryboard();
+        }
+
+        let sbTlZoomTimer = null;
         function storyboardTimelineZoomLive(v) {
-            const track = document.getElementById('sb-timeline-scenes');
-            if (!track) return;
-            track.querySelectorAll('[data-tl-shot]').forEach(el => { el.style.flex = `0 0 ${v}px`; });
+            try { localStorage.setItem('storyboardTimelinePxPerSec', String(v)); } catch(e) {}
+            clearTimeout(sbTlZoomTimer);
+            sbTlZoomTimer = setTimeout(() => renderStoryboard(), 180);
         }
 
         function storyboardTimelineZoom(v) {
-            try { localStorage.setItem('storyboardTimelineZoom', String(v)); } catch(e) {}
+            clearTimeout(sbTlZoomTimer);
+            try { localStorage.setItem('storyboardTimelinePxPerSec', String(v)); } catch(e) {}
             renderStoryboard();
         }
 
