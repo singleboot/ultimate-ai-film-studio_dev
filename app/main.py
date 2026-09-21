@@ -3599,8 +3599,12 @@ async def open_project_folder(data: dict):
         return {"success": False, "error": str(e)}
 
 @app.get("/api/comfyui/view")
-async def view_comfyui_image(filename: str, subfolder: str = "", thumbnail: bool = False):
-    """View an image or video from ComfyUI output."""
+async def view_comfyui_image(request: Request, filename: str, subfolder: str = "", thumbnail: bool = False):
+    """View an image or video from ComfyUI output.
+
+    Media responses stream with Range support relayed from ComfyUI, so browsers
+    can seek within generated videos (required for timeline scrubbing).
+    """
     try:
         import requests
         host = comfyui_client.host
@@ -3621,8 +3625,28 @@ async def view_comfyui_image(filename: str, subfolder: str = "", thumbnail: bool
                 _thumbnail_cache[cache_key] = thumb_bytes
                 return Response(content=thumb_bytes, media_type="image/jpeg")
 
-        response = requests.get(f"{host}/view", params=params, timeout=60)
+        # Relay Range requests so video seeking works in the browser
+        forward_headers = {}
+        range_header = request.headers.get("range")
+        if range_header:
+            forward_headers["Range"] = range_header
+
+        response = requests.get(f"{host}/view", params=params, headers=forward_headers, stream=True, timeout=60)
         ctype = response.headers.get("content-type", "video/mp4") if is_video else response.headers.get("content-type", "image/png")
+
+        if range_header or is_video:
+            from fastapi.responses import StreamingResponse
+            relay_headers = {}
+            for h in ("content-range", "accept-ranges", "content-length"):
+                if h in response.headers:
+                    relay_headers[h] = response.headers[h]
+            return StreamingResponse(
+                response.iter_content(chunk_size=64 * 1024),
+                status_code=response.status_code,
+                media_type=ctype,
+                headers=relay_headers,
+            )
+
         return Response(content=response.content, media_type=ctype)
     except Exception as e:
         return {"error": str(e)}

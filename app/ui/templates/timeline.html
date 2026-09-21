@@ -404,6 +404,8 @@
         /* drag-to-reorder indicators for the storyboard timeline */
         .sb-dragging { opacity: 0.45; transform: scale(0.97); }
         .sb-drop-before { box-shadow: -3px 0 0 0 var(--accent-primary); }
+#sb-tl-monitor { position: relative; overflow: hidden; }
+#sb-tl-monitor img, #sb-tl-monitor video { position: absolute; inset: 0; }
         .sb-drop-after { box-shadow: 3px 0 0 0 var(--accent-primary); }
         [data-tl-shot] { user-select: none; }
         [data-tl-shot] img, [data-tl-shot] video { -webkit-user-drag: none; }
@@ -11235,6 +11237,7 @@ Project visual language: ${projVL}`;
         let sbTlProbeRenderTimer = null;
         let sbTlPersistTimer = null;
         let sbTlCacheProject = null;
+        let sbTlMonitorPendingSeek = null;
 
         function sbTlSchedulePersist() {
             clearTimeout(sbTlPersistTimer);
@@ -11437,11 +11440,12 @@ Project visual language: ${projVL}`;
                         sbTlUpdatePlayhead();
                     };
                     seek(ev.clientX);
-                    const move = (e2) => seek(e2.clientX);
+                    const move = (e2) => { seek(e2.clientX); sbTlUpdateMonitor(); };
                     const up = () => {
                         ruler.removeEventListener('pointermove', move);
                         ruler.removeEventListener('pointerup', up);
                         ruler.removeEventListener('pointercancel', up);
+                        if (!sbTlPlaying && sbTlMonitorVideo) sbTlMonitorVideo.pause();
                     };
                     ruler.addEventListener('pointermove', move);
                     ruler.addEventListener('pointerup', up);
@@ -11452,7 +11456,7 @@ Project visual language: ${projVL}`;
             let pan = null;
             root.addEventListener('mousedown', (ev) => {
                 if (ev.button !== 0) return;
-                if (ev.target.closest('[data-tl-shot],button,input,select,#sb-tl-ruler,#sb-tl-playhead,#sb-tl-audio-row')) return;
+                if (ev.target.closest('[data-tl-shot],button,input,select,#sb-tl-ruler,#sb-tl-playhead,#sb-tl-audio-row,#sb-tl-monitor')) return;
                 pan = { x: ev.clientX, sl: root.scrollLeft };
                 root.style.cursor = 'grabbing';
                 ev.preventDefault();
@@ -11788,6 +11792,186 @@ Project visual language: ${projVL}`;
             </div>`;
         }
 
+
+        // ================= Program monitor: scrub-through shot previews =================
+        let sbTlMonitorVideo = null;
+        let sbTlMonitorKey = null;      // 'sceneIdx_shotIdx' currently loaded in the monitor
+        let sbTlMonitorLoadId = 0;      // guards against out-of-order async loads
+        let sbTlPlaying = false;
+        let sbTlPlayTimer = null;
+
+        function sbTlShotMediaAt(t) {
+            // Returns { sceneIdx, shotIdx, offsetInShot } for a timeline position
+            let cursor = 0;
+            const scenes = (screenplayData && screenplayData.scenes) || [];
+            for (let si = 0; si < scenes.length; si++) {
+                const shots = scenes[si].shots || [];
+                for (let hi = 0; hi < shots.length; hi++) {
+                    const d = sbTlShotDuration(shots[hi], si + '_' + hi);
+                    if (t < cursor + d || (si === scenes.length - 1 && hi === shots.length - 1)) {
+                        return { sceneIdx: si, shotIdx: hi, offsetInShot: Math.max(0, Math.min(d, t - cursor)) };
+                    }
+                    cursor += d;
+                }
+            }
+            return null;
+        }
+
+        function sbTlShotVideoUrl(sh) {
+            const projName = currentProject?.name || '';
+            const pq = currentProject?.path ? '?path=' + encodeURIComponent(currentProject.path) : '';
+            if (sh.video_clip) return `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(sh.video_clip)}${pq}`;
+            if (sh._temp_video_clip) {
+                const sub = sh._temp_video_subfolder ? '&subfolder=' + encodeURIComponent(sh._temp_video_subfolder) : '';
+                return `/api/comfyui/view?filename=${encodeURIComponent(sh._temp_video_clip)}${sub}`;
+            }
+            return null;
+        }
+
+        function sbTlShotImageUrl(sh) {
+            const projName = currentProject?.name || '';
+            const pq = currentProject?.path ? '?path=' + encodeURIComponent(currentProject.path) : '';
+            const savedImg = sh.storyboard_image;
+            const tempImg = sh._temp_storyboard_image;
+            if (savedImg) return `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${pq}`;
+            if (tempImg) return tempImg.includes('/')
+                ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${pq}`
+                : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`;
+            return null;
+        }
+
+        function sbTlShowMonitorPlaceholder(text) {
+            const ph = document.getElementById('sb-tl-monitor-placeholder');
+            if (!ph) return;
+            if (text) { ph.textContent = text; ph.style.display = 'flex'; }
+            else { ph.style.display = 'none'; }
+        }
+
+        function sbTlUpdateMonitor() {
+            const mon = document.getElementById('sb-tl-monitor');
+            if (!mon) return;
+            if (sbTlMonitorVideo && sbTlMonitorVideo.parentNode !== mon) { try { mon.insertBefore(sbTlMonitorVideo, mon.firstChild); } catch (e) { sbTlMonitorVideo = null; } }
+            const pos = sbTlShotMediaAt(sbTlPlayheadSec);
+            if (!pos) return;
+            const scene = screenplayData.scenes[pos.sceneIdx];
+            const sh = scene && scene.shots ? scene.shots[pos.shotIdx] : null;
+            if (!sh) return;
+            const key = pos.sceneIdx + '_' + pos.shotIdx;
+            const url = sbTlShotVideoUrl(sh);
+            const img = sbTlShotImageUrl(sh);
+
+            // Labels
+            const idEl = document.getElementById('sb-tl-monitor-id');
+            if (idEl) idEl.textContent = (sh.shot_id || ('SHOT ' + key)) + ' · ' + sbTlFmtTime(pos.offsetInShot) + ' / ' + sbTlFmtTime(sbTlShotDuration(sh, key));
+            const tcEl = document.getElementById('sb-tl-monitor-tc');
+            if (tcEl) tcEl.textContent = sbTlFmtTime(sbTlPlayheadSec);
+
+            if (url) {
+                const wantAuto = sbTlPlaying;
+                if (sbTlMonitorKey !== key || !sbTlMonitorVideo) {
+                    // Switch media: load the shot's video and seek into it
+                    const loadId = ++sbTlMonitorLoadId;
+                    mon.dataset.loading = '1';
+                    const v = document.createElement('video');
+                    v.preload = 'auto';
+                    v.muted = true;
+                    v.playsInline = true;
+                    v.style.cssText = 'width:100%;height:100%;object-fit:contain;background:#000;';
+                    v.onloadedmetadata = () => {
+                        if (loadId !== sbTlMonitorLoadId) return;
+                        delete mon.dataset.loading;
+                        if (sbTlMonitorVideo && sbTlMonitorVideo.parentNode === mon) mon.removeChild(sbTlMonitorVideo);
+                        mon.insertBefore(v, mon.firstChild);
+                        sbTlMonitorVideo = v;
+                        sbTlMonitorKey = key;
+                        try { v.currentTime = Math.min(pos.offsetInShot, Math.max(0, (v.duration || 0) - 0.05)); } catch (e) {}
+                        sbTlShowMonitorPlaceholder(null);
+                        if (wantAuto) v.play().catch(() => {});
+                    };
+                    v.onerror = () => {
+                        if (loadId !== sbTlMonitorLoadId) return;
+                        delete mon.dataset.loading;
+                        sbTlShowMonitorPlaceholder('video unavailable');
+                    };
+                    sbTlMonitorKey = key;
+                    v.src = url;
+                } else if (sbTlMonitorVideo && !sbTlPlaying) {
+                    // Same shot: scrub-seek within it
+                    try {
+                        const target = Math.min(pos.offsetInShot, Math.max(0, (sbTlMonitorVideo.duration || 0) - 0.05));
+                        if (Math.abs(sbTlMonitorVideo.currentTime - target) > 0.08) sbTlMonitorVideo.currentTime = target;
+                    } catch (e) {}
+                }
+            } else {
+                // No video yet: fall back to the storyboard image
+                if (sbTlMonitorKey !== key || (!sbTlMonitorVideo && !mon.querySelector('img'))) {
+                    sbTlMonitorKey = key;
+                    if (sbTlMonitorVideo && sbTlMonitorVideo.parentNode === mon) { mon.removeChild(sbTlMonitorVideo); sbTlMonitorVideo = null; }
+                    mon.querySelectorAll('img').forEach(i => i.remove());
+                    if (img) {
+                        const im = document.createElement('img');
+                        im.src = img;
+                        im.style.cssText = 'width:100%;height:100%;object-fit:contain;background:#000;';
+                        im.onerror = () => { im.remove(); sbTlShowMonitorPlaceholder('no image'); };
+                        mon.insertBefore(im, mon.firstChild);
+                        sbTlShowMonitorPlaceholder(null);
+                    } else {
+                        sbTlShowMonitorPlaceholder('no media — generate this shot');
+                    }
+                }
+            }
+
+            // Selection halo on the active shot card
+            const root = document.getElementById('sb-timeline-root');
+            if (root) {
+                root.querySelectorAll('[data-tl-shot]').forEach(el => {
+                    el.style.boxShadow = el.dataset.tlShot === key ? '0 0 0 2px #ff5252 inset' : '';
+                });
+            }
+        }
+
+        function sbTlPlayRange() {
+            const root = document.getElementById('sb-timeline-root');
+            const total = root ? parseFloat(root.dataset.totalSec || '0') : 0;
+            if (total <= 0) return;
+            sbTlPlaying = true;
+            const btn = document.getElementById('sb-tl-play-btn');
+            if (btn) { btn.textContent = '⏸'; btn.className = 'btn btn-primary'; }
+            const step = () => {
+                if (!sbTlPlaying) return;
+                sbTlPlayheadSec += 0.1;
+                if (sbTlPlayheadSec >= total) { sbTlStopRange(); sbTlPlayheadSec = total; sbTlUpdatePlayhead(); sbTlUpdateMonitor(); return; }
+                sbTlUpdatePlayhead();
+                sbTlUpdateMonitor();
+                // Follow: keep playhead in view
+                const r = document.getElementById('sb-timeline-root');
+                if (r) {
+                    const x = sbTlPlayheadSec * sbTlGetPxPerSec();
+                    if (x < r.scrollLeft + 40 || x > r.scrollLeft + r.clientWidth - 80) r.scrollLeft = Math.max(0, x - r.clientWidth * 0.3);
+                }
+            };
+            clearInterval(sbTlPlayTimer);
+            sbTlPlayTimer = setInterval(step, 100);
+            sbTlUpdateMonitor();
+            // If the current shot's video is already loaded, start it playing too
+            const pos0 = sbTlShotMediaAt(sbTlPlayheadSec);
+            if (pos0 && sbTlMonitorVideo && sbTlMonitorKey === (pos0.sceneIdx + '_' + pos0.shotIdx)) sbTlMonitorVideo.play().catch(() => {});
+        }
+
+        function sbTlStopRange() {
+            sbTlPlaying = false;
+            clearInterval(sbTlPlayTimer);
+            sbTlPlayTimer = null;
+            if (sbTlMonitorVideo) sbTlMonitorVideo.pause();
+            const btn = document.getElementById('sb-tl-play-btn');
+            if (btn) { btn.textContent = '▶'; btn.className = 'btn btn-secondary'; }
+        }
+
+        function sbTlTogglePlay(ev) {
+            if (ev) ev.stopPropagation();
+            if (sbTlPlaying) sbTlStopRange(); else sbTlPlayRange();
+        }
+
         function renderStoryboardTimeline(container) {
             const projName = currentProject?.name || '';
             const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
@@ -11895,11 +12079,12 @@ Project visual language: ${projVL}`;
 
             container.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:var(--bg-secondary);padding:6px 12px;border-radius:8px;border:1px solid var(--border-color);flex-wrap:wrap;">
-                <span style="font-size:0.75rem;color:var(--text-secondary);">🎞 <strong style="color:var(--accent-primary);">Timeline</strong> — width = duration · drag ruler to scrub · drag empty space to pan · double-click shot to inspect · Alt+←/→ to reorder</span>
+                <span style="font-size:0.75rem;color:var(--text-secondary);">🎞 <strong style="color:var(--accent-primary);">Timeline</strong> — width = duration · drag ruler to scrub · drag empty space to pan · double-click shot to inspect · Alt+←/→ to reorder · scrub the ruler to preview shots</span>
                 <span id="sb-tl-time" style="font-size:0.7rem;color:var(--accent-primary);font-weight:700;margin-left:auto;font-variant-numeric:tabular-nums;"><span id="sb-tl-time-main">${sbTlFmtTime(sbTlPlayheadSec)} / ${sbTlFmtTime(totalSec)}</span></span><span id="sb-tl-range-label" style="color:#4caf50;">${rangeLabel}</span></span>
                 <span style="display:inline-flex;align-items:center;gap:5px;">
                     <button class="btn btn-secondary" onclick="storyboardTimelineScrollScene(-1)" style="padding:2px 8px;font-size:0.65rem;" title="Previous scene">⏮</button>
                     <button class="btn btn-secondary" onclick="storyboardTimelineScrollScene(1)" style="padding:2px 8px;font-size:0.65rem;" title="Next scene">⏭</button>
+                    <button class="btn btn-secondary" id="sb-tl-play-btn" onclick="sbTlTogglePlay(event)" style="padding:2px 8px;font-size:0.65rem;" title="Play from playhead through the shots — follows along">▶</button>
                     <button class="btn btn-secondary" onclick="storyboardTimelineFit()" style="padding:2px 8px;font-size:0.65rem;" title="Fit the whole timeline on screen">⤢ Fit</button>
                     <button class="btn ${rIn !== null ? 'btn-primary' : 'btn-secondary'}" onclick="sbTlSetRangePoint('in')" style="padding:2px 8px;font-size:0.65rem;" title="Set range start at playhead — snaps to the nearest shot edge (I)">I · In</button>
                     <button class="btn ${rOut !== null ? 'btn-primary' : 'btn-secondary'}" onclick="sbTlSetRangePoint('out')" style="padding:2px 8px;font-size:0.65rem;" title="Set range end at playhead — snaps to the nearest shot edge (O)">Out · O</button>
@@ -11910,13 +12095,21 @@ Project visual language: ${projVL}`;
                     <input type="range" min="20" max="200" step="5" value="${pps}" oninput="storyboardTimelineZoomLive(this.value)" onchange="storyboardTimelineZoom(this.value)" style="width:110px;">
                 </span>
             </div>
+            <div style="display:flex;gap:10px;margin-bottom:8px;align-items:stretch;">
+                <div id="sb-tl-monitor" style="position:relative;width:224px;height:126px;flex-shrink:0;background:#000;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;">
+                    <div id="sb-tl-monitor-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:0 10px;">playhead preview</div>
+                    <span id="sb-tl-monitor-id" style="position:absolute;left:4px;bottom:3px;font-size:0.55rem;color:#fff;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+                    <span id="sb-tl-monitor-tc" style="position:absolute;right:4px;top:3px;font-size:0.55rem;color:#ff8a8a;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;font-variant-numeric:tabular-nums;"></span>
+                </div>
+                <div id="sb-tl-shot-info" style="flex:1;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:6px 10px;font-size:0.65rem;color:var(--text-secondary);overflow:hidden;min-width:0;"></div>
+            </div>
             <div id="sb-timeline-root" tabindex="0" data-total-sec="${totalSec}" style="position:relative;overflow-x:auto;overflow-y:hidden;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:8px;">
                 <div id="sb-tl-scroll-inner" style="position:relative;width:${laneWidth}px;">
                     ${rulerHtml}
                     <div id="sb-tl-lane" style="display:flex;height:118px;width:${laneWidth}px;">${laneHtml}</div>
                     ${sbTlAudioRowHtml(totalSec, pps)}
                     ${sbTlRangeOverlayHtml(totalSec, pps)}
-                    <div id="sb-tl-playhead" style="position:absolute;top:0;left:${(sbTlPlayheadSec * pps).toFixed(1)}px;width:2px;height:100%;background:#ff5252;pointer-events:none;z-index:20;box-shadow:0 0 4px rgba(255,82,82,0.8);"><div style="position:absolute;top:0;left:-4px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #ff5252;"></div></div>
+                    <div id="sb-tl-playhead" style="position:absolute;top:0;left:${(sbTlPlayheadSec * pps).toFixed(1)}px;width:2px;height:100%;background:#ff5252;pointer-events:none;z-index:20;cursor:pointer;box-shadow:0 0 4px rgba(255,82,82,0.8);"><div style="position:absolute;top:0;left:-4px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #ff5252;"></div></div>
                 </div>
             </div>`;
             updateStoryboardViewToggle();
@@ -11926,6 +12119,7 @@ Project visual language: ${projVL}`;
             sbTlUpdatePlayhead();
             sbTlProbeVideoDurations(probeList.slice(0, 24));
             sbTlProbeAudio(audioProbeList.slice(0, 16));
+            sbTlUpdateMonitor();
         }
 
         function storyboardTimelineFit() {
