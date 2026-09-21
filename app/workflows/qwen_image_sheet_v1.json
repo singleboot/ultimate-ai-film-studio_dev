@@ -83,7 +83,7 @@
   },
   "844": {
     "inputs": {
-      "value": 8
+      "value": 4
     },
     "class_type": "PrimitiveInt",
     "_meta": {
@@ -191,7 +191,7 @@
   },
   "1298": {
     "inputs": {
-      "value": 1920
+      "value": 1280
     },
     "class_type": "PrimitiveInt",
     "_meta": {
@@ -200,7 +200,7 @@
   },
   "1299": {
     "inputs": {
-      "value": 1080
+      "value": 720
     },
     "class_type": "PrimitiveInt",
     "_meta": {

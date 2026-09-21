@@ -1,0 +1,306 @@
+{
+  "162": {
+    "inputs": {
+      "width": [
+        "235",
+        0
+      ],
+      "height": [
+        "235",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "163": {
+    "inputs": {
+      "seed": 371254289209212,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "232",
+        0
+      ],
+      "positive": [
+        "224",
+        0
+      ],
+      "negative": [
+        "228",
+        0
+      ],
+      "latent_image": [
+        "162",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "164": {
+    "inputs": {
+      "samples": [
+        "163",
+        0
+      ],
+      "vae": [
+        "196",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "194": {
+    "inputs": {
+      "unet_name": "Krea-2-Turbo-w4a8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "195": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "196": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "199": {
+    "inputs": {
+      "filename_prefix": "img",
+      "save_mode": "save",
+      "pixaroma_buttons": null,
+      "pixaroma_strip": null,
+      "image": [
+        "164",
+        0
+      ],
+      "CivitaiMeta": "0"
+    },
+    "class_type": "PixaromaPreview",
+    "_meta": {
+      "title": "Preview Image Pixaroma"
+    }
+  },
+  "207": {
+    "inputs": {
+      "enabled": true,
+      "strength": 1,
+      "debug": false,
+      "model": [
+        "231",
+        0
+      ]
+    },
+    "class_type": "ComfyUI-Krea2T-Enhancer",
+    "_meta": {
+      "title": "ComfyUI-Krea2T-Enhancer"
+    }
+  },
+  "221": {
+    "inputs": {
+      "PromptState": "{\"text\":\"\",\"order\":\"mine\",\"sep\":\", \"}"
+    },
+    "class_type": "PixaromaPrompt",
+    "_meta": {
+      "title": "Prompt Pixaroma"
+    }
+  },
+  "224": {
+    "inputs": {
+      "prompt": [
+        "221",
+        0
+      ],
+      "grounding_px": 768,
+      "system_prompt": "",
+      "clip": [
+        "195",
+        0
+      ],
+      "image": [
+        "226",
+        0
+      ],
+      "image_b": [
+        "236",
+        0
+      ]
+    },
+    "class_type": "Krea2EditGroundedEncode",
+    "_meta": {
+      "title": "Krea2 Edit (grounded encode) - Positive"
+    }
+  },
+  "226": {
+    "inputs": {
+      "image": "ComfyUI_00129_.png",
+      "LoadImageMiniState": "{\"version\":1,\"mode\":\"max_mp\",\"max_mp\":1,\"longest_side\":1024,\"scale_factor\":1,\"fit_w\":1024,\"fit_h\":1024,\"cover_w\":1024,\"cover_h\":1024,\"ratio_preset\":\"1:1\",\"ratio_w\":1,\"ratio_h\":1,\"ratio_action\":\"crop\",\"pad_color\":\"#808080\",\"pad_top\":0,\"pad_bottom\":0,\"pad_left\":0,\"pad_right\":0,\"crop_anchor\":\"center\",\"crop_scale\":true,\"snap\":16,\"resample\":\"auto\",\"allow_upscale\":true,\"orig_name\":\"ComfyUI_00129_.png\"}"
+    },
+    "class_type": "PixaromaLoadImageMini",
+    "_meta": {
+      "title": "Load the Character Image"
+    }
+  },
+  "228": {
+    "inputs": {
+      "prompt": "",
+      "grounding_px": 768,
+      "system_prompt": "",
+      "clip": [
+        "195",
+        0
+      ],
+      "image": [
+        "226",
+        0
+      ],
+      "image_b": [
+        "236",
+        0
+      ]
+    },
+    "class_type": "Krea2EditGroundedEncode",
+    "_meta": {
+      "title": "Krea2 Edit (grounded encode) - Negative - Empty"
+    }
+  },
+  "231": {
+    "inputs": {
+      "model": [
+        "194",
+        0
+      ],
+      "LoraLoaderState": "{\"version\":1,\"sep\":\", \",\"cacheMode\":\"last\",\"loras\":[{\"name\":\"krea2\\\\krea2_identity_edit_v1_2.safetensors\",\"on\":false,\"sm\":1,\"sc\":1,\"triggers\":[]},{\"name\":\"krea2_identity_edit_v1_2_r64.safetensors\",\"on\":true,\"sm\":1,\"sc\":1,\"triggers\":[]}]}"
+    },
+    "class_type": "PixaromaLoraLoader",
+    "_meta": {
+      "title": "LoRA Loader Pixaroma (Identity Edit)"
+    }
+  },
+  "232": {
+    "inputs": {
+      "ref_boost": [
+        "234",
+        0
+      ],
+      "ref_boost_a": 1,
+      "fit_mode": "fit",
+      "model": [
+        "207",
+        0
+      ],
+      "source_latent": [
+        "233",
+        0
+      ],
+      "source_latent_b": [
+        "237",
+        0
+      ],
+      "vae": [
+        "196",
+        0
+      ],
+      "source_image": [
+        "226",
+        0
+      ],
+      "source_image_b": [
+        "236",
+        0
+      ]
+    },
+    "class_type": "Krea2EditModelPatch",
+    "_meta": {
+      "title": "Krea2 Edit (source patch)"
+    }
+  },
+  "233": {
+    "inputs": {
+      "pixels": [
+        "226",
+        0
+      ],
+      "vae": [
+        "196",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode - Character"
+    }
+  },
+  "234": {
+    "inputs": {
+      "SlidersState": "{\"version\":1,\"sliders\":[{\"type\":\"float\",\"value\":4}]}"
+    },
+    "class_type": "PixaromaSliders",
+    "_meta": {
+      "title": "Reference Boost (0 Creative, 4 Default, 10 More Similar)"
+    }
+  },
+  "235": {
+    "inputs": {
+      "ResolutionState": "{\"mode\":\"preset\",\"ratio\":\"16:9\",\"w\":1280,\"h\":720,\"custom_w\":1024,\"custom_h\":1024,\"custom_ratio_w\":4,\"custom_ratio_h\":3,\"snap\":16}"
+    },
+    "class_type": "PixaromaResolution",
+    "_meta": {
+      "title": "Resolution Pixaroma"
+    }
+  },
+  "236": {
+    "inputs": {
+      "image": "Krea2_turbo_00120_.png",
+      "LoadImageMiniState": "{\"version\":1,\"mode\":\"max_mp\",\"max_mp\":1,\"longest_side\":1024,\"scale_factor\":1,\"fit_w\":1024,\"fit_h\":1024,\"cover_w\":1024,\"cover_h\":1024,\"ratio_preset\":\"1:1\",\"ratio_w\":1,\"ratio_h\":1,\"ratio_action\":\"crop\",\"pad_color\":\"#808080\",\"pad_top\":0,\"pad_bottom\":0,\"pad_left\":0,\"pad_right\":0,\"crop_anchor\":\"center\",\"crop_scale\":true,\"snap\":16,\"resample\":\"auto\",\"allow_upscale\":true,\"orig_name\":\"Krea2_turbo_00120_.png\"}"
+    },
+    "class_type": "PixaromaLoadImageMini",
+    "_meta": {
+      "title": "Load the Background Image"
+    }
+  },
+  "237": {
+    "inputs": {
+      "pixels": [
+        "236",
+        0
+      ],
+      "vae": [
+        "196",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode - Background"
+    }
+  }
+}
