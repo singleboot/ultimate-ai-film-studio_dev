@@ -776,20 +776,20 @@
             <!-- AI PRODUCER CO-PILOT CHAT WIDGET -->
             <div style="border-top:1px solid var(--border-color);padding-top:25px;margin-top:15px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-                    <div class="section-title" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:3px;color:#fff;margin:0;font-weight:800;border-bottom:2px solid var(--accent-primary);padding-bottom:8px;display:inline-block;">🤖 AI Producer Co-Pilot</div>
-                    <div style="display:flex;gap:10px;align-items:center;">
-                        <span style="font-size:0.75rem;color:var(--text-secondary);font-family:'Space Grotesk',sans-serif;">Mode:</span>
-                        <select id="agent-mode-select" class="form-select" style="width:140px;font-size:0.75rem;padding:4px 8px;">
-                            <option value="semi_automated">Semi-Automated</option>
-                            <option value="automated">Fully Automated</option>
-                        </select>
+                    <div class="section-title" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:3px;color:#fff;margin:0;font-weight:800;border-bottom:2px solid var(--accent-primary);padding-bottom:8px;display:inline-block;">🎬 Film Agent</div>
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(255,51,51,0.15);border:1px solid rgba(255,51,51,0.3);border-radius:3px;color:#ff6b6b;">🎬 Screenplay</span>
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.3);border-radius:3px;color:#00d4ff;">🎞️ Montage</span>
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(255,193,7,0.15);border:1px solid rgba(255,193,7,0.3);border-radius:3px;color:#ffc107;">📷 Shots</span>
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(138,43,226,0.15);border:1px solid rgba(138,43,226,0.3);border-radius:3px;color:#8a2be2;">👤 Characters</span>
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(46,204,113,0.15);border:1px solid rgba(46,204,113,0.3);border-radius:3px;color:#2ecc71;">🎨 Color</span>
                     </div>
                 </div>
                 <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;display:flex;flex-direction:column;height:250px;">
                     <!-- Chat Messages list -->
                     <div id="agent-chat-messages" style="flex:1;overflow-y:auto;padding:12px;font-size:0.85rem;display:flex;flex-direction:column;gap:10px;font-family:'Space Grotesk',sans-serif;">
                         <div style="background:var(--bg-tertiary);border-left:2px solid var(--accent-primary);padding:8px 12px;border-radius:2px;max-width:85%;align-self:flex-start;color:var(--text-primary);">
-                            Hi! I am your AI Film Producer Assistant. Type a title or story idea to build a new cinematic project together.
+                            Hi! I am your **Film Agent** 🎬 — an AI-powered film director, cinematographer, editor, and screenwriter. I can write screenplays, design montages, plan shots, design characters, advise on color grading, and generate ComfyUI prompts. What would you like to create?
                         </div>
                     </div>
                     <!-- Typing status / progress status -->
@@ -1473,8 +1473,12 @@
                 <input type="number" id="sb-global-steps" style="width:40px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" value="8" min="1" max="150" step="1">
                 <label style="color:var(--text-secondary);">Seed</label>
                 <input type="number" id="sb-global-seed" style="width:75px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" placeholder="rnd" min="0" step="1">
+                <label style="color:var(--text-secondary);" title="Video sampling steps (MiniMax H3) — 8: turbo ⚡, 20: higher quality">Vid St</label>
+                <input type="number" id="sb-global-video-steps" style="width:40px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" value="8" min="1" max="50" step="1">
+                <label style="color:var(--text-secondary);display:flex;align-items:center;gap:3px;cursor:pointer;" title="Refine prompts with the LLM agent before generation"><input type="checkbox" id="sb-llm-enhance" style="width:auto;margin:0;accent-color:var(--accent-primary);"> ✨ LLM</label>
+                <label style="color:var(--text-secondary);display:flex;align-items:center;gap:3px;cursor:pointer;" title="Use the previous shot's approved frame as the character reference (Krea 2 char+bg workflow) so the character stays consistent across consecutive shots"><input type="checkbox" id="sb-prev-frame-ref" style="width:auto;margin:0;accent-color:var(--accent-primary);"> ↩ Prev</label>
                 <button class="btn btn-secondary" onclick="storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">📥 Apply</button>
-                <button class="btn btn-secondary" onclick="document.getElementById('sb-global-cfg').value='1.0';document.getElementById('sb-global-steps').value='8';document.getElementById('sb-global-seed').value='';storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">↺ Reset</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('sb-global-cfg').value='1.0';document.getElementById('sb-global-steps').value='8';document.getElementById('sb-global-video-steps').value='8';document.getElementById('sb-global-seed').value='';storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">↺ Reset</button>
             </div>
 
             <!-- Container for Scene Rows -->
@@ -2090,6 +2094,17 @@
                                     <option value="gemini">Gemini</option>
                                 </select>
                             </div>
+
+                            <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
+                                <label class="form-label" style="margin-bottom:6px;">🔄 Fallback Chain <span style="font-size:0.65rem;color:var(--text-secondary);">(tried in order when provider is "Auto")</span></label>
+                                <div id="fallback-chain-list" style="display:flex;flex-direction:column;gap:4px;">
+                                </div>
+                                <div style="display:flex;gap:6px;margin-top:6px;">
+                                    <button class="btn btn-secondary" onclick="addFallbackProvider()" style="padding:3px 8px;font-size:0.7rem;">+ Add</button>
+                                    <button class="btn btn-secondary" onclick="resetFallbackChain()" style="padding:3px 8px;font-size:0.7rem;">↺ Reset</button>
+                                </div>
+                            </div>
+
                             <div id="llm-local-fields">
                                 <div class="form-group" id="llm-host-group">
                                     <label class="form-label">Host</label>
@@ -2799,6 +2814,8 @@
             <span>LLM: <span class="status-dot" id="llm-dot">●</span> <span id="llm-model-name">—</span></span>
             <span>|</span>
             <span>ComfyUI: <span class="status-dot" id="comfyui-dot">●</span> <span id="comfyui-status-text">—</span></span>
+            <span>|</span>
+            <span>OmniRoute: <span class="status-dot" id="omniroute-dot">●</span> <span id="omniroute-status-text">—</span></span>
         </span>
     </footer>
 
@@ -2902,6 +2919,8 @@
         }
 
          function showPage(page) {
+            // Mandatory project guard — block all pages except home
+            if (page !== 'home' && !requireProject()) return;
             scheduleSaveState();
             document.querySelectorAll('.page').forEach(p => {
                 p.classList.remove('active');
@@ -3159,7 +3178,7 @@
                 
                 // Ensure sheet prompts are initialized on settings if missing/empty
                 if (!s.character_sheet_prompt || !s.character_sheet_prompt.trim()) {
-                    s.character_sheet_prompt = 'Professional character turnaround reference sheet on a neutral studio background featuring the character prominently across all panels. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits from front and back. The subject stands naturally with relaxed posture and neutral expression. All panels must maintain perfectly consistent identity with identical facial features, hairstyle, body proportions, clothing details, and material textures across every view. Soft wraparound studio lighting from above-left with gentle shadows that define form while keeping the subject clearly readable. Crisp focus, highly detailed realistic rendering, modern studio presentation with clean balanced spacing between panels.';
+                    s.character_sheet_prompt = 'Preserve the character exactly as shown in the reference image: same face, same clothing, same accessories, same dark atmospheric background, same lighting, same color palette, same environment and mood. The character must look identical to the reference.';
                 }
                 if (!s.location_sheet_prompt || !s.location_sheet_prompt.trim()) {
                     s.location_sheet_prompt = 'Professional location reference board on a clean grid background featuring the environment across multiple curated panels. The layout shows a wide establishing shot capturing the full scope of the location, a moody low-key lighting variation emphasizing atmosphere, a warm golden-hour version with rich warm light, and a detailed architectural feature close-up highlighting key design elements. Every panel maintains consistent spatial layout, landmark placement, architectural features, and color palette throughout all variations. The transitions between panels feel cinematic and intentional, creating a comprehensive visual reference for the environment. Professional cinematic presentation, studio-quality reference composition with balanced grid layout.';
@@ -3249,10 +3268,11 @@
                             });
                         } catch(e) {}
                     }
+                } else if (data.success) {
+                    // No saved state yet — normal for a new or never-saved project. Nothing to restore.
                 } else {
-                    console.error("loadProjectState: success was false or state was empty");
-                    notify('Load Warning', 'Project state was empty on the server.', '⚠️');
-                    clearProjectState();
+                    console.error("loadProjectState: " + (data.error || "failed to load project state"));
+                    notify('Load Warning', data.error || 'Failed to load project state from the server.', '⚠️');
                 }
             } catch(e) {
                 console.error("loadProjectState catch block triggered:", e);
@@ -4300,6 +4320,7 @@
                     safeSetChecked('llm-auto-start', s.llm.auto_start);
                     safeSetValue('llm-models-path', s.llm.models_path);
                     safeSetValue('llm-gpu-layers', s.llm.n_gpu_layers ?? -1);
+                    initFallbackChain(s.llm.fallback_chain, s.llm.fallback_disabled);
                 }
                 if (s.comfyui) {
                     safeSetValue('comfyui-url', s.comfyui.url || 'http://localhost:8188');
@@ -4352,6 +4373,101 @@
             }
         }
 
+
+        // === FALLBACK CHAIN MANAGEMENT ===
+        const ALL_PROVIDERS = [
+            {id: 'omniroute', name: 'OmniRoute (Free Cloud)', icon: '🌐'},
+            {id: 'agnes', name: 'Agnes AI (Free Cloud)', icon: '🤖'},
+            {id: 'openai', name: 'OpenAI', icon: '🟢'},
+            {id: 'claude', name: 'Claude (Anthropic)', icon: '🟣'},
+            {id: 'openrouter', name: 'OpenRouter', icon: '🔀'},
+            {id: 'opencode_zen', name: 'OpenCode Zen', icon: '💎'},
+            {id: 'nvidia_nim', name: 'NVIDIA NIM', icon: '💚'},
+            {id: 'gemini', name: 'Gemini', icon: '🔵'},
+            {id: 'app_llm', name: 'App LLM (Local)', icon: '🏠'},
+            {id: 'ollama', name: 'Ollama (Local)', icon: '🦙'},
+            {id: 'lm_studio', name: 'LM Studio (Local)', icon: '🎭'},
+            {id: 'llama_cpp', name: 'llama.cpp (Local)', icon: '⚡'}
+        ];
+        let fallbackChain = [];
+        let fallbackDisabled = {};
+
+        function initFallbackChain(chain, disabled) {
+            fallbackChain = chain || ['omniroute', 'agnes', 'app_llm'];
+            fallbackDisabled = disabled || {};
+            renderFallbackChain();
+        }
+
+        function renderFallbackChain() {
+            const container = document.getElementById('fallback-chain-list');
+            if (!container) return;
+            container.innerHTML = '';
+            fallbackChain.forEach((provId, idx) => {
+                const prov = ALL_PROVIDERS.find(p => p.id === provId);
+                if (!prov) return;
+                const isDisabled = fallbackDisabled[provId];
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg-secondary);border-radius:4px;border:1px solid var(--border-color);' + (isDisabled ? 'opacity:0.5;' : '');
+                row.innerHTML = `
+                    <span style="cursor:grab;font-size:0.7rem;color:var(--text-secondary);">⠿</span>
+                    <span style="font-size:0.8rem;">${prov.icon}</span>
+                    <span style="flex:1;font-size:0.8rem;${isDisabled ? 'text-decoration:line-through;' : ''}">${prov.name}</span>
+                    <button onclick="moveFallback(${idx},-1)" title="Move up" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.7rem;${idx===0?'visibility:hidden;':''}">▲</button>
+                    <button onclick="moveFallback(${idx},1)" title="Move down" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.7rem;${idx===fallbackChain.length-1?'visibility:hidden;':''}">▼</button>
+                    <button onclick="toggleFallback(${idx})" title="${isDisabled?'Enable':'Disable'}" style="background:none;border:none;cursor:pointer;font-size:0.8rem;">${isDisabled?'◻':'◼'}</button>
+                    <button onclick="removeFallback(${idx})" title="Remove" style="background:none;border:none;color:var(--accent-primary);cursor:pointer;font-size:0.8rem;">✕</button>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function moveFallback(idx, dir) {
+            const newIdx = idx + dir;
+            if (newIdx < 0 || newIdx >= fallbackChain.length) return;
+            [fallbackChain[idx], fallbackChain[newIdx]] = [fallbackChain[newIdx], fallbackChain[idx]];
+            renderFallbackChain();
+        }
+
+        function toggleFallback(idx) {
+            const provId = fallbackChain[idx];
+            fallbackDisabled[provId] = !fallbackDisabled[provId];
+            renderFallbackChain();
+        }
+
+        function removeFallback(idx) {
+            fallbackChain.splice(idx, 1);
+            renderFallbackChain();
+        }
+
+        function addFallbackProvider() {
+            const used = new Set(fallbackChain);
+            const available = ALL_PROVIDERS.filter(p => !used.has(p.id));
+            if (available.length === 0) { notify('All added', 'All providers are already in the chain'); return; }
+            const names = available.map((p, i) => `${i+1}. ${p.name}`).join('\n');
+            const choice = prompt('Add provider (enter number):\n' + names);
+            if (choice) {
+                const idx = parseInt(choice) - 1;
+                if (idx >= 0 && idx < available.length) {
+                    fallbackChain.push(available[idx].id);
+                    renderFallbackChain();
+                }
+            }
+        }
+
+        function resetFallbackChain() {
+            fallbackChain = ['omniroute', 'agnes', 'app_llm'];
+            fallbackDisabled = {};
+            renderFallbackChain();
+        }
+
+        function getFallbackChain() {
+            return {
+                chain: fallbackChain.filter(id => !fallbackDisabled[id]),
+                all: fallbackChain,
+                disabled: fallbackDisabled
+            };
+        }
+
         async function saveSettings() {
             const btn1 = document.getElementById('save-settings-btn');
             const btn2 = document.getElementById('save-settings-btn-2');
@@ -4366,7 +4482,9 @@
                     apiKey: document.getElementById('llm-apikey').value,
                     auto_start: document.getElementById('llm-auto-start').checked,
                     models_path: document.getElementById('llm-models-path').value,
-                    n_gpu_layers: parseInt(document.getElementById('llm-gpu-layers').value) || -1
+                    n_gpu_layers: parseInt(document.getElementById('llm-gpu-layers').value) || -1,
+                    fallback_chain: getFallbackChain().all,
+                    fallback_disabled: getFallbackChain().disabled
                 },
                 image_gen: {
                     provider: document.getElementById('image-provider').value,
@@ -4538,6 +4656,10 @@
         // === TOPIC IDEAS ===
         let topicIdeas = [];
         let selectedIdeaIndex = -1;
+        // Declared (not only assigned in clearProjectState) so state saves work even when a
+        // project opens with no saved state to restore.
+        let screenplayData = null;
+        let sceneVideoData = [];
 
         function getLLMConfig() {
             const sel = getLLMModelSelect();
@@ -4766,7 +4888,17 @@
             return ideas;
         }
 
+        function requireProject() {
+            if (!currentProject || !currentProject.path) {
+                notify('No Project Open', 'Please create or open a project first.', '⚠️');
+                openNewProject();
+                return false;
+            }
+            return true;
+        }
+
         async function generateIdeas() {
+            if (!requireProject()) return;
             const ideasBtn = document.getElementById('generate-ideas-btn');
             if (ideasBtn) { ideasBtn.disabled = true; ideasBtn.textContent = '⏳ Generating...'; }
             const checkedSources = Array.from(document.querySelectorAll('.src-chk:checked')).map(cb => cb.value);
@@ -5028,6 +5160,15 @@
             } catch(e) {
                 updateStatusDot('comfyui-dot', 'red');
                 document.getElementById('comfyui-status-text').textContent = 'error';
+            }
+            try {
+                const orRes = await fetch('/api/omniroute/status');
+                const orData = await orRes.json();
+                updateStatusDot('omniroute-dot', orData.running ? 'green' : 'red');
+                document.getElementById('omniroute-status-text').textContent = orData.running ? 'Connected' : 'Offline';
+            } catch(e) {
+                updateStatusDot('omniroute-dot', 'red');
+                document.getElementById('omniroute-status-text').textContent = 'Offline';
             }
         }
 
@@ -5462,6 +5603,8 @@
         }
 
         async function generateScreenplay() {
+            if (!requireProject()) return;
+
             const scrBtn = document.getElementById('generate-screenplay-btn');
             if (scrBtn) { scrBtn.disabled = true; scrBtn.textContent = '⏳ Generating...'; }
             if (!topicIdeas.length) {
@@ -6713,6 +6856,8 @@
         }
 
         async function generateAllShots() {
+            if (!requireProject()) return;
+
             if (!screenplayData || !screenplayData.scenes) return;
             const btn = document.getElementById('generate-all-shots-btn');
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating all shots...'; }
@@ -7782,7 +7927,7 @@
                 }
             }
 
-            const instructions = currentProject?.settings?.character_sheet_prompt || 'Professional character turnaround reference sheet on a neutral studio background featuring the character prominently across all panels. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits from front and back. The subject stands naturally with relaxed posture and neutral expression. All panels must maintain perfectly consistent identity with identical facial features, hairstyle, body proportions, clothing details, and material textures across every view. Soft wraparound studio lighting from above-left with gentle shadows that define form while keeping the subject clearly readable. Crisp focus, highly detailed realistic rendering, modern studio presentation with clean balanced spacing between panels.';
+            const instructions = currentProject?.settings?.character_sheet_prompt || 'Preserve the character exactly as shown in the reference image: same face, same clothing, same accessories, same dark atmospheric background, same lighting, same color palette, same environment and mood. The character must look identical to the reference.';
             
             let finalPrompt = characterPrompt + "\n\n" + instructions;
             const styleSuffix = [];
@@ -8076,7 +8221,7 @@
                 const model = imgSettings.model || '';
                 const host = imgSettings.host || '';
                 const apiKey = imgSettings.apiKey || '';
-                const workflowName = settings.workflows?.sheet || 'image_flux2_klein_image_sheets';
+                const workflowName = settings.workflows?.loc_sheet || settings.workflows?.sheet || '360_image_v1';
 
                 notify('Generating', `Sending to ${provider}...`, '🎨');
 
@@ -9810,10 +9955,14 @@ Project visual language: ${projVL}`;
         }
 
         async function generateAllCharacterImages() {
+            if (!requireProject()) return;
+
             return _generateBulkImages('char', 'gen-char-img-btn', 'character');
         }
 
         async function generateAllLocationImages() {
+            if (!requireProject()) return;
+
             return _generateBulkImages('loc', 'gen-loc-img-btn', 'location');
         }
 
@@ -10920,6 +11069,7 @@ Project visual language: ${projVL}`;
         }
 
         async function generateAllStoryboard() {
+            if (!requireProject()) return;
             for (let i = 0; i < imagePromptData.length; i++) {
                 const btn = document.getElementById(`scene-t2i-btn-${i}`);
                 if (!btn || btn.disabled || btn.style.display === 'none') continue;
@@ -11059,6 +11209,7 @@ Project visual language: ${projVL}`;
         function renderStoryboard() {
             const container = document.getElementById('storyboard-container');
             if (!container) return;
+            initPrevFrameRefToggle();
 
             if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.length) {
                 container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
@@ -11570,24 +11721,13 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             const seed = Math.floor(Math.random() * 999999999) + 1;
             const inputImages = getSavedInputImages();
-            // Inject previous shot's image (either approved or temporary) as the first input image for continuity
-            if (shotIdx > 0) {
-                const prevSh = s.shots[shotIdx - 1];
-                const prevImg = prevSh.storyboard_image || prevSh._temp_storyboard_image;
-                if (prevImg) {
-                    // Prepend for high priority reference
-                    inputImages.unshift(prevImg);
-                }
-            } else if (sceneIdx > 0) {
-                // If first shot of scene, look at the last shot of the previous scene
-                const prevScene = screenplayData.scenes[sceneIdx - 1];
-                if (prevScene && prevScene.shots && prevScene.shots.length > 0) {
-                    const lastShot = prevScene.shots[prevScene.shots.length - 1];
-                    const prevImg = lastShot.storyboard_image || lastShot._temp_storyboard_image;
-                    if (prevImg) {
-                        inputImages.unshift(prevImg);
-                    }
-                }
+            // Optional continuity: when the "↩ Prev" toggle is on, prepend the
+            // previous shot's approved frame as a high-priority reference and
+            // send it as the character_image hint (Krea 2 char+bg workflow) so
+            // the character stays consistent across consecutive shots.
+            const prevFramePath = prevFrameRefEnabled() ? getPrevShotFramePath(sceneIdx, shotIdx) : '';
+            if (prevFramePath && !inputImages.includes(prevFramePath)) {
+                inputImages.unshift(prevFramePath);
             }
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
             const imgResEl = document.getElementById('sel-img-resolution');
@@ -11607,6 +11747,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         cfg: cfgOverride,
                         project_path: currentProject?.path || '',
                         input_images: inputImages,
+                        character_image: prevFramePath,
                         aspect_ratio: aspectRatio,
                         resolution: imgResolution
                     })
@@ -12159,7 +12300,9 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                             seed: seed,
                             project_path: currentProject?.path || '',
                             input_image: inputImagePath,
-                            scene_index: sceneIdx
+                            scene_index: sceneIdx,
+                            steps: storyboardVideoSteps(),
+                            refine: llmEnhanceEnabled()
                         })
                     });
                     hideShotSpinner(sceneIdx, shotIdx);
@@ -12348,6 +12491,50 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             renderStoryboard();
         }
 
+        function llmEnhanceEnabled() {
+            const el = document.getElementById('sb-llm-enhance');
+            return !!(el && el.checked);
+        }
+
+        function prevFrameRefEnabled() {
+            const el = document.getElementById('sb-prev-frame-ref');
+            return !!(el && el.checked);
+        }
+
+        function initPrevFrameRefToggle() {
+            const el = document.getElementById('sb-prev-frame-ref');
+            if (!el) return;
+            const saved = localStorage.getItem('sb_prev_frame_ref');
+            if (saved !== null) el.checked = saved === '1';
+            el.onchange = () => localStorage.setItem('sb_prev_frame_ref', el.checked ? '1' : '0');
+        }
+
+        // Project-resolvable path to the previous shot's frame: the approved
+        // image lives in scenes/ (basename stored on storyboard_image), falling
+        // back to a saved temp image (already prefixed with its folder).
+        function getPrevShotFramePath(sceneIdx, shotIdx) {
+            if (!screenplayData?.scenes) return '';
+            let prev = null;
+            if (shotIdx > 0) {
+                prev = screenplayData.scenes[sceneIdx]?.shots?.[shotIdx - 1] || null;
+            } else if (sceneIdx > 0) {
+                const prevScene = screenplayData.scenes[sceneIdx - 1];
+                if (prevScene && prevScene.shots && prevScene.shots.length) {
+                    prev = prevScene.shots[prevScene.shots.length - 1];
+                }
+            }
+            if (!prev) return '';
+            if (prev.storyboard_image) return 'scenes/' + prev.storyboard_image.split('/').pop();
+            if (prev._temp_storyboard_image && prev._temp_storyboard_image.includes('/')) return prev._temp_storyboard_image;
+            return '';
+        }
+
+        function storyboardVideoSteps() {
+            const el = document.getElementById('sb-global-video-steps');
+            const v = parseInt(el?.value);
+            return (v && v > 0) ? v : 8;
+        }
+
         async function generateShotVideo(sceneIdx, shotIdx) {
             const s = screenplayData.scenes[sceneIdx];
             const sh = s.shots[shotIdx];
@@ -12366,7 +12553,6 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             btn.textContent = '⏳...';
             showShotSpinner(sceneIdx, shotIdx);
             const seed = sh._genSeed || Math.floor(Math.random() * 999999999) + 1;
-            const stepsOverride = sh._genSteps;
             const inputImagePath = `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`;
 
             try {
@@ -12377,7 +12563,8 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                     input_image: inputImagePath,
                     scene_index: sceneIdx
                 };
-                if (stepsOverride) body.steps = stepsOverride;
+                body.steps = storyboardVideoSteps();
+                body.refine = llmEnhanceEnabled();
                 const res = await fetch('/api/comfyui/generate/i2v', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(body)
@@ -13672,6 +13859,8 @@ Raw JSON only, no markdown.`;
         }
 
         async function generateAllStoryboardImages() {
+            if (!requireProject()) return;
+
             if (!screenplayData || !screenplayData.scenes) {
                 notify('No Screenplay', 'Please generate screenplay first.'); return;
             }
@@ -13728,6 +13917,8 @@ Raw JSON only, no markdown.`;
         }
 
         async function generateAllStoryboardVideos() {
+            if (!requireProject()) return;
+
             if (!screenplayData || !screenplayData.scenes) {
                 notify('No Screenplay', 'Please generate screenplay first.'); return;
             }
@@ -13744,6 +13935,7 @@ Raw JSON only, no markdown.`;
         }
 
         async function generateAllStoryboardVideoPrompts() {
+            if (!requireProject()) return;
             if (!screenplayData || !screenplayData.scenes) {
                 notify('No Screenplay', 'Please generate screenplay first.'); return;
             }
@@ -15135,7 +15327,7 @@ Output all prompts in one block, separated by blank lines.`;
                 const res = await fetch('/api/comfyui/generate/t2i', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: resolution })
+                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: resolution, refine: llmEnhanceEnabled() })
                 });
                 const data = await res.json();
                 
@@ -15189,7 +15381,8 @@ Output all prompts in one block, separated by blank lines.`;
                         project_path: currentProject?.path || '',
                         input_image: nleTempImageFile,
                         scene_index: 0,
-                        steps: steps
+                        steps: steps,
+                        refine: llmEnhanceEnabled()
                     })
                 });
                 const data = await res.json();
@@ -15442,6 +15635,7 @@ Output all prompts in one block, separated by blank lines.`;
         }
 
         function switchSidebarPanel(panel) {
+            if (!requireProject()) return;
             document.querySelectorAll('.sidebar-rail-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
             document.getElementById('rail-' + panel).classList.add('active');
@@ -15700,7 +15894,14 @@ Output all prompts in one block, separated by blank lines.`;
             sidebar.style.transition = '';
         });
 
-        // === Agent Chatbot Integration ===
+        // === Film Agent Integration ===
+        const FILM_AGENT_SKILLS_ICONS = {
+            'write_screenplay': '🎬', 'design_montage': '🎞️', 'plan_shot_composition': '📷',
+            'design_character': '👤', 'analyze_story_structure': '📐', 'advise_color_grading': '🎨',
+            'design_sound_design': '🔊', 'generate_comfyui_prompt': '🖼️', 'advise_editing_rhythm': '✂️',
+            'advise_cinematography': '🎥', 'get_project_state': '📂', 'web_search_reference': '🔍'
+        };
+
         async function sendAgentChatMessage() {
             const inputEl = document.getElementById('agent-chat-input');
             const msg = inputEl.value.trim();
@@ -15709,34 +15910,33 @@ Output all prompts in one block, separated by blank lines.`;
             inputEl.value = '';
             appendAgentChatMessage('user', msg);
             
-            const mode = document.getElementById('agent-mode-select').value;
             const statusEl = document.getElementById('agent-chat-status');
-            statusEl.textContent = '⏳ Thinking...';
+            statusEl.textContent = '🎬 Film Agent thinking...';
             
             try {
-                const res = await fetch('/api/agent-wizard/chat', {
+                const res = await fetch('/api/film-agent/chat', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ message: msg, mode: mode, chat_id: 'web_session' })
+                    body: JSON.stringify({ message: msg, session_id: 'web_session', project_path: currentProject?.path || null })
                 });
                 const data = await res.json();
                 statusEl.textContent = '';
                 if (data.success) {
+                    // Show tool usage indicators first
+                    if (data.tools_used && data.tools_used.length > 0) {
+                        const toolNames = data.tools_used.map(t => FILM_AGENT_SKILLS_ICONS[t.name] || '🔧' + ' ' + t.name.replace(/_/g, ' ')).join(' → ');
+                        const toolIndicator = document.createElement('div');
+                        toolIndicator.style.cssText = 'font-size:0.65rem;color:var(--accent-secondary);padding:4px 12px;font-style:italic;opacity:0.8;';
+                        toolIndicator.textContent = `Used: ${toolNames}`;
+                        document.getElementById('agent-chat-messages').appendChild(toolIndicator);
+                    }
                     appendAgentChatMessage('agent', data.response);
-                    if (data.progress) {
-                        statusEl.textContent = data.progress;
-                    }
-                    if (data.current_approval) {
-                        appendApprovalWidget(data.current_approval);
-                    }
-                    if (data.state === 'building' || data.state === 'awaiting_approval') {
-                        startAgentPolling();
-                    } else if (data.state === 'complete') {
-                        notify('🎉 Complete', 'Project has been created successfully!');
-                        syncRecentProjectsWithBackend();
+                    if (data.message_count > 0) {
+                        statusEl.textContent = `💬 ${data.message_count} messages`;
+                        setTimeout(() => { statusEl.textContent = ''; }, 3000);
                     }
                 } else {
-                    appendAgentChatMessage('agent', 'Error: ' + data.message);
+                    appendAgentChatMessage('agent', 'Error: ' + (data.message || 'Unknown error'));
                 }
             } catch (e) {
                 statusEl.textContent = '';
@@ -15757,12 +15957,25 @@ Output all prompts in one block, separated by blank lines.`;
                 msgEl.style.background = 'rgba(255,51,51,0.1)';
                 msgEl.style.borderRight = '2px solid var(--accent-primary)';
                 msgEl.style.alignSelf = 'flex-end';
+                msgEl.style.lineHeight = '1.5';
                 msgEl.textContent = text;
             } else {
                 msgEl.style.background = 'var(--bg-tertiary)';
                 msgEl.style.borderLeft = '2px solid var(--accent-primary)';
                 msgEl.style.alignSelf = 'flex-start';
-                msgEl.innerHTML = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+                msgEl.style.lineHeight = '1.6';
+                // Enhanced markdown: bold, code blocks, headers, bullet points
+                let html = text
+                    .replace(/```([\s\S]*?)```/g, '<pre style="background:rgba(0,0,0,0.3);padding:6px 8px;border-radius:3px;font-size:0.78rem;overflow-x:auto;margin:6px 0;font-family:monospace;">$1</pre>')
+                    .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3);padding:1px 4px;border-radius:2px;font-size:0.8rem;">$1</code>')
+                    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                    .replace(/\*(.*?)\*/g, '<i>$1</i>')
+                    .replace(/^### (.+)$/gm, '<div style="font-size:0.8rem;font-weight:700;color:var(--accent-primary);margin:8px 0 4px;">$1</div>')
+                    .replace(/^## (.+)$/gm, '<div style="font-size:0.85rem;font-weight:700;color:#fff;margin:10px 0 4px;">$1</div>')
+                    .replace(/^# (.+)$/gm, '<div style="font-size:0.9rem;font-weight:800;color:var(--accent-primary);margin:12px 0 4px;">🎬 $1</div>')
+                    .replace(/^- (.+)$/gm, '<div style="padding-left:12px;">• $1</div>')
+                    .replace(/\n/g, '<br>');
+                msgEl.innerHTML = html;
             }
             box.appendChild(msgEl);
             box.scrollTop = box.scrollHeight;
