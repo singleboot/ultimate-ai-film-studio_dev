@@ -11,6 +11,28 @@ from threading import Thread
 
 logger = logging.getLogger("comfyui_client")
 
+# The Krea2 fp8 turbo stack renders pure-black images for short prompts
+# (measured on the running setup: <=~225 chars -> black; >=~300 chars -> fine).
+# Pad short prompts with style-only detail so they clear the threshold.
+KREA2_T2I_MIN_PROMPT_CHARS = 320
+KREA2_T2I_STYLE_SUFFIX = (
+    " Cinematic film still, photorealistic rendering, captured on 35mm anamorphic glass, "
+    "shallow depth of field, atmospheric haze and volumetric light, rich material textures "
+    "with fine detail, high dynamic range, subtle film grain, moody cinematic color grade, "
+    "dramatic yet balanced exposure, sharp focus on the subject, elegant composition with "
+    "generous negative space, premium studio quality."
+)
+
+
+def _is_krea2_workflow(workflow: Dict) -> bool:
+    """True if the workflow loads the krea2 turbo UNet (which has the black-prompt defect)."""
+    for nd in workflow.values():
+        if isinstance(nd, dict) and nd.get("class_type") == "UNETLoader":
+            name = str(nd.get("inputs", {}).get("unet_name", ""))
+            if "krea2" in name.lower():
+                return True
+    return False
+
 
 class ComfyUIClient:
     def __init__(self, config_path: str = None):
@@ -349,8 +371,15 @@ class ComfyUIClient:
             return self.generate_image(prompt, "model.safetensors", 1024, 1024)
 
         try:
-            with open(workflow_path, 'r') as f:
+            with open(workflow_path, 'r', encoding='utf-8') as f:
                 workflow = json.load(f)
+
+            # Krea2 fp8 turbo stack renders pure-black images for short prompts.
+            # Pad style-only detail so short prompts clear the threshold.
+            if _is_krea2_workflow(workflow) and len(prompt.strip()) < KREA2_T2I_MIN_PROMPT_CHARS:
+                padded = prompt.rstrip() + KREA2_T2I_STYLE_SUFFIX
+                logger.info("[generate_with_workflow] krea2 short prompt (%d chars) padded to %d chars", len(prompt), len(padded))
+                prompt = padded
 
             debug_log = []
             print(f"[generate_with_workflow] workflow={workflow_name}, prompt='{prompt[:60]}...'")
@@ -366,8 +395,9 @@ class ComfyUIClient:
             if has_psm:
                 for nid, nd in workflow.items():
                     if isinstance(nd, dict) and nd.get("class_type") == "PrimitiveStringMultiline" and "value" in nd.get("inputs", {}):
-                        # Don't overwrite SCENE-NAME metadata nodes
-                        if "SCENE-NAME" not in str(nd.get("_meta", {}).get("title", "")):
+                        # Don't overwrite SCENE-NAME metadata nodes or LLM system prompts
+                        title = str(nd.get("_meta", {}).get("title", ""))
+                        if "SCENE-NAME" not in title and "SYSTEM PROMPT" not in title.upper():
                             nd["inputs"]["value"] = prompt
                             debug_log.append(f"Set PrimitiveStringMultiline {nid} value: '{prompt[:50]}...'")
             else:
@@ -414,6 +444,38 @@ class ComfyUIClient:
                         inputs["prompt"] = prompt
                         debug_log.append(f"Overwrote TextEncodeQwenImageEditPlus {nid}: '{prompt[:50]}...'")
 
+            # Step C: Krea2 edit workflows use Krea2EditGroundedEncode instead of
+            # CLIPTextEncode. Overwrite the positive node (non-empty prompt); leave
+            # the negative node (empty prompt) untouched so it stays a clean negative.
+            for nid, nd in workflow.items():
+                if not isinstance(nd, dict):
+                    continue
+                if nd.get("class_type") == "Krea2EditGroundedEncode":
+                    inputs = nd.get("inputs", {})
+                    if isinstance(inputs.get("prompt"), str) and inputs["prompt"].strip():
+                        inputs["prompt"] = prompt
+                        # Also set system_prompt to reinforce background/environment preservation
+                        system_msg = "Preserve the original background environment, lighting direction, color temperature, shadows, atmosphere, and visual rendering style from the reference image. The character must naturally integrate into the same environment across all views. Do not introduce a studio or artificial background."
+                        inputs["system_prompt"] = system_msg
+                        debug_log.append(f"Overwrote Krea2EditGroundedEncode {nid} + system_prompt: '{prompt[:50]}...'")
+
+            # Step C2: PixaromaPrompt nodes carry the prompt inside a PromptState
+            # JSON string (Pixaroma edit workflows route it into grounded encodes).
+            for nid, nd in workflow.items():
+                if not isinstance(nd, dict):
+                    continue
+                if nd.get("class_type") == "PixaromaPrompt":
+                    state_raw = nd.get("inputs", {}).get("PromptState")
+                    if isinstance(state_raw, str):
+                        try:
+                            state = json.loads(state_raw)
+                            if isinstance(state, dict):
+                                state["text"] = prompt
+                                nd["inputs"]["PromptState"] = json.dumps(state)
+                                debug_log.append(f"Overwrote PixaromaPrompt {nid} text: '{prompt[:50]}...'")
+                        except Exception:
+                            debug_log.append(f"Failed to parse PixaromaPrompt {nid} PromptState")
+
             # Phase 2: inject image paths into UAIImageSlot nodes
             slot_nodes = []
             for node_id, node_data in workflow.items():
@@ -453,16 +515,16 @@ class ComfyUIClient:
                         if next_neg in workflow:
                             workflow[next_neg]["inputs"][next_neg_key] = conn_neg
 
-            # Phase 2b: inject image into LoadImage nodes
+            # Phase 2b: inject image into LoadImage / PixaromaLoadImageMini nodes
             if not slot_nodes and input_images:
                 load_image_nodes = []
                 for node_id, node_data in workflow.items():
                     if not isinstance(node_data, dict):
                         continue
-                    if node_data.get("class_type") == "LoadImage":
+                    if node_data.get("class_type") in ("LoadImage", "PixaromaLoadImageMini"):
                         load_image_nodes.append(node_id)
                 load_image_nodes.sort(key=int)
-                debug_log.append(f"Found {len(load_image_nodes)} LoadImage nodes: {load_image_nodes}")
+                debug_log.append(f"Found {len(load_image_nodes)} image input nodes: {load_image_nodes}")
                 # Removed duplication logic to prevent over-conditioning IPAdapter
                 for idx, nid in enumerate(load_image_nodes):
                     if idx < len(input_images):
@@ -478,6 +540,18 @@ class ComfyUIClient:
                             return {"success": False, "error": err}
                         debug_log.append(f"LoadImage {nid} <- uploaded: {uploaded_name}")
                         workflow[nid]["inputs"]["image"] = uploaded_name
+                        # Keep the Pixaroma LoadImageMini display state in sync so the
+                        # node still shows the actual image if inspected later.
+                        if workflow[nid].get("class_type") == "PixaromaLoadImageMini":
+                            state_raw = workflow[nid]["inputs"].get("LoadImageMiniState")
+                            if isinstance(state_raw, str):
+                                try:
+                                    st = json.loads(state_raw)
+                                    if isinstance(st, dict):
+                                        st["orig_name"] = uploaded_name
+                                        workflow[nid]["inputs"]["LoadImageMiniState"] = json.dumps(st)
+                                except Exception:
+                                    pass
                     else:
                         debug_log.append(f"LoadImage {nid} <- no input image provided")
 
@@ -495,15 +569,27 @@ class ComfyUIClient:
 
             # Phase 3b: set steps
             if steps is not None:
-                print(f"[DEBUG Phase 3b] steps={steps}, type={type(steps).__name__}")
+                # Skip secondary scheduler branches (e.g. an upscaler's sigmas
+                # routed through a VisualizeSigmasKJ) so the override only hits
+                # the primary sampler — otherwise the MiniMax H3 upsampler's
+                # tuned 4-step scheduler would be dragged up with the main one.
+                visualizer_upstream = set()
                 for node_id, node_data in workflow.items():
                     if not isinstance(node_data, dict):
-                        print(f"[DEBUG Phase 3b] skip non-dict node {node_id}: {type(node_data).__name__}")
+                        continue
+                    if node_data.get("class_type") == "VisualizeSigmasKJ":
+                        for v in node_data.get("inputs", {}).values():
+                            if isinstance(v, list) and v and isinstance(v[0], str):
+                                visualizer_upstream.add(v[0])
+                for node_id, node_data in workflow.items():
+                    if not isinstance(node_data, dict):
                         continue
                     ct = node_data.get("class_type", "")
                     inputs = node_data.get("inputs", {})
-                    print(f"[DEBUG Phase 3b] node {node_id} ({ct}) has steps? {'steps' in inputs}, inputs keys={list(inputs.keys())}")
-                    if "steps" in inputs:
+                    # Only override plain numeric steps; a list value is a node
+                    # connection (e.g. a workflow-internal switch) and must stay intact.
+                    if ("steps" in inputs and str(node_id) not in visualizer_upstream
+                            and isinstance(inputs["steps"], (int, float))):
                         try:
                             old = inputs["steps"]
                             inputs["steps"] = int(steps)
@@ -520,7 +606,9 @@ class ComfyUIClient:
                         continue
                     ct = node_data.get("class_type", "")
                     inputs = node_data.get("inputs", {})
-                    if "cfg" in inputs:
+                    # Only override plain numeric cfg; a list value is a node
+                    # connection (e.g. a workflow-internal switch) and must stay intact.
+                    if "cfg" in inputs and isinstance(inputs["cfg"], (int, float)):
                         try:
                             inputs["cfg"] = float(cfg)
                             debug_log.append(f"Set cfg for {ct} {node_id} to {cfg}")
@@ -545,7 +633,7 @@ class ComfyUIClient:
                                 continue
                             ct = node_data.get("class_type", "")
                             inputs = node_data.get("inputs", {})
-                            if ct in ("EmptyFlux2LatentImage", "Flux2Scheduler"):
+                            if ct in ("EmptyFlux2LatentImage", "Flux2Scheduler", "EmptyLatentImage", "EmptySD3LatentImage"):
                                 inputs["width"] = w
                                 inputs["height"] = h
                                 debug_log.append(f"{ct} {node_id} -> {w}x{h}")

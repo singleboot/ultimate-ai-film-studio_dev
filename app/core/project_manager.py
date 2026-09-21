@@ -14,6 +14,9 @@ class ProjectManager:
         self.projects_dir = Path(projects_dir)
         self.projects_dir.mkdir(exist_ok=True)
         self.current_project = None
+        # Real path of the most recently opened/loaded project (external projects
+        # live outside projects_dir, so this is the only reliable way to find them).
+        self._current_project_path = None
         self._registry_file = Path(__file__).parent.parent / "config" / "project_registry.json"
         self._registry_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -188,7 +191,13 @@ class ProjectManager:
             return False
 
     def get_current_project_path(self) -> Optional[Path]:
-        """Get the path to the current project."""
+        """Get the path to the current project.
+
+        Prefers the real on-disk path recorded when the project was opened/loaded
+        (which may be outside projects_dir), falling back to projects_dir.
+        """
+        if self._current_project_path and self._current_project_path.exists():
+            return self._current_project_path
         if not self.current_project:
             return None
         return self.projects_dir / self.current_project
@@ -312,6 +321,8 @@ class ProjectManager:
         """Save full project state (charData, locationData, sceneData, etc.)."""
         if project_path_str:
             project_path = Path(project_path_str)
+            self._current_project_path = project_path
+            self.current_project = name
         else:
             project_path = self.projects_dir / name
         if not project_path.exists():
@@ -328,6 +339,8 @@ class ProjectManager:
         """Load full project state from disk."""
         if project_path_str:
             state_file = Path(project_path_str) / "project_state.json"
+            self._current_project_path = state_file.parent
+            self.current_project = name
         else:
             state_file = self.projects_dir / name / "project_state.json"
         if not state_file.exists():

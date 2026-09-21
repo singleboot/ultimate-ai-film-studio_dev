@@ -88,6 +88,10 @@ class LLMEngine:
             return self._get_nvidia_nim_models(provider)
         elif provider_id == "app_llm":
             return self._get_app_llm_models()
+        elif provider_id == "agnes":
+            return self._get_agnes_models(provider)
+        elif provider_id == "omniroute":
+            return self._get_omniroute_models(provider)
 
         return [provider.get("default_model", "")]
 
@@ -199,6 +203,44 @@ class LLMEngine:
         except Exception:
             pass
         return ["meta/llama-3.1-70b-instruct", "mistralai/mistral-7b-instruct-v0.3"]
+
+    def _get_agnes_models(self, provider: Dict) -> List[str]:
+        """Fetch available models from Agnes AI API."""
+        host = provider.get("host", "https://apihub.agnes-ai.com/v1")
+        api_key = self._get_api_key("agnes", provider)
+        try:
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+            resp = requests.get(f"{host}/models", headers=headers, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    return [m.get("id", m.get("name", "")) for m in data if m.get("id") or m.get("name")]
+                return list(data.keys()) if isinstance(data, dict) else []
+        except Exception:
+            pass
+        return ["agnes-2.5-flash", "agnes-2.0-flash", "agnes-2.5-pro-alpha"]
+
+    def _get_omniroute_models(self, provider: Dict) -> List[str]:
+        """Fetch available models from OmniRoute gateway."""
+        host = provider.get("host", "http://127.0.0.1:20128/v1")
+        try:
+            resp = requests.get(f"{host}/models", timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                if models:
+                    return models[:50]
+        except Exception:
+            pass
+        return ["auto", "auto/coding", "auto/fast", "auto/cheap", "auto/smart"]
+
+    @staticmethod
+    def _is_cloud_provider(provider_id: str) -> bool:
+        """Return True if the provider is a cloud/remote API (not a local subprocess)."""
+        return provider_id in (
+            "omniroute", "agnes", "openai", "claude", "openrouter",
+            "gemini", "opencode_zen", "nvidia_nim"
+        )
 
     def _get_app_llm_models(self) -> List[str]:
         """Scan local models/ folder for .gguf files."""
@@ -532,6 +574,8 @@ class LLMEngine:
             "opencode_zen": self._generate_openai_compat,
             "nvidia_nim": self._generate_openai_compat,
             "app_llm": self._generate_llamacpp,
+            "agnes": self._generate_openai_compat,
+            "omniroute": self._generate_openai_compat,
         }
         handler = handlers.get(provider_id)
         if handler:
@@ -560,7 +604,7 @@ class LLMEngine:
             if key:
                 headers["Authorization"] = f"Bearer {key}"
 
-            payload = {"model": model, "messages": messages, "temperature": kwargs.get("temperature", 0.7)}
+            payload = {"model": model, "messages": messages, "temperature": kwargs.get("temperature", 0.7), "stream": False}
             response = requests.post(f"{host}/chat/completions", json=payload, headers=headers, timeout=300)
             if response.status_code == 200:
                 data = response.json()
@@ -631,7 +675,10 @@ class LLMEngine:
                 headers["Authorization"] = f"Bearer {api_key}"
 
             payload = {"model": model, "messages": messages, "temperature": kwargs.get("temperature", 0.7), "max_tokens": kwargs.get("max_tokens", 16384)}
-            response = requests.post(f"{host}/v1/chat/completions", json=payload, headers=headers, timeout=300)
+            # Local llama.cpp decode is slow (~5 t/s on consumer GPUs): a full ideas/screenplay
+            # response can take 10-30 min, so use a generous read timeout (the orchestrator UI
+            # already estimates 600s for ideas and 1800s for screenplay).
+            response = requests.post(f"{host}/v1/chat/completions", json=payload, headers=headers, timeout=1800)
             if response.status_code == 200:
                 data = response.json()
                 return {"success": True, "response": data.get("choices", [{}])[0].get("message", {}).get("content", "")}
