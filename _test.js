@@ -1,0 +1,14394 @@
+
+        window.addEventListener('error', function(e) {
+            console.error("Global JS Error:", e.error);
+            alert("JS Error: " + e.message + "\nAt: " + e.filename + ":" + e.lineno);
+        });
+
+        let recentProjects = [];
+        try {
+            const parsed = JSON.parse(localStorage.getItem('recentProjects') || '[]');
+            if (Array.isArray(parsed)) {
+                recentProjects = parsed;
+            }
+        } catch(e) {
+            console.error("Failed to parse recentProjects from localStorage:", e);
+        }
+        let currentProject = null;
+
+        // === NOTIFICATION ===
+        let _notifTimeout = null;
+        function notify(msg, detail, icon, duration = 2500) {
+            document.getElementById('notif-icon').textContent = icon || '⚠️';
+            document.getElementById('notif-msg').textContent = msg;
+            document.getElementById('notif-detail').textContent = detail || '';
+            
+            const isCritical = icon === '❌' || icon === '⚠️';
+            const okBtn = document.getElementById('notif-ok-btn');
+            if (okBtn) {
+                okBtn.style.display = isCritical ? 'inline-block' : 'none';
+            }
+            
+            document.getElementById('notification').classList.add('active');
+            
+            if (_notifTimeout) clearTimeout(_notifTimeout);
+            if (!isCritical && duration) {
+                _notifTimeout = setTimeout(closeNotification, duration);
+            }
+        }
+        function closeNotification() {
+            if (_notifTimeout) { clearTimeout(_notifTimeout); _notifTimeout = null; }
+            document.getElementById('notification').classList.remove('active');
+        }
+
+        function showConfirm(title, message) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('custom-confirm-modal');
+                const titleEl = document.getElementById('custom-confirm-title');
+                const msgEl = document.getElementById('custom-confirm-message');
+                const okBtn = document.getElementById('custom-confirm-ok');
+                const cancelBtn = document.getElementById('custom-confirm-cancel');
+                
+                titleEl.textContent = title || 'Confirm Action';
+                msgEl.textContent = message || 'Are you sure you want to proceed?';
+                
+                modal.classList.add('active');
+                
+                function cleanup() {
+                    modal.classList.remove('active');
+                    okBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                }
+                
+                okBtn.onclick = () => {
+                    cleanup();
+                    resolve(true);
+                };
+                
+                cancelBtn.onclick = () => {
+                    cleanup();
+                    resolve(false);
+                };
+            });
+        }
+
+        // === PAGE NAVIGATION ===
+        async function navigateToWorkflow(step) {
+            try {
+                if (step === 'video-prompts') {
+                    step = 'storyboard';
+                }
+                if (step === 'videos') {
+                    notify('Saving Workspace', 'Writing project state to disk...', '⏳');
+                    await saveProjectState();
+                    window.location.href = '/timeline';
+                    return;
+                }
+                const built = { ideas: 1, screenplay: 1, 'asset-studio': 1, storyboard: 1, videos: 1 };
+                if (built[step]) {
+                    if (step === 'screenplay') renderScreenplay();
+                    if (step === 'asset-studio') loadAssetStudioData();
+                    if (step === 'storyboard') renderStoryboard();
+                    showPage(step);
+                } else {
+                    notify('Coming Soon', 'This module is not built yet', '🚧');
+                }
+            } catch(e) {
+                notify('Navigation Error', e.message, '⚠️');
+                console.error('navigateToWorkflow error:', e);
+            }
+        }
+
+        function proceedToAssetStudio() {
+            loadAssetStudioData();
+            showPage('asset-studio');
+        }
+
+         function showPage(page) {
+            // Mandatory project guard — block all pages except home
+            if (page !== 'home' && !requireProject()) return;
+            scheduleSaveState();
+            document.querySelectorAll('.page').forEach(p => {
+                p.classList.remove('active');
+                if (p.id === 'page-home') {
+                    p.style.display = 'none';
+                }
+            });
+            const targetPage = document.getElementById('page-' + page);
+            if (targetPage) {
+                targetPage.classList.add('active');
+                if (page === 'home') {
+                    targetPage.style.display = 'flex';
+                }
+            }
+            const header = document.getElementById('header-bar');
+            if (header) {
+                header.style.display = page === 'home' ? 'none' : 'flex';
+            }
+            // Restore ideas on return
+            if (page === 'ideas' && topicIdeas.length) {
+                renderIdeas();
+            }
+        }
+
+        function goHome() {
+            scheduleSaveState();
+            currentProject = null;
+            document.getElementById('project-label').textContent = 'No project';
+            document.getElementById('open-folder-btn').style.display = 'none';
+            syncRecentProjectsWithBackend();
+            showPage('home');
+        }
+
+        async function clearSystemCache() {
+            try {
+                const res = await fetch('/api/system/clear-cache', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Cache Cleared', 'System memory and VRAM caches cleared successfully.', '🧹');
+                } else {
+                    notify('Error', data.error || 'Failed to clear cache.', '⚠️');
+                }
+            } catch (err) {
+                notify('Error', err.message || 'Failed to clear cache.', '⚠️');
+            }
+        }
+
+        async function openProjectFolder() {
+            if (!currentProject?.path) {
+                notify('No Project', 'No project is currently open.', '⚠️');
+                return;
+            }
+            try {
+                const res = await fetch('/api/projects/open-folder', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ path: currentProject.path })
+                });
+                const data = await res.json();
+                if (!data.success) notify('Error', data.error || 'Failed to open folder', '❌');
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        function openProjectWorkspace(name, path) {
+            if (currentProject && currentProject.name !== name) {
+                saveProjectState();
+            }
+            currentProject = { name, path };
+            localStorage.setItem('lastProjectName', name);
+            localStorage.setItem('lastProjectPath', path);
+            document.getElementById('project-label').textContent = name;
+            document.getElementById('open-folder-btn').style.display = 'inline-block';
+            document.getElementById('status-text').textContent = 'Project: ' + name;
+            // Register project in persistent backend registry
+            fetch('/api/projects/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, path })
+            }).catch(() => {});
+            showPage('ideas');
+            loadProjectState();
+            // Show Film Agent welcome banner
+            setTimeout(() => showAgentWelcome(name), 600);
+        }
+
+        // === FILM AGENT WELCOME + QUICK ACTIONS ===
+        let _ideasAgentSession = 'ep_ideas_session';
+        const _EP_MODE = true; // Use Executive Producer for Ideas page
+
+        function showAgentWelcome(projectName) {
+            const banner = document.getElementById('agent-welcome-banner');
+            if (!banner) return;
+            const textEl = document.getElementById('agent-welcome-text');
+            textEl.innerHTML = `<b>Welcome to "${projectName}"!</b> 🎬<br><span style="color:var(--text-secondary);font-size:0.85rem;">I'm your Film Agent — I can handle the entire production pipeline or guide you step by step. What would you like to do?</span>`;
+            banner.style.display = 'block';
+            // Clear any old messages in the Ideas agent chat
+            const msgBox = document.getElementById('ideas-agent-messages');
+            if (msgBox) {
+                msgBox.innerHTML = `<div style="background:var(--bg-tertiary);border-left:2px solid var(--accent-primary);padding:8px 12px;border-radius:2px;max-width:90%;color:var(--text-primary);line-height:1.5;font-size:0.83rem;">
+                    👋 Hey! I'm your **Film Agent**. Ask me anything about <b>${projectName}</b> — screenplay, shots, characters, montage, color grading, or sound design.
+                </div>`;
+            }
+        }
+
+        async function _sendAgentQuickAction(message) {
+            // Route to fullscreen or inline based on current mode
+            if (_agentFullscreen) { sendFsAgentMessage(message); return; }
+            const msgBox = document.getElementById('ideas-agent-messages');
+            const statusEl = document.getElementById('ideas-agent-status');
+            if (!msgBox) return;
+            // Show user message
+            const userMsg = document.createElement('div');
+            userMsg.style.cssText = 'padding:6px 10px;border-radius:2px;max-width:85%;align-self:flex-end;background:rgba(255,51,51,0.1);border-right:2px solid var(--accent-primary);color:#fff;font-size:0.83rem;';
+            userMsg.textContent = message;
+            msgBox.appendChild(userMsg);
+            msgBox.scrollTop = msgBox.scrollHeight;
+            // Show animated progress phases + progress bar
+            const phases = ['🎬 EP analyzing vision...', '📜 Story Architect working...', '🎥 Visual Director planning...', '👤 Character Designer creating...', '✂️ Editor designing rhythm...', '🖼️ Prompt Engineer optimizing...'];
+            let phaseIdx = 0;
+            const progressBar = document.getElementById('ideas-agent-progress');
+            const progressFill = document.getElementById('ideas-agent-progress-bar');
+            if (progressBar) progressBar.style.display = 'block';
+            const phaseInterval = setInterval(() => {
+                statusEl.textContent = phases[phaseIdx % phases.length];
+                if (progressFill) progressFill.style.width = Math.min(90, (phaseIdx + 1) * 15) + '%';
+                phaseIdx++;
+            }, 5000);
+            statusEl.textContent = phases[0];
+            if (progressFill) progressFill.style.width = '10%';
+            try {
+                const epUrl = _EP_MODE ? '/api/executive-producer/chat' : '/api/film-agent/chat';
+                const res = await fetch(epUrl, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message, session_id: _ideasAgentSession, project_path: currentProject?.path || null })
+                });
+                clearInterval(phaseInterval);
+                const data = await res.json();
+                if (progressFill) { progressFill.style.width = '100%'; setTimeout(() => { progressBar.style.display = 'none'; progressFill.style.width = '0%'; }, 1500); }
+                const deptCount = data.delegations?.length || 0;
+                statusEl.textContent = deptCount > 0 ? `✅ Pipeline complete — ${deptCount} departments contributed` : '✅ Done';
+                setTimeout(() => { statusEl.textContent = ''; }, 8000);
+                if (data.success) {
+                    // Show delegations if EP mode
+                    if (_EP_MODE && data.delegations && data.delegations.length > 0) {
+                        const agentNames = data.delegations.map(d => {
+                            const map = {story_architect:'📜 Story', visual_director:'🎥 Visual', character_designer:'👤 Character', sound_designer:'🔊 Sound', editor:'✂️ Editor', prompt_engineer:'🖼️ Prompts'};
+                            return map[d.agent] || d.agent;
+                        });
+                        const ti = document.createElement('div');
+                        ti.style.cssText = 'font-size:0.6rem;color:var(--accent-secondary);padding:2px 10px;font-style:italic;opacity:0.7;';
+                        ti.textContent = `EP delegated to: ${agentNames.join(', ')}`;
+                    } else if (data.tools_used && data.tools_used.length > 0) {
+                        const toolNames = data.tools_used.map(t => t.name.replace(/_/g, ' ')).join(' → ');
+                        const ti = document.createElement('div');
+                        ti.style.cssText = 'font-size:0.6rem;color:var(--accent-secondary);padding:2px 10px;font-style:italic;opacity:0.7;';
+                        ti.textContent = `Used: ${toolNames}`;
+                        msgBox.appendChild(ti);
+                    }
+                    const agentMsg = document.createElement('div');
+                    agentMsg.style.cssText = 'background:var(--bg-tertiary);border-left:2px solid var(--accent-primary);padding:8px 12px;border-radius:2px;max-width:90%;color:var(--text-primary);line-height:1.5;font-size:0.83rem;';
+                    agentMsg.innerHTML = data.response.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+                    msgBox.appendChild(agentMsg);
+                    // Detect production package and add Save button
+                    const isPackage = (/PHASE\s+[12345]/.test(data.response) || (/(?:INT\.|EXT\.)\s+/g.test(data.response) && /ELENA|MARCUS|[A-Z]{3,}/.test(data.response))) && data.response.length > 1500;
+                    if (isPackage) {
+                        const saveBar = document.createElement('div');
+                        saveBar.style.cssText = 'display:flex;gap:8px;padding:4px 10px;align-items:center;flex-wrap:wrap;';
+                        saveBar.innerHTML = `
+                            <button class="btn btn-primary" onclick="saveProductionPackage(this)" style="font-size:0.7rem;padding:4px 12px;display:flex;align-items:center;gap:4px;">
+                                💾 Save Production Package to Project
+                            </button>
+                            <button class="btn btn-secondary" onclick="previewProductionPackage(this)" style="font-size:0.7rem;padding:4px 12px;">
+                                👁 Preview Parsed Data
+                            </button>
+                            <span class="pkg-status" style="font-size:0.65rem;color:var(--text-secondary);"></span>
+                        `;
+                        saveBar.dataset.epOutput = data.response;
+                        msgBox.appendChild(saveBar);
+                    }
+                    msgBox.scrollTop = msgBox.scrollHeight;
+                }
+            } catch(e) {
+                statusEl.textContent = '';
+            }
+        }
+
+        // === Production Package Save/Load ===
+        let _lastParsedPackage = null;
+
+        async function saveProductionPackage(btnEl) {
+            const saveBar = btnEl.closest('[data-ep-output]');
+            const epOutput = saveBar?.dataset?.epOutput;
+            if (!epOutput || !currentProject) {
+                notify('Error', 'No project open or no EP output found', '❌');
+                return;
+            }
+            const statusSpan = saveBar.querySelector('.pkg-status');
+            btnEl.disabled = true;
+            btnEl.textContent = '⏳ Parsing...';
+            if (statusSpan) statusSpan.textContent = 'Parsing production package...';
+            try {
+                const res = await fetch('/api/production-package/save', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        ep_output: epOutput,
+                        project_name: currentProject.name,
+                        project_path: currentProject.path,
+                        merge: true
+                    })
+                });
+                const data = await res.json();
+                if (data.success && data.state) {
+                    _applyProductionPackageState(data.state);
+                    btnEl.textContent = '✅ Saved!';
+                    btnEl.style.background = '#2e7d32';
+                    if (statusSpan) {
+                        const s = data.summary;
+                        statusSpan.textContent = `Saved: ${s.scenes} scenes, ${s.characters} chars, ${s.locations} locs, ${s.shots} shots, ${s.prompts} prompts`;
+                        statusSpan.style.color = '#4caf50';
+                    }
+                    notify('✅ Saved', `Production package saved to ${currentProject.name}`, '💾');
+                    scheduleSaveState();
+                } else {
+                    btnEl.textContent = '❌ Failed';
+                    if (statusSpan) statusSpan.textContent = data.error || 'Save failed';
+                }
+            } catch(e) {
+                btnEl.textContent = '❌ Error';
+                if (statusSpan) statusSpan.textContent = e.message;
+            }
+        }
+
+        async function previewProductionPackage(btnEl) {
+            const saveBar = btnEl.closest('[data-ep-output]');
+            const epOutput = saveBar?.dataset?.epOutput;
+            if (!epOutput) return;
+            try {
+                const res = await fetch('/api/production-package/parse', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ep_output: epOutput })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    _lastParsedPackage = data;
+                    const overlay = document.createElement('div');
+                    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
+                    const panel = document.createElement('div');
+                    panel.style.cssText = 'background:var(--bg-primary);border:1px solid var(--accent-primary);border-radius:12px;max-width:700px;width:100%;max-height:80vh;overflow-y:auto;padding:24px;color:var(--text-primary);';
+                    const s = data.summary;
+                    let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><h3 style="color:var(--accent-primary);margin:0;">📋 Parsed Production Package</h3><button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer;">✕</button></div>`;
+                    html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.scenes}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Scenes</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.characters}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Characters</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.locations}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Locations</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.shots}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Shots</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.prompts}</div><div style="font-size:0.7rem;color:var(--text-secondary);">AI Prompts</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.concepts}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Concepts</div></div>`;
+                    html += `</div>`;
+                    if (data.package.concepts.length) {
+                        html += `<h4 style="color:var(--accent-secondary);margin:12px 0 6px;">Concepts</h4>`;
+                        data.package.concepts.forEach(c => {
+                            const sel = c.selected ? ' 🏆 SELECTED' : '';
+                            html += `<div style="background:var(--bg-secondary);padding:8px 12px;border-radius:6px;margin-bottom:6px;border-left:3px solid ${c.selected ? 'var(--accent-primary)' : 'var(--border-color)'};"><b>${c.title}</b>${sel}<br><span style="font-size:0.75rem;color:var(--text-secondary);">${c.logline}</span></div>`;
+                        });
+                    }
+                    if (data.package.characters.length) {
+                        html += `<h4 style="color:var(--accent-secondary);margin:12px 0 6px;">Characters</h4>`;
+                        data.package.characters.forEach(c => {
+                            html += `<div style="background:var(--bg-secondary);padding:8px 12px;border-radius:6px;margin-bottom:6px;border-left:3px solid #e91e63;"><b>${c.character_name}</b> <span style="color:var(--text-secondary);font-size:0.75rem;">(${c.role})</span><br><span style="font-size:0.75rem;color:var(--text-secondary);">${(c.physical_appearance || '').substring(0, 120)}</span></div>`;
+                        });
+                    }
+                    panel.innerHTML = html;
+                    overlay.appendChild(panel);
+                    document.body.appendChild(overlay);
+                    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+                }
+            } catch(e) {
+                notify('Parse Error', e.message, '❌');
+            }
+        }
+
+        function _applyProductionPackageState(state) {
+            if (state.screenplayData) {
+                screenplayData = state.screenplayData;
+                if (typeof renderScreenplay === 'function') renderScreenplay();
+            }
+            if (state.charData && state.charData.length) {
+                charData = state.charData;
+            }
+            if (state.locationData && state.locationData.length) {
+                locationData = state.locationData;
+            }
+            if (state.topicIdeas && state.topicIdeas.length) {
+                topicIdeas = state.topicIdeas;
+                if (typeof state.selectedIdeaIndex !== 'undefined') {
+                    selectedIdeaIndex = state.selectedIdeaIndex;
+                }
+                if (typeof renderIdeas === 'function') renderIdeas();
+            }
+            if (state.imagePromptData && state.imagePromptData.length) {
+                imagePromptData = state.imagePromptData;
+            }
+            // Populate _assetStudioData so the Asset Studio page works
+            if (state.charData && state.charData.length) {
+                _assetStudioData.character_bible = state.charData.map(ch => ({
+                    character_id: ch.character_id || 'CHAR_' + (Math.random()*1000|0),
+                    full_name: ch.full_name || ch.character_name || ch.name || '',
+                    character_name: ch.character_name || ch.full_name || '',
+                    role: ch.role || '',
+                    physical_appearance: ch.physical_appearance || ch.description || '',
+                    personality: ch.personality || '',
+                    visual_identity: ch.visual_identity || '',
+                    ai_prompt: ch.ai_prompt || '',
+                }));
+            }
+            if (state.locationData && state.locationData.length) {
+                _assetStudioData.location_bible = state.locationData.map(loc => ({
+                    location_id: loc.location_id || 'LOC_' + (Math.random()*1000|0),
+                    location_name: loc.location_name || loc.name || '',
+                    environment_type: loc.environment_type || '',
+                    mood: loc.mood || '',
+                    description: loc.description || '',
+                }));
+            }
+            if (typeof renderAssetStudio === 'function') renderAssetStudio();
+            window.scenesCount = state.screenplayData?.scenes?.length || 0;
+            window.charactersCount = state.charData?.length || 0;
+            const contBtn = document.getElementById('continue-to-screenplay-btn');
+            if (contBtn) contBtn.style.display = 'inline-block';
+            const astBtn = document.getElementById('proceed-to-asset-studio-btn');
+            if (astBtn) astBtn.style.display = 'inline-block';
+            notify('🎬 Pipeline Loaded', `Screenplay + ${charData.length} characters + ${locationData.length} locations populated`, '✅');
+        }
+
+        function agentAutoGenerate() {
+            const name = currentProject?.name || 'this project';
+            // Get current settings from the page
+            const genres = (typeof selectedGenres !== 'undefined' && selectedGenres.length) ? selectedGenres.join(', ') : 'not set';
+            const style = document.getElementById('selected-visual-style')?.textContent?.trim() || 'not set';
+            const aesthetic = document.getElementById('selected-film-aesthetic')?.textContent?.trim() || 'not set';
+            const scenes = document.querySelector('[id*="scenes"] input, input[value="10"]')?.value || '10';
+            const chars = document.querySelector('input[value="3"]')?.value || '3';
+            const shots = document.querySelector('input[value="30"]')?.value || '30';
+            const ratio = document.querySelector('.btn-primary[style*="16:9"]')?.textContent || '16:9';
+
+            _sendAgentQuickAction(`Run the COMPLETE production pipeline for "${name}". Do NOT stop and wait for me. Execute ALL of these phases in order, one after another, in this single response:
+
+**PHASE 1 — CONCEPT**: Generate 5 cinematic story ideas. Then pick THE BEST ONE yourself based on visual potential and emotional impact.
+
+**PHASE 2 — SCREENPLAY**: Write the full screenplay for your chosen concept. Include scene headings, action lines, dialogue, and beat breakdowns for ALL scenes. Use the story scale settings (scenes: ${scenes}, characters: ${chars}, shots: ${shots}).
+
+**PHASE 3 — CHARACTERS**: Design ALL characters with full visual descriptions, personality profiles, costume details, and AI image generation prompts.
+
+**PHASE 4 — VISUAL DIRECTION**: Plan the shot list for key scenes. Include camera angles, lens choices, lighting, and color grading notes.
+
+**PHASE 5 — AI PROMPTS**: Generate optimized ComfyUI prompts for the hero shots — the key images that define the film's look.
+
+Project Settings:
+- Genre: ${genres}
+- Visual Style: ${style}
+- Film Aesthetic: ${aesthetic}
+- Aspect Ratio: ${ratio}
+- Scenes: ${scenes} | Characters: ${chars} | Shots: ${shots}
+
+Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline NOW and give me the complete production package.`);
+            document.getElementById('agent-welcome-banner').style.display = 'none';
+        }
+
+        function agentWriteScreenplay() {
+            const name = currentProject?.name || 'this project';
+            _sendAgentQuickAction(`Help me write a screenplay for "${name}". I'll provide the story concept — guide me through the scene structure, characters, and dialogue.`);
+            document.getElementById('agent-welcome-banner').style.display = 'none';
+        }
+
+        function agentDesignCharacters() {
+            const name = currentProject?.name || 'this project';
+            _sendAgentQuickAction(`I need to design the characters for "${name}". Help me create detailed character profiles with visual descriptions, personalities, costumes, and AI image generation prompts.`);
+            document.getElementById('agent-welcome-banner').style.display = 'none';
+        }
+
+        function agentStepByStep() {
+            const name = currentProject?.name || 'this project';
+            _sendAgentQuickAction(`Guide me step-by-step through making "${name}". Start by explaining what we need to do first, and walk me through each phase: ideas → screenplay → characters → locations → storyboard → video.`);
+            document.getElementById('agent-welcome-banner').style.display = 'none';
+        }
+
+        async function sendIdeasAgentMessage() {
+            const inputEl = document.getElementById('ideas-agent-input');
+            const msg = inputEl.value.trim();
+            if (!msg) return;
+            inputEl.value = '';
+            if (document.getElementById('agent-fullscreen-overlay').style.display === 'flex') {
+                sendFsAgentMessage(msg);
+            } else {
+                _sendAgentQuickAction(msg);
+            }
+        }
+
+        // === FULLSCREEN AGENT ===
+        let _agentFullscreen = false;
+
+        function toggleAgentFullscreen() {
+            _agentFullscreen = !_agentFullscreen;
+            const overlay = document.getElementById('agent-fullscreen-overlay');
+            const panel = document.getElementById('ideas-agent-panel');
+            const fsMsgs = document.getElementById('fs-agent-messages');
+            const inlineMsgs = document.getElementById('ideas-agent-messages');
+
+            if (_agentFullscreen) {
+                // Show fullscreen overlay
+                overlay.style.display = 'flex';
+                // Copy messages from inline to fullscreen
+                fsMsgs.innerHTML = inlineMsgs.innerHTML;
+                // Set project name
+                document.getElementById('fs-agent-project').textContent = currentProject?.name || '';
+                // Focus input
+                setTimeout(() => document.getElementById('fs-agent-input').focus(), 100);
+                // Scroll to bottom
+                fsMsgs.scrollTop = fsMsgs.scrollHeight;
+            } else {
+                // Hide fullscreen, sync back
+                overlay.style.display = 'none';
+                // Copy messages from fullscreen back to inline
+                inlineMsgs.innerHTML = fsMsgs.innerHTML;
+                inlineMsgs.scrollTop = inlineMsgs.scrollHeight;
+            }
+        }
+
+        async function sendFsAgentMessage(msg) {
+            if (!msg) {
+                const inputEl = document.getElementById('fs-agent-input');
+                msg = inputEl.value.trim();
+                if (!msg) return;
+                inputEl.value = '';
+            }
+            const msgBox = document.getElementById('fs-agent-messages');
+            const statusEl = document.getElementById('fs-agent-status');
+            // Show user message
+            const userMsg = document.createElement('div');
+            userMsg.style.cssText = 'padding:8px 14px;border-radius:4px;max-width:80%;align-self:flex-end;background:rgba(255,51,51,0.1);border-right:2px solid var(--accent-primary);color:#fff;font-size:0.9rem;line-height:1.5;';
+            userMsg.textContent = msg;
+            msgBox.appendChild(userMsg);
+            msgBox.scrollTop = msgBox.scrollHeight;
+            statusEl.textContent = '🎬 Executive Producer coordinating...';
+            try {
+                const epUrl = _EP_MODE ? '/api/executive-producer/chat' : '/api/film-agent/chat';
+                const res = await fetch(epUrl, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message: msg, session_id: _ideasAgentSession, project_path: currentProject?.path || null })
+                });
+                const data = await res.json();
+                statusEl.textContent = '';
+                if (data.success) {
+                    // Show delegations
+                    if (data.delegations && data.delegations.length > 0) {
+                        const agentMap = {story_architect:'📜 Story Architect', visual_director:'🎥 Visual Director', character_designer:'👤 Character Designer', sound_designer:'🔊 Sound Designer', editor:'✂️ Editor', prompt_engineer:'🖼️ Prompt Engineer'};
+                        for (const d of data.delegations) {
+                            const ti = document.createElement('div');
+                            ti.style.cssText = 'font-size:0.65rem;color:var(--accent-secondary);padding:4px 14px;background:rgba(0,212,255,0.05);border-radius:3px;border-left:2px solid var(--accent-secondary);opacity:0.85;';
+                            ti.textContent = `${agentMap[d.agent] || d.agent} → ${d.task.substring(0, 120)}...`;
+                            msgBox.appendChild(ti);
+                        }
+                    } else if (data.tools_used && data.tools_used.length > 0) {
+                        const toolNames = data.tools_used.map(t => t.name.replace(/_/g, ' ')).join(' → ');
+                        const ti = document.createElement('div');
+                        ti.style.cssText = 'font-size:0.65rem;color:var(--accent-secondary);padding:2px 14px;font-style:italic;opacity:0.7;';
+                        ti.textContent = `Used: ${toolNames}`;
+                        msgBox.appendChild(ti);
+                    }
+                    const agentMsg = document.createElement('div');
+                    agentMsg.style.cssText = 'background:var(--bg-tertiary);border-left:2px solid var(--accent-primary);padding:10px 14px;border-radius:4px;max-width:85%;color:var(--text-primary);line-height:1.6;font-size:0.9rem;';
+                    agentMsg.innerHTML = data.response.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+                    msgBox.appendChild(agentMsg);
+                    // Detect production package in fullscreen mode too
+                    const isPkgFs = /PHASE\s+[12345]/.test(data.response) && data.response.length > 2000;
+                    if (isPkgFs) {
+                        const saveBarFs = document.createElement('div');
+                        saveBarFs.style.cssText = 'display:flex;gap:8px;padding:6px 14px;align-items:center;flex-wrap:wrap;';
+                        saveBarFs.innerHTML = `
+                            <button class="btn btn-primary" onclick="saveProductionPackage(this)" style="font-size:0.75rem;padding:6px 16px;display:flex;align-items:center;gap:4px;">
+                                💾 Save Production Package to Project
+                            </button>
+                            <button class="btn btn-secondary" onclick="previewProductionPackage(this)" style="font-size:0.75rem;padding:6px 16px;">
+                                👁 Preview Parsed Data
+                            </button>
+                            <span class="pkg-status" style="font-size:0.7rem;color:var(--text-secondary);"></span>
+                        `;
+                        saveBarFs.dataset.epOutput = data.response;
+                        msgBox.appendChild(saveBarFs);
+                    }
+                    msgBox.scrollTop = msgBox.scrollHeight;
+                }
+            } catch(e) {
+                statusEl.textContent = '';
+            }
+        }
+
+        // === PROJECT STATE PERSISTENCE ===
+        let _saveTimer = null;
+
+        function collectProjectState() {
+            return {
+                topicIdeas,
+                selectedIdeaIndex,
+                selectedGenres,
+                selectedVisualStyle,
+                selectedFilmAesthetic,
+                screenplayData: screenplayData,
+                charData: charData.map(c => ({ ...c })),
+                locationData: locationData.map(l => ({ ...l })),
+                sceneData: sceneData.slice(),
+                imagePromptData: imagePromptData.slice(),
+                videoPromptData: videoPromptData.slice(),
+                sceneVideoData: sceneVideoData.map(s => ({ savedVideo: s.savedVideo, genFilename: s.genFilename, genSubfolder: s.genSubfolder })),
+                sceneImageData: sceneImageData.map(s => ({ prompt: s.prompt, savedImage: s.savedImage })),
+                savedAssets: savedAssets.slice(),
+                sidebarExpanded: !document.getElementById('sidebar').classList.contains('collapsed'),
+                scenesCount: window.scenesCount || 0,
+                charactersCount: window.charactersCount || 0,
+                projectSettings: currentProject?.settings || null,
+                _assetStudioApprovals: window._assetStudioApprovals || { characters: false, locations: false },
+                currentAssetFilter: currentAssetFilter,
+                selectedAspectRatio: selectedAspectRatio,
+                selectedDialogue: selectedDialogue,
+                timelineClips: timelineClips.map(c => ({ ...c })),
+            };
+        }
+
+        function clearProjectState() {
+            topicIdeas = [];
+            selectedIdeaIndex = -1;
+            screenplayData = null;
+            selectedGenres = [];
+            selectedVisualStyle = null;
+            selectedFilmAesthetic = null;
+            charData = [];
+            locationData = [];
+            sceneData = [];
+            imagePromptData = [];
+            videoPromptData = [];
+            sceneVideoData = [];
+            sceneImageData = [];
+            savedAssets = [];
+            timelineClips = [];
+            window.scenesCount = 0;
+            window.charactersCount = 0;
+            window._assetStudioApprovals = { characters: false, locations: false };
+            if (currentProject) {
+                currentProject.settings = null;
+            }
+            if (typeof updateNleTimeline === 'function') {
+                updateNleTimeline();
+            }
+
+            // Reset UI inputs
+            const vsLabel = document.getElementById('selected-visual-style');
+            if (vsLabel) vsLabel.textContent = 'None selected';
+            const faLabel = document.getElementById('selected-film-aesthetic');
+            if (faLabel) faLabel.textContent = 'None selected';
+
+            const selC = document.getElementById('sel-characters');
+            const selL = document.getElementById('sel-locations');
+            const selS = document.getElementById('sel-scenes');
+            const selTS = document.getElementById('sel-total-shots');
+            if (selC) selC.value = 3;
+            if (selL) selL.value = 3;
+            if (selS) selS.value = 10;
+            if (selTS) selTS.value = 30;
+
+            const arBtns = document.getElementById('aspect-ratio-buttons');
+            if (arBtns) {
+                arBtns.querySelectorAll('.ar-btn').forEach(b => {
+                    b.classList.toggle('btn-primary', b.dataset.value === '16:9');
+                    b.classList.toggle('btn-secondary', b.dataset.value !== '16:9');
+                });
+            }
+            selectedAspectRatio = '16:9';
+
+            const dlgBtns = document.getElementById('dialogue-buttons');
+            if (dlgBtns) {
+                dlgBtns.querySelectorAll('.dialogue-btn').forEach(b => {
+                    b.classList.toggle('btn-primary', b.dataset.value === 'with');
+                    b.classList.toggle('btn-secondary', b.dataset.value !== 'with');
+                });
+            }
+            selectedDialogue = 'with';
+
+            const imgRes = document.getElementById('sel-img-resolution');
+            if (imgRes) imgRes.value = '1024x576';
+            const vidRes = document.getElementById('sel-vid-resolution');
+            if (vidRes) vidRes.value = '1280x720';
+
+            const eraYearInput = document.getElementById('era-year');
+            if (eraYearInput) eraYearInput.value = '';
+            const customPromptInput = document.getElementById('custom-prompt');
+            if (customPromptInput) customPromptInput.value = '';
+            const webQueryInput = document.getElementById('web-query');
+            if (webQueryInput) webQueryInput.value = '';
+
+            document.querySelectorAll('.src-chk').forEach(cb => {
+                cb.checked = false;
+                const section = document.getElementById('input-' + cb.value);
+                if (section) section.classList.remove('visible');
+            });
+
+            // Reset continue buttons
+            const contBtn = document.getElementById('continue-to-screenplay-btn');
+            if (contBtn) contBtn.style.display = 'none';
+
+            // Refresh UI views
+            if (typeof renderIdeas === 'function') renderIdeas();
+            if (typeof renderScreenplay === 'function') renderScreenplay();
+            if (typeof renderStoryboard === 'function') renderStoryboard();
+            if (typeof renderVideoStoryboard === 'function') renderVideoStoryboard();
+            if (typeof renderAssets === 'function') renderAssets();
+        }
+
+        function restoreProjectState(state) {
+            if (!state) return;
+            topicIdeas = state.topicIdeas || [];
+            selectedIdeaIndex = state.selectedIdeaIndex !== undefined ? state.selectedIdeaIndex : (topicIdeas.length > 0 ? 0 : -1);
+            screenplayData = state.screenplayData || null;
+            selectedGenres = state.selectedGenres || [];
+            selectedVisualStyle = state.selectedVisualStyle || null;
+            selectedFilmAesthetic = state.selectedFilmAesthetic || null;
+            charData = (state.charData || []).map(c => ({ ...c }));
+            locationData = (state.locationData || []).map(l => ({ ...l }));
+            sceneData = state.sceneData ? state.sceneData.slice() : [];
+            imagePromptData = state.imagePromptData ? state.imagePromptData.slice() : [];
+            videoPromptData = state.videoPromptData ? state.videoPromptData.slice() : [];
+            sceneVideoData = (state.sceneVideoData || []).map(s => ({ savedVideo: s.savedVideo, genFilename: s.genFilename, genSubfolder: s.genSubfolder }));
+            sceneImageData = (state.sceneImageData || []).map(s => ({ prompt: s.prompt, savedImage: s.savedImage, savedPath: s.savedPath }));
+            savedAssets = state.savedAssets ? state.savedAssets.slice() : [];
+            window.scenesCount = state.scenesCount || 0;
+            window.charactersCount = state.charactersCount || 0;
+            if (state._assetStudioApprovals) {
+                window._assetStudioApprovals = state._assetStudioApprovals;
+            }
+            if (!currentProject) currentProject = {};
+            currentProject.settings = state.projectSettings || {};
+            if (state.currentAssetFilter !== undefined) currentAssetFilter = state.currentAssetFilter;
+            if (state.selectedAspectRatio !== undefined) selectedAspectRatio = state.selectedAspectRatio;
+            if (state.selectedDialogue !== undefined) selectedDialogue = state.selectedDialogue;
+            // Update selection UI labels
+            const vsLabel = document.getElementById('selected-visual-style');
+            if (vsLabel) vsLabel.textContent = selectedVisualStyle ? '🎨 ' + selectedVisualStyle : 'None selected';
+            const faLabel = document.getElementById('selected-film-aesthetic');
+            if (faLabel) faLabel.textContent = selectedFilmAesthetic ? '🎞️ ' + selectedFilmAesthetic : 'None selected';
+            // Restore selection count inputs
+            if (currentProject.settings) {
+                const s = currentProject.settings;
+                const selC = document.getElementById('sel-characters');
+                const selL = document.getElementById('sel-locations');
+                const selS = document.getElementById('sel-scenes');
+                const selTS = document.getElementById('sel-total-shots');
+                if (selC && s.characters) selC.value = s.characters;
+                if (selL && s.locations) selL.value = s.locations;
+                if (selS && s.scenes) selS.value = s.scenes;
+                if (selTS && s.totalShots) selTS.value = s.totalShots;
+                // Restore aspect ratio & resolution
+                if (s.aspectRatio) selectAspectRatio(s.aspectRatio);
+                const selImgRes = document.getElementById('sel-img-resolution');
+                if (selImgRes && s.imgResolution) selImgRes.value = s.imgResolution;
+                const selVidRes = document.getElementById('sel-vid-resolution');
+                if (selVidRes && s.vidResolution) selVidRes.value = s.vidResolution;
+                if (s.dialogue) selectDialogue(s.dialogue);
+                
+                // Ensure sheet prompts are initialized on settings if missing/empty
+                if (!s.character_sheet_prompt || !s.character_sheet_prompt.trim()) {
+                    s.character_sheet_prompt = 'Preserve the character exactly as shown in the reference image: same face, same clothing, same accessories, same dark atmospheric background with flickering screens and analog equipment, same lighting, same color palette. The character must look identical to the reference with the same environment and mood.';
+                }
+                if (!s.location_sheet_prompt || !s.location_sheet_prompt.trim()) {
+                    s.location_sheet_prompt = 'Professional location concept art featuring a single, ultra-wide cinematic establishing shot capturing the full scope and atmosphere of the environment. High-end studio quality, perfect composition, rich lighting, single image only, no borders, no grid.';
+                }
+                // Restore sheet CFG / Steps / Seed
+                const sheetCfgEl = document.getElementById('sheet-cfg');
+                if (sheetCfgEl && s.sheetCfg) sheetCfgEl.value = s.sheetCfg;
+                const sheetStepsEl = document.getElementById('sheet-steps');
+                if (sheetStepsEl && s.sheetSteps) sheetStepsEl.value = s.sheetSteps;
+                // Restore gen CFG / Steps
+                const genCfgEl = document.getElementById('gen-cfg');
+                if (genCfgEl && s.genCfg) genCfgEl.value = s.genCfg;
+                const genStepsEl = document.getElementById('gen-steps');
+                if (genStepsEl && s.genSteps) genStepsEl.value = s.genSteps;
+                
+            }
+            // Restore genre chips
+            if (typeof updateGenreLabel === 'function') updateGenreLabel();
+            timelineClips = state.timelineClips ? state.timelineClips.map(c => ({ ...c })) : [];
+            if (typeof updateNleTimeline === 'function') {
+                updateNleTimeline();
+            }
+            if (typeof populateResolveMediaPool === 'function') {
+                populateResolveMediaPool();
+            }
+            if (state.sidebarExpanded !== undefined) {
+                const sidebar = document.getElementById('sidebar');
+                const icon = document.getElementById('sidebar-toggle-icon');
+                if (state.sidebarExpanded) {
+                    sidebar.classList.remove('collapsed');
+                    sidebar.classList.add('expanded');
+                    if (icon) icon.textContent = '▶';
+                } else {
+                    sidebar.classList.remove('expanded');
+                    sidebar.classList.add('collapsed');
+                    if (icon) icon.textContent = '◀';
+                }
+            }
+        }
+
+        async function saveProjectState() {
+            if (!currentProject || !currentProject.path) return;
+            const state = collectProjectState();
+            try {
+                await fetch('/api/projects/' + encodeURIComponent(currentProject.name) + '/state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ state, project_path: currentProject.path })
+                });
+            } catch(e) {
+                /* silent - don't spam user */
+            }
+        }
+
+        function scheduleSaveState() {
+            if (_saveTimer) clearTimeout(_saveTimer);
+            _saveTimer = setTimeout(saveProjectState, 1000);
+        }
+
+        async function loadProjectState() {
+            if (!currentProject || !currentProject.path) return;
+            try {
+                const res = await fetch('/api/projects/' + encodeURIComponent(currentProject.name) + '/state?path=' + encodeURIComponent(currentProject.path));
+                const data = await res.json();
+                if (data.success && data.state) {
+                    restoreProjectState(data.state);
+                    renderAssets();
+                    renderStoryboard();
+                    renderVideoStoryboard();
+                    // Refresh ideas page display
+                    if (topicIdeas.length && typeof renderIdeas === 'function') {
+                        renderIdeas();
+                    }
+                    // Show continue button if idea selected
+                    const contBtn = document.getElementById('continue-to-screenplay-btn');
+                    if (contBtn) contBtn.style.display = selectedIdeaIndex >= 0 ? 'inline-block' : 'none';
+                    // Refresh screenplay display
+                    if (screenplayData && typeof renderScreenplay === 'function') {
+                        renderScreenplay();
+                    }
+                    // Sync screenplay shots to orchestrator so approve/lock endpoints find them
+                    if (screenplayData) {
+                        try {
+                            await fetch('/api/orchestrator/sync-shots', {
+                                method: 'POST', headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ screenplay: screenplayData })
+                            });
+                        } catch(e) {}
+                    }
+                } else if (data.success) {
+                    // No saved state yet — normal for a new or never-saved project. Nothing to restore.
+                } else {
+                    console.error("loadProjectState: " + (data.error || "failed to load project state"));
+                    notify('Load Warning', data.error || 'Failed to load project state from the server.', '⚠️');
+                }
+            } catch(e) {
+                console.error("loadProjectState catch block triggered:", e);
+                notify('Load Error', 'Error restoring project: ' + e.message, '⚠️');
+            }
+        }
+
+        // === HOME - NEW/OPEN PROJECT ===
+        function openNewProject() {
+            document.getElementById('project-name-input').value = '';
+            document.getElementById('project-path-input').value = '';
+            document.getElementById('new-project-modal').classList.add('active');
+            setTimeout(() => document.getElementById('project-name-input').focus(), 100);
+        }
+        function closeNewProject() {
+            document.getElementById('new-project-modal').classList.remove('active');
+        }
+
+        function openExistingProject() {
+            document.getElementById('open-project-path').value = '';
+            document.getElementById('open-project-details').style.display = 'none';
+            document.getElementById('open-project-btn').style.display = 'none';
+            document.getElementById('open-project-modal').classList.add('active');
+        }
+        function closeOpenProject() {
+            document.getElementById('open-project-modal').classList.remove('active');
+            document.getElementById('open-folder-browser').style.display = 'none';
+        }
+
+        // === FOLDER BROWSER ===
+        let _browserTargetInput = null;
+        let _browserCurrentPath = '';
+
+        function _formatBytes(size) {
+            if (!size) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            let s = size;
+            while (s >= 1024 && i < units.length - 1) { s /= 1024; i++; }
+            return s.toFixed(1) + ' ' + units[i];
+        }
+
+        function _getBrowserEls() {
+            const isOpen = _browserTargetInput === 'open-project-path';
+            return {
+                browser: document.getElementById(isOpen ? 'open-folder-browser' : 'new-folder-browser'),
+                path: document.getElementById(isOpen ? 'folder-browser-path' : 'new-folder-browser-path'),
+                list: document.getElementById(isOpen ? 'folder-browser-list' : 'new-folder-browser-list'),
+                isOpen
+            };
+        }
+
+        async function openFolderBrowser(targetInputId) {
+            _browserTargetInput = targetInputId;
+            // Try native OS folder picker first
+            try {
+                const res = await fetch('/api/pick-folder', { method: 'GET' });
+                const data = await res.json();
+                if (data.path && !data.cancelled) {
+                    document.getElementById(targetInputId).value = data.path;
+                    if (targetInputId === 'open-project-path') {
+                        checkProjectPath(data.path);
+                    }
+                    return;
+                }
+            } catch(e) {
+                // Native picker failed — fall back to in-app browser
+                console.log('Native folder picker unavailable, using in-app browser');
+            }
+            // Fallback: in-app folder browser
+            const els = _getBrowserEls();
+            const currentVal = document.getElementById(targetInputId)?.value?.trim() || '';
+            _browserCurrentPath = currentVal;
+            els.browser.style.display = 'block';
+            _loadBrowserDir(_browserCurrentPath, els.path, els.list);
+        }
+
+        async function _loadBrowserDir(path, pathEl, listEl) {
+            listEl.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:0.8rem;text-align:center;">Loading...</div>';
+            pathEl.textContent = path || 'This PC';
+            try {
+                const res = await fetch('/api/browse-directory?path=' + encodeURIComponent(path));
+                const data = await res.json();
+                if (!data.success) {
+                    listEl.innerHTML = `<div style="padding:16px;color:#f87171;font-size:0.8rem;">${data.error || 'Error'}</div>`;
+                    return;
+                }
+                _browserCurrentPath = data.current || '';
+                pathEl.textContent = data.current || 'This PC';
+
+                // === DRIVES VIEW (Windows Explorer style) ===
+                if (data.drives && data.drives.length > 0) {
+                    let html = '<div style="padding:10px;display:flex;flex-wrap:wrap;gap:8px;">';
+                    for (const d of data.drives) {
+                        const pct = d.usage_percent || 0;
+                        const barColor = pct > 90 ? '#f87171' : pct > 70 ? '#facc15' : '#4ade80';
+                        const label = d.display || d.name;
+                        const free = d.free_display || (_formatBytes(d.free_bytes) + ' free');
+                        html += `
+                            <div onclick="_browserSelect('${d.path.replace(/\\/g, '\\\\')}')" style="width:140px;padding:10px;background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:4px;cursor:pointer;transition:all 0.15s;flex-shrink:0;" onmouseenter="this.style.borderColor='var(--accent-primary)';this.style.background='rgba(255,255,255,0.06)'" onmouseleave="this.style.borderColor='var(--border-color)';this.style.background='rgba(255,255,255,0.03)'">
+                                <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+                                    <span style="font-size:1.4rem;">💽</span>
+                                    <span style="font-size:0.75rem;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>
+                                </div>
+                                <div style="width:100%;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;margin-bottom:4px;">
+                                    <div style="width:${pct}%;height:100%;background:${barColor};border-radius:2px;transition:width 0.3s;"></div>
+                                </div>
+                                <div style="font-size:0.65rem;color:var(--text-secondary);">${free}</div>
+                            </div>`;
+                    }
+                    html += '</div>';
+                    listEl.innerHTML = html;
+                    return;
+                }
+
+                // === FOLDER LIST VIEW (Explorer detail style) ===
+                if (!data.entries || data.entries.length === 0) {
+                    listEl.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:0.8rem;text-align:center;">This folder is empty</div>';
+                    return;
+                }
+
+                let html = '';
+                for (const entry of data.entries) {
+                    const escPath = entry.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    if (entry.is_parent) {
+                        html += `<div class="fb-row" onclick="_browserSelect('${escPath}')" style="display:flex;align-items:center;gap:10px;padding:5px 12px;cursor:pointer;font-size:0.8rem;border-bottom:1px solid rgba(255,255,255,0.04);transition:background 0.1s;">
+                            <span style="width:20px;text-align:center;font-size:0.9rem;">⬆️</span>
+                            <span style="flex:1;color:var(--text-secondary);font-style:italic;">..</span>
+                        </div>`;
+                    } else {
+                        const count = entry.child_count > 0 ? `<span style="color:var(--text-secondary);font-size:0.7rem;">${entry.child_count} subfolders</span>` : '';
+                        html += `<div class="fb-row" onclick="_browserSelect('${escPath}')" style="display:flex;align-items:center;gap:10px;padding:5px 12px;cursor:pointer;font-size:0.8rem;border-bottom:1px solid rgba(255,255,255,0.04);transition:background 0.1s;">
+                            <span style="width:20px;text-align:center;font-size:0.9rem;">📁</span>
+                            <span style="flex:1;color:var(--text-primary);">${entry.name}</span>
+                            ${count}
+                        </div>`;
+                    }
+                }
+                listEl.innerHTML = html;
+
+                // Hover effects
+                listEl.querySelectorAll('.fb-row').forEach(row => {
+                    row.addEventListener('mouseenter', () => row.style.background = 'rgba(255,255,255,0.05)');
+                    row.addEventListener('mouseleave', () => row.style.background = '');
+                });
+            } catch(e) {
+                listEl.innerHTML = `<div style="padding:16px;color:#f87171;font-size:0.8rem;">${e.message}</div>`;
+            }
+        }
+
+        function _browserSelect(path) {
+            const els = _getBrowserEls();
+            _loadBrowserDir(path, els.path, els.list);
+            document.getElementById(_browserTargetInput).value = path;
+            if (_browserTargetInput === 'open-project-path') {
+                checkProjectPath(path);
+            }
+        }
+
+        function _browserUseSelected() {
+            document.getElementById(_browserTargetInput).value = _browserCurrentPath;
+            const els = _getBrowserEls();
+            els.browser.style.display = 'none';
+            if (_browserTargetInput === 'open-project-path') {
+                checkProjectPath(_browserCurrentPath);
+            }
+        }
+
+        let checkTimeout;
+        function checkProjectPath(path) {
+            clearTimeout(checkTimeout);
+            document.getElementById('open-project-details').style.display = 'none';
+            document.getElementById('open-project-btn').style.display = 'none';
+            if (!path) return;
+            checkTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch('/api/projects/check?path=' + encodeURIComponent(path));
+                    const data = await res.json();
+                    if (data.exists) {
+                        document.getElementById('open-project-details').style.display = 'block';
+                        document.getElementById('open-project-name').textContent = data.name;
+                        document.getElementById('open-project-meta').textContent = data.info || 'Valid project';
+                        document.getElementById('open-project-btn').style.display = 'block';
+                        document.getElementById('open-project-btn').dataset.path = data.path || path;
+                    } else {
+                        document.getElementById('open-project-details').style.display = 'block';
+                        document.getElementById('open-project-name').textContent = '❌ Not a valid project';
+                        document.getElementById('open-project-meta').textContent = 'No project.json found';
+                        document.getElementById('open-project-btn').style.display = 'none';
+                    }
+                } catch(e) { console.log(e); }
+            }, 500);
+        }
+
+        async function createProject() {
+            const name = document.getElementById('project-name-input').value.trim();
+            const path = document.getElementById('project-path-input').value.trim();
+            if (!name) { notify('Project Name Required', 'Please enter a name'); return; }
+            try {
+                const res = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name, location: path || undefined})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeNewProject();
+                    const savePath = data.project_path || path + '\\' + name;
+                    addRecentProject(name, savePath);
+                    notify('🎉 Project Created', '"' + name + '" is ready!', '✅');
+                    setTimeout(() => openProjectWorkspace(name, savePath), 500);
+                } else {
+                    notify('Failed', data.error || data.message);
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+        }
+
+        function openSelectedProject() {
+            const path = document.getElementById('open-project-btn').dataset.path;
+            const name = document.getElementById('open-project-name').textContent;
+            addRecentProject(name, path);
+            closeOpenProject();
+            notify('📂 Opened', '"' + name + '" loaded', '✅');
+            setTimeout(() => openProjectWorkspace(name, path), 500);
+        }
+
+        function addRecentProject(name, path) {
+            recentProjects = recentProjects.filter(p => p.path !== path);
+            recentProjects.unshift({name, path, opened: new Date().toLocaleString()});
+            if (recentProjects.length > 10) recentProjects = recentProjects.slice(0, 10);
+            localStorage.setItem('recentProjects', JSON.stringify(recentProjects));
+            renderRecentProjects();
+        }
+
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            str = String(str);
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        function renderRecentProjects() {
+            const container = document.getElementById('recent-list');
+            const list = (recentProjects || []).filter(p => p && p.path);
+            if (!list.length) {
+                container.innerHTML = '<div class="empty-state" style="text-align:center;padding:30px;color:var(--text-secondary);font-size:0.95rem;background:rgba(255,255,255,0.01);border-radius:4px;border:1px dashed var(--border-color);">No recent projects found</div>';
+                return;
+            }
+            container.innerHTML = list.map((p, idx) => `
+                <div class="recent-item" data-idx="${idx}" style="background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;padding:14px 18px;margin-bottom:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:all 0.2s;">
+                    <div>
+                        <div class="name" style="font-weight:800;font-size:0.95rem;color:#fff;margin-bottom:4px;font-family:'Syne',sans-serif;text-transform:uppercase;letter-spacing:-0.5px;">${escapeHtml(p.name || 'Untitled')}</div>
+                        <div class="meta" style="font-size:0.75rem;color:var(--text-secondary);font-family:'Space Grotesk',sans-serif;opacity:0.8;">${escapeHtml(p.path)}</div>
+                    </div>
+                    <div class="arrow" style="font-size:1.1rem;color:var(--accent-primary);opacity:0.7;transition:all 0.2s;">➡️</div>
+                </div>
+            `).join('');
+            container.querySelectorAll('.recent-item').forEach(el => {
+                el.addEventListener('mouseover', () => {
+                    el.style.borderColor = 'var(--accent-primary)';
+                    el.style.background = 'rgba(255,51,51,0.04)';
+                    el.querySelector('.arrow').style.transform = 'translateX(4px)';
+                    el.querySelector('.arrow').style.opacity = '1';
+                });
+                el.addEventListener('mouseout', () => {
+                    el.style.borderColor = 'var(--border-color)';
+                    el.style.background = 'var(--bg-tertiary)';
+                    el.querySelector('.arrow').style.transform = 'translateX(0)';
+                    el.querySelector('.arrow').style.opacity = '0.7';
+                });
+                el.addEventListener('click', () => {
+                    const idx = parseInt(el.dataset.idx);
+                    const item = list[idx];
+                    if (item && item.path) {
+                        quickOpen(item.path);
+                    }
+                });
+            });
+        }
+
+        async function syncRecentProjectsWithBackend() {
+            try {
+                // 1. Push all known localStorage project paths to the backend registry
+                //    so they survive even if localStorage is cleared
+                const localProjects = recentProjects.filter(p => p.path && p.name);
+                for (const lp of localProjects) {
+                    try {
+                        await fetch('/api/projects/register', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: lp.name, path: lp.path })
+                        });
+                    } catch(e) {}
+                }
+
+                // 2. Fetch full project list from backend (built-in + registry)
+                const res = await fetch('/api/projects');
+                const data = await res.json();
+                if (data.success && data.projects) {
+                    const normPath = p => (p || '').replace(/\\/g, '/').toLowerCase();
+                    const backendProjects = data.projects
+                        .filter(p => p.path)
+                        .map(p => ({
+                            name: p.name,
+                            path: p.path,
+                            opened: p.updated_at ? new Date(p.updated_at).toLocaleString() : new Date().toLocaleString()
+                        }));
+                    // Start with localStorage entries that have valid paths
+                    let merged = recentProjects.filter(p => p.path);
+                    for (const bp of backendProjects) {
+                        const existsByPath = merged.find(p => normPath(p.path) === normPath(bp.path));
+                        if (!existsByPath) {
+                            merged.push(bp);
+                        } else {
+                            if (!existsByPath.name) existsByPath.name = bp.name;
+                        }
+                    }
+                    merged.sort((a, b) => {
+                        const da = Date.parse(a.opened) || 0;
+                        const db = Date.parse(b.opened) || 0;
+                        return db - da;
+                    });
+                    if (merged.length > 20) merged = merged.slice(0, 20);
+                    recentProjects = merged;
+                    localStorage.setItem('recentProjects', JSON.stringify(recentProjects));
+                }
+            } catch(e) {
+                console.error("Failed to sync projects with backend:", e);
+            }
+            renderRecentProjects();
+        }
+
+        async function quickOpen(path) {
+            try {
+                const res = await fetch('/api/projects/check?path=' + encodeURIComponent(path));
+                const data = await res.json();
+                if (data.exists) {
+                    addRecentProject(data.name, path);
+                    openProjectWorkspace(data.name, path);
+                } else {
+                    notify('Not Found', 'Project no longer exists');
+                    recentProjects = recentProjects.filter(p => p.path !== path);
+                    localStorage.setItem('recentProjects', JSON.stringify(recentProjects));
+                    renderRecentProjects();
+                }
+            } catch(e) { notify('Error', e.message); }
+        }
+
+        // === SETTINGS ===
+        function openSettings() {
+            loadSettingsUI();
+            document.getElementById('settings-modal').classList.add('active');
+        }
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.remove('active');
+        }
+
+        function onLLMProviderChange() {
+            const provider = document.getElementById('llm-provider').value;
+            const isLocal = ['ollama', 'lm_studio', 'llama_cpp', 'app_llm'].includes(provider);
+            const isAppLLM = provider === 'app_llm';
+            document.getElementById('llm-local-fields').style.display = isLocal ? 'block' : 'none';
+            document.getElementById('llm-cloud-fields').style.display = isLocal ? 'none' : 'block';
+            document.getElementById('llm-models-path-group').style.display = (provider === 'llama_cpp') ? 'block' : 'none';
+            document.getElementById('llm-host-group').style.display = (provider === 'app_llm') ? 'none' : 'block';
+            document.getElementById('llm-app-model-browser').style.display = isAppLLM ? 'block' : 'none';
+            const showGpuGroup = provider === 'app_llm' || provider === 'llama_cpp';
+            document.getElementById('llm-gpu-layers-group').style.display = showGpuGroup ? 'block' : 'none';
+            if (showGpuGroup) checkGPUStatus();
+            if (provider === 'ollama') {
+                document.getElementById('llm-host').value = 'http://localhost:11434';
+            } else if (provider === 'lm_studio') {
+                document.getElementById('llm-host').value = 'http://localhost:1234/v1';
+            } else if (provider === 'llama_cpp') {
+                document.getElementById('llm-host').value = 'http://localhost:8080';
+            } else if (provider === 'app_llm') {
+                document.getElementById('llm-host').value = 'http://localhost:8081';
+            }
+            if (isLocal) {
+                checkLocalLLMStatus(provider);
+            }
+            loadLLMModels();
+            if (isAppLLM) {
+                loadInstalledModels();
+                checkActiveGemmaDownloads();
+            }
+        }
+
+        function getLLMModelSelect() {
+            const isLocal = ['ollama', 'lm_studio', 'llama_cpp', 'app_llm'].includes(document.getElementById('llm-provider').value);
+            return document.getElementById(isLocal ? 'llm-model' : 'llm-model-cloud');
+        }
+
+        function onImageProviderChange() {
+            const provider = document.getElementById('image-provider').value;
+            const isComfyUI = provider === 'comfyui' || provider === 'comfyui_cloud';
+            const isComfyUILocal = provider === 'comfyui';
+            const sharesLLMKey = provider === 'openrouter';
+            document.getElementById('img-local-fields').style.display = isComfyUI ? 'block' : 'none';
+            document.getElementById('img-cloud-fields').style.display = isComfyUI ? 'none' : 'block';
+            document.getElementById('img-custom-host').style.display = provider === 'custom' ? 'block' : 'none';
+            document.getElementById('comfyui-local-controls').style.display = isComfyUILocal ? 'block' : 'none';
+            document.getElementById('comfyui-cloud-controls').style.display = provider === 'comfyui_cloud' ? 'block' : 'none';
+            const apiKeyGroup = document.getElementById('img-apikey-group');
+            const sharedKeyNote = document.getElementById('img-shared-key-note');
+            if (apiKeyGroup) apiKeyGroup.style.display = sharesLLMKey ? 'none' : 'block';
+            if (sharedKeyNote) sharedKeyNote.style.display = sharesLLMKey ? 'block' : 'none';
+            if (isComfyUI) {
+                checkComfyUIStatus();
+            }
+        }
+
+        async function checkLocalLLMStatus(provider) {
+            const statusEl = document.getElementById('llm-status');
+            const startBtn = document.getElementById('llm-start-btn');
+            const stopBtn = document.getElementById('llm-stop-btn');
+            try {
+                const res = await fetch('/api/llm/status?provider=' + provider);
+                const data = await res.json();
+                if (data.running) {
+                    statusEl.textContent = '● Running';
+                    statusEl.style.color = '#4ade80';
+                    startBtn.style.display = 'none';
+                    stopBtn.style.display = 'inline-block';
+                } else {
+                    statusEl.textContent = '○ Stopped';
+                    statusEl.style.color = '#f87171';
+                    startBtn.style.display = 'inline-block';
+                    stopBtn.style.display = 'none';
+                }
+            } catch(e) {
+                statusEl.textContent = '○ Unknown';
+                statusEl.style.color = '#888';
+                startBtn.style.display = 'inline-block';
+                stopBtn.style.display = 'none';
+            }
+        }
+
+        async function checkGPUStatus() {
+            const el = document.getElementById('llm-gpu-status');
+            if (!el) return;
+            try {
+                const res = await fetch('/api/gpu/status');
+                const data = await res.json();
+                if (data.gpu_available) {
+                    el.textContent = '● GPU available';
+                    el.style.color = '#4ade80';
+                    el.style.background = 'rgba(74,222,128,0.1)';
+                } else {
+                    el.textContent = '○ CPU only (no GPU detected)';
+                    el.style.color = '#fbbf24';
+                    el.style.background = 'rgba(251,191,36,0.1)';
+                }
+            } catch(e) {
+                el.textContent = '○ detection failed';
+                el.style.color = '#888';
+            }
+        }
+
+        async function detectComfyUIPath(el) {
+            el.textContent = '⏳';
+            try {
+                const res = await fetch('/api/comfyui/detect', { method: 'POST' });
+                const data = await res.json();
+                if (data.installed && data.path) {
+                    document.getElementById('comfyui-path').value = data.path;
+                    el.textContent = '✓ Found';
+                } else {
+                    el.textContent = '✗ Not found';
+                    notify('ComfyUI Not Found', 'Set the path manually or install ComfyUI');
+                }
+            } catch(e) {
+                el.textContent = '✗ Error';
+            }
+            setTimeout(() => { el.textContent = '🔍 Detect'; }, 3000);
+        }
+
+        async function checkComfyUIStatus() {
+            const statusEl = document.getElementById('comfyui-status');
+            const startBtn = document.getElementById('comfyui-start-btn');
+            const stopBtn = document.getElementById('comfyui-stop-btn');
+            const errEl = document.getElementById('comfyui-error');
+            try {
+                const res = await fetch('/api/comfyui/status');
+                const data = await res.json();
+                if (data.running) {
+                    statusEl.textContent = '● Running' + (data.source ? ' (' + data.source + ')' : '');
+                    statusEl.style.color = '#4ade80';
+                    startBtn.style.display = 'none';
+                    stopBtn.style.display = 'inline-block';
+                    if (errEl) errEl.textContent = '';
+                } else {
+                    statusEl.textContent = '○ Stopped';
+                    statusEl.style.color = '#f87171';
+                    startBtn.style.display = 'inline-block';
+                    stopBtn.style.display = 'none';
+                    if (errEl) errEl.textContent = data.error ? '⚠ ' + data.error : '';
+                }
+            } catch(e) {
+                statusEl.textContent = '○ Unknown';
+                statusEl.style.color = '#888';
+                startBtn.style.display = 'inline-block';
+                stopBtn.style.display = 'none';
+                if (errEl) errEl.textContent = '⚠ Could not reach server';
+            }
+        }
+
+
+        async function toggleLocalLLM() {
+            const provider = document.getElementById('llm-provider').value;
+            const statusEl = document.getElementById('llm-status');
+            const startBtn = document.getElementById('llm-start-btn');
+            const stopBtn = document.getElementById('llm-stop-btn');
+            const isRunning = statusEl.textContent.includes('Running');
+            if (isRunning) {
+                statusEl.textContent = '⏳ Stopping...';
+                await fetch('/api/llm/stop', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({provider})
+                });
+                } else {
+                statusEl.textContent = '⏳ Starting...';
+                const modelSel = getLLMModelSelect();
+                const modelPath = modelSel.value;
+                const body = {provider};
+                if (modelPath) {
+                    if (provider === 'llama_cpp') {
+                        const modelsPath = document.getElementById('llm-models-path').value;
+                        body.model_path = modelsPath ? modelsPath.replace(/\\/g,'/') + '/' + modelPath.replace(/\\/g,'/') : modelPath;
+                    } else if (provider === 'app_llm') {
+                        body.model_path = modelPath;
+                    }
+                }
+                const startRes = await fetch('/api/llm/start', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const startData = await startRes.json().catch(() => ({}));
+                if (!startData.success && startData.error) {
+                    notify('LLM Start Failed', startData.error, '⚠️');
+                    statusEl.textContent = '○ Stopped';
+                    statusEl.style.color = '#f87171';
+                    startBtn.style.display = 'inline-block';
+                    stopBtn.style.display = 'none';
+                    return;
+                }
+            }
+            setTimeout(() => checkLocalLLMStatus(provider), 3000);
+        }
+
+        async function toggleComfyUI() {
+            const statusEl = document.getElementById('comfyui-status');
+            const isRunning = statusEl.textContent.includes('Running');
+            if (isRunning) {
+                statusEl.textContent = '⏳ Stopping...';
+                await fetch('/api/comfyui/stop', { method: 'POST' });
+            } else {
+                statusEl.textContent = '⏳ Starting...';
+                const comfyPath = document.getElementById('comfyui-path').value;
+                await fetch('/api/comfyui/start', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: comfyPath || null})
+                });
+            }
+            setTimeout(() => checkComfyUIStatus(), 5000);
+        }
+
+        async function installComfyUI() {
+            const btn = document.getElementById('comfyui-install-btn');
+            btn.textContent = '⏳ Installing...';
+            try {
+                const res = await fetch('/api/comfyui/install', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    btn.textContent = '✅ Installed';
+                    if (data.path) document.getElementById('comfyui-path').value = data.path;
+                } else {
+                    btn.textContent = '✗ Failed';
+                    notify('Install Error', data.error || 'Installation failed');
+                }
+            } catch(e) {
+                btn.textContent = '✗ Error';
+            }
+            setTimeout(() => { btn.textContent = '⬇ Install'; }, 3000);
+        }
+
+        // === App LLM Model Browser ===
+
+        async function searchLLMModels() {
+            const query = document.getElementById('llm-model-search').value.trim();
+            const size = document.getElementById('llm-model-size-filter').value;
+            const quant = document.getElementById('llm-model-quant-filter').value;
+            const resultsEl = document.getElementById('llm-model-search-results');
+            resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:var(--text-secondary);">🔍 Searching...</div>';
+            try {
+                let url = '/api/llm/search-models?limit=25';
+                if (query) url += '&q=' + encodeURIComponent(query);
+                if (size) url += '&size=' + encodeURIComponent(size);
+                if (quant) url += '&quant=' + encodeURIComponent(quant);
+                const res = await fetch(url);
+                const data = await res.json();
+                const results = data.results || [];
+                if (results.length === 0 || results[0].error) {
+                    resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:var(--text-secondary);">No results found' + (results[0]?.error ? ': ' + results[0].error : '') + '</div>';
+                    return;
+                }
+                let html = '<div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">' + results.length + ' model(s) found</div>';
+                results.forEach(m => {
+                    const label = m.repo + '/' + m.filename;
+                    const sizeStr = m.size_gb > 0 ? m.size_gb + 'GB' : '?';
+                    const quantStr = m.quantization || '';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border-color);gap:6px;">';
+                    html += '<div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + label + '">';
+                    html += '<span style="font-weight:600;">' + (m.filename.length > 40 ? m.filename.substring(0,40)+'...' : m.filename) + '</span>';
+                    html += '<span style="margin-left:6px;color:var(--text-secondary);font-size:0.7rem;">' + quantStr + ' ' + sizeStr + '</span>';
+                    html += '</div>';
+                    html += '<button class="btn btn-primary" onclick="downloadLLMModel(\'' + m.repo + '\',\'' + m.filename + '\',this)" style="padding:2px 8px;font-size:0.7rem;">⬇</button>';
+                    html += '</div>';
+                });
+                resultsEl.innerHTML = html;
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:#f87171;">Search failed: ' + e.message + '</div>';
+            }
+        }
+
+        let gemmaDownloadInterval = null;
+        async function downloadGemma4(size) {
+            let repo = "";
+            let filename = "";
+            if (size === 'E2B') {
+                repo = "unsloth/gemma-4-E2B-it-GGUF";
+                filename = "gemma-4-E2B-it-Q4_K_M.gguf";
+            } else if (size === 'E4B') {
+                repo = "unsloth/gemma-4-E4B-it-GGUF";
+                filename = "gemma-4-E4B-it-Q4_K_M.gguf";
+            }
+            
+            const btnId = size === 'E2B' ? 'btn-download-gemma-e2b' : 'btn-download-gemma-e4b';
+            const btn = document.getElementById(btnId);
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳';
+            }
+            
+            try {
+                const res = await fetch('/api/llm/download-model-hf', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({repo, filename})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Download Started', 'Downloading Gemma 4 ' + size + ' in the background.');
+                    showGemmaDownloadProgress(filename, size);
+                } else {
+                    notify('Download Error', data.error || 'Failed to start download');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Get';
+                    }
+                }
+            } catch(e) {
+                notify('Download Error', e.message);
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Get';
+                }
+            }
+        }
+        
+        function showGemmaDownloadProgress(filename, size) {
+            const container = document.getElementById('gemma-download-status-container');
+            const title = document.getElementById('gemma-download-title');
+            const percent = document.getElementById('gemma-download-percent');
+            const bar = document.getElementById('gemma-download-bar');
+            const info = document.getElementById('gemma-download-info');
+            
+            if (container) container.style.display = 'block';
+            if (title) {
+                if (size.startsWith('Copying')) {
+                    title.textContent = size + '...';
+                } else {
+                    title.textContent = 'Downloading Gemma 4 ' + size + '...';
+                }
+            }
+            
+            if (gemmaDownloadInterval) {
+                clearInterval(gemmaDownloadInterval);
+                gemmaDownloadInterval = null;
+            }
+            
+            const localInterval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/llm/download-progress?filename=' + encodeURIComponent(filename));
+                    const data = await res.json();
+                    
+                    if (data.status === 'downloading') {
+                        const pct = data.progress || 0;
+                        const dl = (data.downloaded_bytes / (1024*1024)).toFixed(1);
+                        const tot = (data.total_bytes / (1024*1024)).toFixed(1);
+                        if (percent) percent.textContent = pct + '%';
+                        if (bar) bar.style.width = pct + '%';
+                        if (info) info.textContent = `Downloaded ${dl} MB of ${tot} MB`;
+                    } else if (data.status === 'completed') {
+                        if (percent) percent.textContent = '100%';
+                        if (bar) bar.style.width = '100%';
+                        if (info) info.textContent = 'Download completed! Selected Gemma 4 model.';
+                        clearInterval(localInterval);
+                        if (gemmaDownloadInterval === localInterval) {
+                            gemmaDownloadInterval = null;
+                        }
+                        
+                        const btn2b = document.getElementById('btn-download-gemma-e2b');
+                        if (btn2b) { btn2b.disabled = false; btn2b.textContent = 'Get'; }
+                        const btn4b = document.getElementById('btn-download-gemma-e4b');
+                        if (btn4b) { btn4b.disabled = false; btn4b.textContent = 'Get'; }
+                        
+                        loadInstalledModels();
+                        await loadLLMModels();
+                        
+                        const llmModelDropdown = document.getElementById('llm-model');
+                        if (llmModelDropdown) {
+                            llmModelDropdown.value = filename;
+                        }
+                        
+                        notify('Download Finished', 'Gemma 4 ' + size + ' downloaded successfully.');
+                    } else if (data.status === 'failed') {
+                        if (info) info.textContent = 'Download failed: ' + (data.error || 'Unknown error');
+                        clearInterval(localInterval);
+                        if (gemmaDownloadInterval === localInterval) {
+                            gemmaDownloadInterval = null;
+                        }
+                        
+                        const btn2b = document.getElementById('btn-download-gemma-e2b');
+                        if (btn2b) { btn2b.disabled = false; btn2b.textContent = 'Get'; }
+                        const btn4b = document.getElementById('btn-download-gemma-e4b');
+                        if (btn4b) { btn4b.disabled = false; btn4b.textContent = 'Get'; }
+                    }
+                } catch(e) {
+                    console.error('Error polling download progress:', e);
+                }
+            }, 1500);
+            
+            gemmaDownloadInterval = localInterval;
+        }
+
+        async function checkActiveGemmaDownloads() {
+            try {
+                const res2b = await fetch('/api/llm/download-progress?filename=gemma-4-E2B-it-Q4_K_M.gguf');
+                const data2b = await res2b.json();
+                if (data2b.status === 'downloading') {
+                    showGemmaDownloadProgress('gemma-4-E2B-it-Q4_K_M.gguf', 'E2B');
+                    return;
+                }
+                const res4b = await fetch('/api/llm/download-progress?filename=gemma-4-E4B-it-Q4_K_M.gguf');
+                const data4b = await res4b.json();
+                if (data4b.status === 'downloading') {
+                    showGemmaDownloadProgress('gemma-4-E4B-it-Q4_K_M.gguf', 'E4B');
+                    return;
+                }
+            } catch(e) {
+                console.error('Error checking active downloads:', e);
+            }
+        }
+
+        function toggleAdvancedHFSearch() {
+            const el = document.getElementById('llm-hf-advanced-search');
+            if (el) {
+                el.style.display = el.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+
+        function toggleComfyUIModelDownloader() { /* no-op - downloader always visible now */ }
+
+        // Default models needed by bundled workflows
+        const DEFAULT_MODELS = [
+            { name: "Z Image Turbo", file: "IMAGE/Z IMAGE/z_image_turbo_bf16.safetensors", type: "checkpoints",
+              repo: "Tostini/Z-Image-Turbo", filename: "z_image_turbo_bf16.safetensors", size: "~7GB", desc: "Fast text-to-image generation" },
+            { name: "Flux 2 Klein 9B FP8", file: "IMAGE/FLUX 2/flux-2-klein-9b-fp8.safetensors", type: "checkpoints",
+              repo: "black-forest-labs/FLUX.2-klein", filename: "flux-2-klein-9b-fp8.safetensors", size: "~9GB", desc: "High-quality image generation & editing" },
+            { name: "LTX 2.3 22B Dev FP8", file: "ltx-2.3-22b-dev-fp8.safetensors", type: "checkpoints",
+              repo: "Lightricks/LTX-Video", filename: "ltx-2.3-22b-dev-fp8.safetensors", size: "~22GB", desc: "Video generation model" },
+            { name: "LTX 2.3 Distilled GGUF", file: "VIDEO/LTX/ltx-2.3-22b-distilled-1.1-Q4_0.gguf", type: "checkpoints",
+              repo: "Lightricks/LTX-Video-GGUF", filename: "ltx-2.3-22b-distilled-1.1-Q4_0.gguf", size: "~12GB", desc: "Quantized video model (12GB VRAM)" },
+
+            { name: "Qwen 3 4B CLIP", file: "qwen_3_4b.safetensors", type: "text_encoders",
+              repo: "Qwen/Qwen2.5-VL-3B-Instruct", filename: "qwen_3_4b.safetensors", size: "~4GB", desc: "Text encoder for Z Image Turbo" },
+            { name: "Qwen 3 8B CLIP FP8", file: "qwen_3_8b_fp8mixed.safetensors", type: "text_encoders",
+              repo: "Qwen/Qwen2.5-VL-7B-Instruct", filename: "qwen_3_8b_fp8mixed.safetensors", size: "~8GB", desc: "Text encoder for Flux 2 Klein" },
+            { name: "Gemma 3 12B CLIP", file: "gemma_3_12B_it_fp4_mixed.safetensors", type: "text_encoders",
+              repo: "google/gemma-3-12b-it", filename: "gemma_3_12B_it_fp4_mixed.safetensors", size: "~12GB", desc: "Text encoder for LTX Video" },
+            { name: "LTX Text Projection", file: "ltx-2.3_text_projection_bf16.safetensors", type: "text_encoders",
+              repo: "Lightricks/LTX-Video", filename: "ltx-2.3_text_projection_bf16.safetensors", size: "~1.5GB", desc: "Text projection for LTX" },
+
+            { name: "AE VAE", file: "ae.safetensors", type: "vae",
+              repo: "stabilityai/sd-vae-ft-mse-original", filename: "ae.safetensors", size: "~335MB", desc: "VAE for image generation" },
+            { name: "Flux 2 VAE", file: "flux2-vae.safetensors", type: "vae",
+              repo: "black-forest-labs/FLUX.2-klein", filename: "flux2-vae.safetensors", size: "~335MB", desc: "VAE for Flux 2" },
+            { name: "LTX VAE", file: "vae/LTX 2/taeltx2_3.safetensors", type: "vae",
+              repo: "Lightricks/LTX-Video", filename: "taeltx2_3.safetensors", size: "~335MB", desc: "VAE for LTX Video" },
+            { name: "LTX Video VAE", file: "vae/LTX 2/LTX23_video_vae_bf16.safetensors", type: "vae",
+              repo: "Lightricks/LTX-Video", filename: "LTX23_video_vae_bf16.safetensors", size: "~670MB", desc: "Video VAE for LTX" },
+            { name: "LTX Audio VAE", file: "vae/LTX 2/LTX23_audio_vae_bf16.safetensors", type: "vae",
+              repo: "Lightricks/LTX-Video", filename: "LTX23_audio_vae_bf16.safetensors", size: "~250MB", desc: "Audio VAE for LTX with sound" },
+
+            { name: "Klein Slider Detail LoRA", file: "Flux/klein_slider_detail.safetensors", type: "loras",
+              repo: "black-forest-labs/FLUX.2-klein", filename: "klein_slider_detail.safetensors", size: "~50MB", desc: "Detail enhancement for Flux 2 Klein" },
+            { name: "LTX Distilled LoRA", file: "ltx2/ltx-2.3-22b-distilled-lora-384-1.1.safetensors", type: "loras",
+              repo: "Lightricks/LTX-Video", filename: "ltx-2.3-22b-distilled-lora-384-1.1.safetensors", size: "~200MB", desc: "LoRA for LTX 2.3 distilled mode" },
+            { name: "LTX Crisp Enhance LoRA", file: "ltx2/LTX2.3_Crisp_Enhance.safetensors", type: "loras",
+              repo: "Lightricks/LTX-Video", filename: "LTX2.3_Crisp_Enhance.safetensors", size: "~50MB", desc: "Crispness enhancement for LTX" },
+            { name: "LTX Licon VBVR I2V LoRA", file: "ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors", type: "loras",
+              repo: "Lightricks/LTX-Video", filename: "Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors", size: "~250MB", desc: "Image-to-Video LoRA for LTX" },
+            { name: "LTX Upscale IC LoRA", file: "ltx2/ltx2.3_upscale_ic-lora_06250.safetensors", type: "loras",
+              repo: "Lightricks/LTX-Video", filename: "ltx2.3_upscale_ic-lora_06250.safetensors", size: "~50MB", desc: "Upscale LoRA for LTX" },
+
+            { name: "LTX Spatial Upscaler", file: "ltx-2.3-spatial-upscaler-x2-1.1.safetensors", type: "upscale_models",
+              repo: "Lightricks/LTX-Video", filename: "ltx-2.3-spatial-upscaler-x2-1.1.safetensors", size: "~150MB", desc: "2x spatial upscaler for LTX" }
+        ];
+
+        function renderDefaultModels() {
+            const container = document.getElementById('default-models-container');
+            if (!container) return;
+            const typeColors = { checkpoints: '#7c3aed', text_encoders: '#f59e0b', vae: '#10b981', loras: '#ec4899', upscale_models: '#06b6d4' };
+            const typeLabels = { checkpoints: 'Checkpoint', text_encoders: 'CLIP/Text Enc', vae: 'VAE', loras: 'LoRA', upscale_models: 'Upscale' };
+
+            let html = '';
+            DEFAULT_MODELS.forEach(m => {
+                const color = typeColors[m.type] || '#888';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border-color);gap:8px;font-size:0.75rem;">';
+                html += '<div style="flex:1;overflow:hidden;">';
+                html += '<div style="font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:6px;">';
+                html += '<span style="font-size:0.6rem;padding:1px 5px;border-radius:3px;background:' + color + ';color:#fff;white-space:nowrap;">' + (typeLabels[m.type] || m.type) + '</span>';
+                html += m.name;
+                html += '</div>';
+                html += '<div style="font-size:0.65rem;color:var(--text-secondary);margin-top:1px;">' + m.desc + ' &middot; ' + m.size + '</div>';
+                html += '<div style="font-size:0.6rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px;">' + m.file + '</div>';
+                html += '</div>';
+                html += '<button class="btn btn-primary" onclick="downloadDefaultModel(\'' + m.type + '\',\'' + m.repo + '\',\'' + m.filename + '\', this)" style="padding:3px 10px;font-size:0.7rem;white-space:nowrap;">⬇ Download</button>';
+                html += '</div>';
+            });
+            html += '<div style="text-align:center;padding:8px;font-size:0.65rem;color:var(--text-secondary);margin-top:4px;">' +
+                'After downloading all models, ComfyUI will be ready for generation. You can also paste models manually into <code style="background:var(--bg-tertiary);padding:1px 4px;border-radius:2px;">comfyui\\ComfyUI\\models\\</code></div>';
+            container.innerHTML = html;
+        }
+
+        async function downloadDefaultModel(modelType, repo, filename, btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            try {
+                const res = await fetch('/api/comfyui/download-model', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({repo, filename, model_type: modelType})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    btn.textContent = '✅';
+                    setTimeout(() => { btn.textContent = '⬇ Downloaded'; btn.style.background = 'var(--accent-success)'; }, 500);
+                } else if (data.error && data.error.includes('Already downloaded')) {
+                    btn.textContent = '✅ Exists';
+                    btn.style.background = 'var(--accent-success)';
+                } else {
+                    btn.textContent = '✗';
+                    notify('Download Failed', data.error || 'Check the console for details');
+                    setTimeout(() => { btn.textContent = '⬇ Download'; btn.style.background = ''; btn.disabled = false; }, 2000);
+                }
+            } catch(e) {
+                btn.textContent = '✗';
+                setTimeout(() => { btn.textContent = '⬇ Download'; btn.style.background = ''; btn.disabled = false; }, 2000);
+            }
+        }
+
+        async function downloadLLMModel(repo, filename, btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            try {
+                const res = await fetch('/api/llm/download-model-hf', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({repo, filename})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    btn.textContent = '✅';
+                    loadInstalledModels();
+                } else {
+                    btn.textContent = '✗';
+                    notify('Download Error', data.error || 'Failed');
+                }
+            } catch(e) {
+                btn.textContent = '✗';
+            }
+            setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '⬇'; } }, 3000);
+        }
+
+        async function loadInstalledModels() {
+            const el = document.getElementById('llm-installed-models');
+            if (!el) return;
+            try {
+                const res = await fetch('/api/llm/installed-models');
+                const data = await res.json();
+                const models = data.models || [];
+                if (models.length === 0) {
+                    el.innerHTML = '<div style="color:var(--text-secondary);padding:8px;text-align:center;">No models installed. Search and download above, or copy from a folder.</div>';
+                    return;
+                }
+                let html = '';
+                models.forEach(m => {
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid var(--border-color);">';
+                    html += '<div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem;" title="' + m.name + '">';
+                    html += m.name + ' <span style="color:var(--text-secondary);">' + m.size_gb + 'GB</span>';
+                    html += '</div>';
+                    html += '<button class="btn btn-secondary" onclick="deleteModel(\'' + m.name + '\',this)" style="padding:1px 6px;font-size:0.65rem;color:var(--accent-danger);">🗑</button>';
+                    html += '</div>';
+                });
+                el.innerHTML = html;
+            } catch(e) {
+                el.innerHTML = '<div style="color:var(--text-secondary);padding:8px;text-align:center;">Error loading models</div>';
+            }
+        }
+
+        async function deleteModel(filename, btn) {
+            if (!confirm('Delete ' + filename + '?')) return;
+            btn.textContent = '⏳';
+            try {
+                const res = await fetch('/api/llm/models/' + encodeURIComponent(filename), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    loadInstalledModels();
+                } else {
+                    notify('Error', data.error || 'Delete failed');
+                }
+            } catch(e) {
+                notify('Error', 'Delete failed');
+            }
+        }
+
+        async function copyModelToFolder() {
+            const manualPath = prompt("Enter the absolute file path of the GGUF model:");
+            if (manualPath && manualPath.trim()) {
+                try {
+                    notify('Copying Model', 'Copy started in the background...');
+                    const res = await fetch('/api/llm/copy-model', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({source: manualPath.trim()})
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showGemmaDownloadProgress(data.filename, 'Copying ' + data.filename);
+                    } else {
+                        notify('Copy Error', data.error || 'Failed');
+                    }
+                } catch(e) {
+                    notify('Error', 'Copy failed');
+                }
+            } else {
+                document.getElementById('llm-file-picker').click();
+            }
+        }
+
+        async function handleModelFilePick(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const path = file.path || file.name;
+            try {
+                notify('Copying Model', 'Copy started in the background...');
+                const res = await fetch('/api/llm/copy-model', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({source: path})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showGemmaDownloadProgress(data.filename, 'Copying ' + data.filename);
+                } else {
+                    notify('Copy Error', data.error || 'Failed');
+                }
+            } catch(e) {
+                notify('Error', 'Copy failed');
+            }
+            event.target.value = '';
+        }
+
+        // === ComfyUI Model Management ===
+
+        async function searchComfyUIModels() {
+            const query = document.getElementById('comfyui-model-search').value.trim();
+            const modelType = document.getElementById('comfyui-model-type-filter').value;
+            const resultsEl = document.getElementById('comfyui-model-results');
+            resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:var(--text-secondary);">🔍 Searching...</div>';
+            try {
+                let url = '/api/comfyui/search-models?limit=20&model_type=' + encodeURIComponent(modelType);
+                if (query) url += '&q=' + encodeURIComponent(query);
+                const res = await fetch(url);
+                const data = await res.json();
+                const results = data.results || [];
+                if (results.length === 0 || results[0].error) {
+                    resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:var(--text-secondary);">No results found' + (results[0]?.error ? ': ' + results[0].error : '') + '</div>';
+                    return;
+                }
+                let html = '<div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">' + results.length + ' file(s) found</div>';
+                results.forEach(m => {
+                    const sizeStr = m.size_gb > 0 ? m.size_gb + 'GB' : '?';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid var(--border-color);gap:6px;">';
+                    html += '<div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem;" title="' + m.filename + '">' + m.filename + ' <span style="color:var(--text-secondary);">' + sizeStr + '</span></div>';
+                    html += '<button class="btn btn-primary" onclick="downloadComfyUIModel(\'' + m.repo + '\',\'' + m.filename + '\',\'' + modelType + '\',this)" style="padding:1px 6px;font-size:0.65rem;">⬇</button>';
+                    html += '</div>';
+                });
+                resultsEl.innerHTML = html;
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="text-align:center;padding:8px;color:#f87171;">Search failed</div>';
+            }
+        }
+
+        async function downloadComfyUIModel(repo, filename, modelType, btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳';
+            try {
+                const res = await fetch('/api/comfyui/download-model', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({repo, filename, model_type: modelType})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    btn.textContent = '✅';
+                } else {
+                    btn.textContent = '✗';
+                    notify('Download Error', data.error || 'Failed');
+                }
+            } catch(e) {
+                btn.textContent = '✗';
+            }
+            setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '⬇'; } }, 3000);
+        }
+
+        async function loadInstalledComfyUIModels() {
+            const el = document.getElementById('installed-models-list');
+            if (!el) return;
+            const modelType = document.getElementById('installed-model-type-filter')?.value || 'checkpoints';
+            el.innerHTML = '<div style="color:var(--text-secondary);text-align:center;padding:8px;">Loading...</div>';
+            try {
+                const res = await fetch('/api/comfyui/installed-models?model_type=' + encodeURIComponent(modelType));
+                const data = await res.json();
+                const models = data.models || [];
+                if (models.length === 0) {
+                    el.innerHTML = '<div style="color:var(--text-secondary);text-align:center;padding:12px;font-size:0.8rem;">No ' + modelType + ' installed. Search above or paste into the models folder.</div>';
+                    return;
+                }
+                let html = '<div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:4px;">' + models.length + ' file(s)</div>';
+                models.forEach(m => {
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid var(--border-color);">';
+                    html += '<div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem;" title="' + (m.relative_path || m.name) + '">' +
+                        m.name + ' <span style="color:var(--text-secondary);">' + m.size_gb + 'GB</span></div>';
+                    html += '<button class="btn btn-secondary" onclick="deleteInstalledModel(\'' + modelType + '\',\'' + (m.relative_path || m.name) + '\',this)" style="padding:1px 6px;font-size:0.6rem;color:var(--accent-danger);">🗑</button>';
+                    html += '</div>';
+                });
+                el.innerHTML = html;
+            } catch(e) {
+                el.innerHTML = '<div style="color:var(--text-secondary);text-align:center;padding:8px;">Error loading models</div>';
+            }
+        }
+
+        async function deleteInstalledModel(modelType, relativePath, btn) {
+            if (!confirm('Delete model?')) return;
+            btn.textContent = '⏳';
+            try {
+                const res = await fetch('/api/comfyui/models/' + modelType + '/' + encodeURIComponent(relativePath), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    loadInstalledComfyUIModels();
+                    renderDefaultModels();
+                } else {
+                    notify('Error', data.error || 'Delete failed');
+                    btn.textContent = '🗑';
+                }
+            } catch(e) {
+                btn.textContent = '🗑';
+            }
+        }
+
+        // Initialize default models + installed list when settings opens
+        const _origOpenSettings = openSettings;
+        openSettings = function() {
+            _origOpenSettings();
+            setTimeout(() => {
+                renderDefaultModels();
+                loadInstalledComfyUIModels();
+            }, 300);
+        };
+
+        async function onComfyUIModelsModeChange() {
+            const isExternal = document.querySelector('input[name="comfyui-models-mode"]:checked')?.value === 'external';
+            document.getElementById('comfyui-external-path-group').style.display = isExternal ? 'block' : 'none';
+            if (!isExternal) {
+                await fetch('/api/comfyui/external-path', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: ''})
+                });
+            }
+        }
+
+        async function setComfyUIExternalPath() {
+            const path = document.getElementById('comfyui-external-path').value.trim();
+            if (!path) { notify('Error', 'Please enter a valid path'); return; }
+            try {
+                const res = await fetch('/api/comfyui/external-path', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Success', 'External models path set');
+                } else {
+                    notify('Error', data.error || 'Failed');
+                }
+            } catch(e) {
+                notify('Error', 'Failed to set external path');
+            }
+        }
+
+        async function loadLLMModels() {
+            const provider = document.getElementById('llm-provider').value;
+            const host = document.getElementById('llm-host').value;
+            const modelSelect = getLLMModelSelect();
+            const countLabel = document.getElementById('llm-model-count');
+
+            const savedValue = modelSelect.value;
+            modelSelect.innerHTML = '<option value="">Loading models...</option>';
+            countLabel.textContent = 'Fetching...';
+
+            try {
+                let url = '/api/llm/models?provider=' + provider;
+                if (host) url += '&host=' + encodeURIComponent(host);
+                if (provider === 'llama_cpp') {
+                    const modelsPath = document.getElementById('llm-models-path').value;
+                    if (modelsPath) url += '&models_path=' + encodeURIComponent(modelsPath);
+                }
+                const res = await fetch(url);
+                const data = await res.json();
+
+                modelSelect.innerHTML = '<option value="">-- Select model --</option>';
+                if (data.models && data.models.length > 0) {
+                    data.models.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m;
+                        opt.textContent = m;
+                        modelSelect.appendChild(opt);
+                    });
+                    countLabel.textContent = data.models.length + ' model(s) available';
+
+                    if (savedValue && data.models.includes(savedValue)) {
+                        modelSelect.value = savedValue;
+                    } else if (provider === 'app_llm') {
+                        if (data.models.includes('gemma-4-E2B-it-Q4_K_M.gguf')) {
+                            modelSelect.value = 'gemma-4-E2B-it-Q4_K_M.gguf';
+                        } else if (data.models.includes('gemma-4-E4B-it-Q4_K_M.gguf')) {
+                            modelSelect.value = 'gemma-4-E4B-it-Q4_K_M.gguf';
+                        } else {
+                            modelSelect.value = data.models[0];
+                        }
+                    }
+                } else {
+                    countLabel.textContent = 'No models found. Is the provider running?';
+                }
+            } catch(e) {
+                modelSelect.innerHTML = '<option value="">-- Could not load models --</option>';
+                countLabel.textContent = 'Connection failed. Check host URL.';
+            }
+        }
+
+        function safeSetValue(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.value = value || '';
+        }
+        function safeSetChecked(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.checked = !!value;
+        }
+        async function loadSettingsUI() {
+            try {
+                const res = await fetch('/api/settings');
+                const s = await res.json();
+                if (s.llm) {
+                    safeSetValue('llm-provider', s.llm.provider || 'omniroute');
+                    safeSetValue('llm-host', s.llm.host || 'http://localhost:8081');
+                    safeSetValue('llm-apikey', s.llm.apiKey);
+                    safeSetChecked('llm-auto-start', s.llm.auto_start);
+                    safeSetValue('llm-models-path', s.llm.models_path);
+                    safeSetValue('llm-gpu-layers', s.llm.n_gpu_layers ?? -1);
+                    initFallbackChain(s.llm.fallback_chain, s.llm.fallback_disabled);
+                }
+                if (s.comfyui) {
+                    safeSetValue('comfyui-url', s.comfyui.url || 'http://localhost:8188');
+                    safeSetChecked('comfyui-auto-start', s.comfyui.auto_start);
+                    safeSetValue('comfyui-path', s.comfyui.path);
+                    safeSetValue('comfyui-cloud-url', s.comfyui.cloud_url || '');
+                    safeSetValue('comfyui-cloud-apikey', s.comfyui.cloud_api_key || '');
+                    safeSetValue('comfyui-external-path', s.comfyui.external_models_path || '');
+                    if (s.comfyui.external_models_path) {
+                        const radio = document.querySelector('input[name="comfyui-models-mode"][value="external"]');
+                        if (radio) radio.checked = true;
+                        onComfyUIModelsModeChange();
+                    }
+                }
+                if (s.image_gen) {
+                    safeSetValue('image-provider', s.image_gen.provider || 'comfyui');
+                    safeSetValue('img-apikey', s.image_gen.apiKey);
+                    safeSetValue('img-custom-url', s.image_gen.host);
+                    safeSetValue('img-model', s.image_gen.model);
+                }
+                if (s.telegram) {
+                    safeSetValue('telegram-bot-token', s.telegram.bot_token || '');
+                }
+                // Load LLM models
+                await loadLLMModels();
+                if (s.llm && s.llm.model) {
+                    const sel = getLLMModelSelect();
+                    if (sel) sel.value = s.llm.model;
+                }
+                if (s.llm && s.llm.n_gpu_layers !== undefined) {
+                    safeSetValue('llm-gpu-layers', s.llm.n_gpu_layers);
+                }
+                onLLMProviderChange();
+                onImageProviderChange();
+                // Load workflows
+                await loadWorkflowList();
+                if (s.workflows) {
+                    ['t2i', 'i2i', 't2v', 'i2v', 'sheet', 'upscale'].forEach(k => {
+                        const el = document.getElementById('wf-' + k);
+                        if (el && s.workflows[k]) el.value = s.workflows[k];
+                    });
+                }
+                // Populate default sheet prompts from currentProject.settings if available
+                const settingCharSheet = document.getElementById('setting-char-sheet-prompt');
+                if (settingCharSheet) settingCharSheet.value = currentProject?.settings?.character_sheet_prompt || '';
+                const settingLocSheet = document.getElementById('setting-loc-sheet-prompt');
+                if (settingLocSheet) settingLocSheet.value = currentProject?.settings?.location_sheet_prompt || '';
+            } catch(e) {
+                console.warn('loadSettingsUI error:', e);
+            }
+        }
+
+
+        // === FALLBACK CHAIN MANAGEMENT ===
+        const ALL_PROVIDERS = [
+            {id: 'omniroute', name: 'OmniRoute (Free Cloud)', icon: '🌐'},
+            {id: 'agnes', name: 'Agnes AI (Free Cloud)', icon: '🤖'},
+            {id: 'openai', name: 'OpenAI', icon: '🟢'},
+            {id: 'claude', name: 'Claude (Anthropic)', icon: '🟣'},
+            {id: 'openrouter', name: 'OpenRouter', icon: '🔀'},
+            {id: 'opencode_zen', name: 'OpenCode Zen', icon: '💎'},
+            {id: 'nvidia_nim', name: 'NVIDIA NIM', icon: '💚'},
+            {id: 'gemini', name: 'Gemini', icon: '🔵'},
+            {id: 'app_llm', name: 'App LLM (Local)', icon: '🏠'},
+            {id: 'ollama', name: 'Ollama (Local)', icon: '🦙'},
+            {id: 'lm_studio', name: 'LM Studio (Local)', icon: '🎭'},
+            {id: 'llama_cpp', name: 'llama.cpp (Local)', icon: '⚡'}
+        ];
+        let fallbackChain = [];
+        let fallbackDisabled = {};
+
+        function initFallbackChain(chain, disabled) {
+            fallbackChain = chain || ['omniroute', 'agnes', 'app_llm'];
+            fallbackDisabled = disabled || {};
+            renderFallbackChain();
+        }
+
+        function renderFallbackChain() {
+            const container = document.getElementById('fallback-chain-list');
+            if (!container) return;
+            container.innerHTML = '';
+            fallbackChain.forEach((provId, idx) => {
+                const prov = ALL_PROVIDERS.find(p => p.id === provId);
+                if (!prov) return;
+                const isDisabled = fallbackDisabled[provId];
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg-secondary);border-radius:4px;border:1px solid var(--border-color);' + (isDisabled ? 'opacity:0.5;' : '');
+                row.innerHTML = `
+                    <span style="cursor:grab;font-size:0.7rem;color:var(--text-secondary);">⠿</span>
+                    <span style="font-size:0.8rem;">${prov.icon}</span>
+                    <span style="flex:1;font-size:0.8rem;${isDisabled ? 'text-decoration:line-through;' : ''}">${prov.name}</span>
+                    <button onclick="moveFallback(${idx},-1)" title="Move up" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.7rem;${idx===0?'visibility:hidden;':''}">▲</button>
+                    <button onclick="moveFallback(${idx},1)" title="Move down" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.7rem;${idx===fallbackChain.length-1?'visibility:hidden;':''}">▼</button>
+                    <button onclick="toggleFallback(${idx})" title="${isDisabled?'Enable':'Disable'}" style="background:none;border:none;cursor:pointer;font-size:0.8rem;">${isDisabled?'◻':'◼'}</button>
+                    <button onclick="removeFallback(${idx})" title="Remove" style="background:none;border:none;color:var(--accent-primary);cursor:pointer;font-size:0.8rem;">✕</button>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function moveFallback(idx, dir) {
+            const newIdx = idx + dir;
+            if (newIdx < 0 || newIdx >= fallbackChain.length) return;
+            [fallbackChain[idx], fallbackChain[newIdx]] = [fallbackChain[newIdx], fallbackChain[idx]];
+            renderFallbackChain();
+        }
+
+        function toggleFallback(idx) {
+            const provId = fallbackChain[idx];
+            fallbackDisabled[provId] = !fallbackDisabled[provId];
+            renderFallbackChain();
+        }
+
+        function removeFallback(idx) {
+            fallbackChain.splice(idx, 1);
+            renderFallbackChain();
+        }
+
+        function addFallbackProvider() {
+            const used = new Set(fallbackChain);
+            const available = ALL_PROVIDERS.filter(p => !used.has(p.id));
+            if (available.length === 0) { notify('All added', 'All providers are already in the chain'); return; }
+            const names = available.map((p, i) => `${i+1}. ${p.name}`).join('\n');
+            const choice = prompt('Add provider (enter number):\n' + names);
+            if (choice) {
+                const idx = parseInt(choice) - 1;
+                if (idx >= 0 && idx < available.length) {
+                    fallbackChain.push(available[idx].id);
+                    renderFallbackChain();
+                }
+            }
+        }
+
+        function resetFallbackChain() {
+            fallbackChain = ['omniroute', 'agnes', 'app_llm'];
+            fallbackDisabled = {};
+            renderFallbackChain();
+        }
+
+        function getFallbackChain() {
+            return {
+                chain: fallbackChain.filter(id => !fallbackDisabled[id]),
+                all: fallbackChain,
+                disabled: fallbackDisabled
+            };
+        }
+
+        async function saveSettings() {
+            const btn1 = document.getElementById('save-settings-btn');
+            const btn2 = document.getElementById('save-settings-btn-2');
+            [btn1, btn2].forEach(b => { if (b) { b.disabled = true; b.textContent = '⏳ Saving...'; } });
+            const modelSelect = getLLMModelSelect();
+            const externalPathEl = document.getElementById('comfyui-external-path');
+            const settings = {
+                llm: {
+                    provider: document.getElementById('llm-provider').value,
+                    model: modelSelect.value,
+                    host: document.getElementById('llm-host').value,
+                    apiKey: document.getElementById('llm-apikey').value,
+                    auto_start: document.getElementById('llm-auto-start').checked,
+                    models_path: document.getElementById('llm-models-path').value,
+                    n_gpu_layers: parseInt(document.getElementById('llm-gpu-layers').value) || -1,
+                    fallback_chain: getFallbackChain().all,
+                    fallback_disabled: getFallbackChain().disabled
+                },
+                image_gen: {
+                    provider: document.getElementById('image-provider').value,
+                    model: document.getElementById('img-model').value,
+                    host: document.getElementById('img-custom-url').value,
+                    apiKey: document.getElementById('img-apikey').value,
+                    auto_start: document.getElementById('comfyui-auto-start').checked
+                },
+                comfyui: {
+                    url: document.getElementById('comfyui-url').value,
+                    path: document.getElementById('comfyui-path').value,
+                    auto_start: document.getElementById('comfyui-auto-start').checked,
+                    cloud_url: document.getElementById('comfyui-cloud-url')?.value || '',
+                    cloud_api_key: document.getElementById('comfyui-cloud-apikey')?.value || '',
+                    external_models_path: externalPathEl?.value || ''
+                },
+                workflows: {
+                    t2i: document.getElementById('wf-t2i').value,
+                    i2i: document.getElementById('wf-i2i').value,
+                    t2v: document.getElementById('wf-t2v').value,
+                    i2v: document.getElementById('wf-i2v').value,
+                    sheet: document.getElementById('wf-sheet').value,
+                    loc_sheet: document.getElementById('wf-loc_sheet').value,
+                    upscale: document.getElementById('wf-upscale').value
+                },
+                telegram: {
+                    bot_token: document.getElementById('telegram-bot-token').value
+                }
+            };
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeSettings();
+                }
+            } catch(e) {
+                notify('Error', 'Could not save settings');
+            }
+            [btn1, btn2].forEach(b => { if (b) { b.disabled = false; b.textContent = 'Save Settings'; } });
+        }
+
+        async function testLLM() {
+            const host = document.getElementById('llm-host').value;
+            const modelSelect = getLLMModelSelect();
+            const model = modelSelect.value;
+            const provider = document.getElementById('llm-provider').value;
+            const apiKey = document.getElementById('llm-apikey').value;
+            const el = document.getElementById('llm-test-result');
+            el.textContent = 'Testing...';
+            try {
+                const res = await fetch('/api/llm/test', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({provider, host, model, api_key: apiKey})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    el.textContent = '✓ Connected';
+                    el.style.color = '#4ade80';
+                    loadLLMModels();
+                } else {
+                    el.textContent = '✗ ' + (data.message || data.error || 'Failed');
+                    el.style.color = '#f87171';
+                }
+            } catch(e) {
+                el.textContent = '✗ Connection failed';
+                el.style.color = '#f87171';
+            }
+        }
+
+        async function testImageProvider(btn) {
+            const provider = document.getElementById('image-provider').value;
+            const host = provider === 'comfyui' ? document.getElementById('comfyui-url').value : document.getElementById('img-custom-url').value;
+            const apiKey = document.getElementById('img-apikey').value;
+            const el = btn ? btn.parentElement.querySelector('span[id^="image-test-result"]') : (document.getElementById('image-test-result') || document.getElementById('image-test-result2'));
+            el.textContent = 'Testing...';
+            try {
+                const res = await fetch('/api/image/test', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({provider, host, api_key: apiKey})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    el.textContent = '✓ Connected';
+                    el.style.color = '#4ade80';
+                } else {
+                    el.textContent = '✗ ' + (data.message || data.error || 'Failed');
+                    el.style.color = '#f87171';
+                }
+            } catch(e) {
+                el.textContent = '✗ Connection failed';
+                el.style.color = '#f87171';
+            }
+            if (provider === 'comfyui') checkComfyUIStatus();
+        }
+
+        // === WORKFLOW MANAGEMENT ===
+        function uploadWorkflow() {
+            document.getElementById('workflow-upload-input').click();
+        }
+
+        async function handleWorkflowUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (!file.name.endsWith('.json')) {
+                notify('Invalid File', 'Please upload a .json workflow file');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/workflows/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    notify('✅ Workflow Uploaded', file.name + ' saved successfully', '✅');
+                    loadWorkflowList();
+                } else {
+                    notify('Upload Failed', data.error || 'Invalid workflow JSON');
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+            event.target.value = '';
+        }
+
+        async function loadWorkflowList() {
+            try {
+                const res = await fetch('/api/workflows');
+                const data = await res.json();
+                const workflows = data.workflows || [];
+                const list = document.getElementById('workflow-list');
+                
+                if (!workflows.length) {
+                    list.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">No workflows uploaded yet</div>';
+                } else {
+                    list.innerHTML = workflows.map(w => `
+                        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg-secondary);border-radius:4px;margin-bottom:4px;font-size:0.85rem;">
+                            <span>📄 ${w.name}</span>
+                            <button class="btn btn-danger" onclick="deleteWorkflow('${w.name}')" style="padding:2px 8px;font-size:0.75rem;">✕</button>
+                        </div>
+                    `).join('');
+                }
+
+                // Populate dropdowns
+                ['wf-t2i', 'wf-i2i', 'wf-t2v', 'wf-i2v', 'wf-sheet', 'wf-loc_sheet', 'wf-upscale'].forEach(id => {
+                    const sel = document.getElementById(id);
+                    if (!sel) return;
+                    const current = sel.value;
+                    sel.innerHTML = '<option value="">-- None --</option>' + 
+                        workflows.map(w => `<option value="${w.name}">${w.name}</option>`).join('');
+                    sel.value = current;
+                });
+            } catch(e) {}
+        }
+
+        async function deleteWorkflow(name) {
+            try {
+                const res = await fetch('/api/workflows/' + encodeURIComponent(name), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    loadWorkflowList();
+                } else {
+                    notify('Delete Failed', data.error);
+                }
+            } catch(e) { notify('Error', e.message); }
+        }
+
+        // === TOPIC IDEAS ===
+        let topicIdeas = [];
+        let selectedIdeaIndex = -1;
+        // Declared (not only assigned in clearProjectState) so state saves work even when a
+        // project opens with no saved state to restore.
+        let screenplayData = null;
+        let sceneVideoData = [];
+
+        function getLLMConfig() {
+            const sel = getLLMModelSelect();
+            return {
+                provider: document.getElementById('llm-provider').value || 'ollama',
+                model: sel.value || 'gemma4:e4b'
+            };
+        }
+
+        // === IDEAS (Story Hunter) ===
+        let ideasCancel = false;
+        let selectedGenres = [];
+
+        function updateIdeaInputs() {
+            document.querySelectorAll('.src-chk').forEach(cb => {
+                const section = document.getElementById('input-' + cb.value);
+                if (section) {
+                    section.classList.toggle('visible', cb.checked);
+                }
+            });
+        }
+
+        let favoriteGenres = JSON.parse(localStorage.getItem('favoriteGenres') || '[]');
+
+        function toggleFavorite(name, event) {
+            event.stopPropagation();
+            const idx = favoriteGenres.indexOf(name);
+            if (idx >= 0) favoriteGenres.splice(idx, 1);
+            else favoriteGenres.push(name);
+            localStorage.setItem('favoriteGenres', JSON.stringify(favoriteGenres));
+            loadGenreModalGrid(); // re-render to move sections
+        }
+
+        async function loadGenreModalGrid() {
+            const container = document.getElementById('genre-modal-grid');
+            try {
+                const res = await fetch('/api/genres');
+                const data = await res.json();
+                const genres = data.genres || [];
+
+                if (genres.length === 0) {
+                    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No genres yet. Add some in Settings.</div>';
+                    return;
+                }
+
+                // Separate favorites and group rest by category
+                const favGenres = genres.filter(g => favoriteGenres.includes(g.name));
+                const otherGenres = genres.filter(g => !favoriteGenres.includes(g.name));
+                const categories = [...new Set(otherGenres.map(g => g.category))].sort();
+
+                let html = '';
+
+                // Favorites section
+                if (favGenres.length) {
+                    html += '<div class="genre-section-title">⭐ Favorites</div>';
+                    html += '<div class="genre-grid">';
+                    html += favGenres.map(g => renderGenreCard(g, true)).join('');
+                    html += '</div>';
+                }
+
+                // Other categories
+                for (const cat of categories) {
+                    const catGenres = otherGenres.filter(g => g.category === cat);
+                    if (!catGenres.length) continue;
+                    html += `<div class="genre-section-title">${cat}</div>`;
+                    html += '<div class="genre-grid">';
+                    html += catGenres.map(g => renderGenreCard(g, false)).join('');
+                    html += '</div>';
+                }
+
+                container.innerHTML = html;
+            } catch(e) {
+                container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">Could not load genres</div>';
+            }
+        }
+
+        function renderGenreCard(g, isFav) {
+            const isSelected = selectedGenres.includes(g.name);
+            const imgUrl = g.image ? '/api/genres/image/' + encodeURIComponent(g.image) : null;
+            const starIcon = isFav ? '⭐' : '☆';
+            return `<div class="genre-card${isSelected?' selected':''}" data-genre="${g.name}" onclick="selectGenreCard(this)">
+                <button class="star-btn" onclick="toggleFavorite('${g.name.replace(/'/g, "\\'")}', event)">${starIcon}</button>
+                ${imgUrl ? `<img src="${imgUrl}" alt="${g.name}" onerror="this.style.display='none'">` : `<div style="height:140px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:var(--text-secondary);">${g.name.charAt(0).toUpperCase()}</div>`}
+                <div class="genre-label" style="padding:8px;font-size:0.8rem;">${g.name}</div>
+            </div>`;
+        }
+
+        function openGenreModal() {
+            loadGenreModalGrid();
+            document.getElementById('genre-modal').style.display = 'flex';
+        }
+
+        function closeGenreModal() {
+            document.getElementById('genre-modal').style.display = 'none';
+        }
+
+        function confirmGenreSelection() {
+            closeGenreModal();
+        }
+
+        function clearGenreSelection() {
+            selectedGenres = [];
+            updateGenreLabel();
+            document.querySelectorAll('.genre-card.selected').forEach(c => c.classList.remove('selected'));
+            scheduleSaveState();
+        }
+
+        function filterGenreGrid() {
+            const q = document.getElementById('genre-search-input').value.toLowerCase().trim();
+            document.querySelectorAll('.genre-card').forEach(c => {
+                const name = c.dataset.genre.toLowerCase();
+                c.style.display = (!q || name.includes(q)) ? '' : 'none';
+            });
+            document.querySelectorAll('.genre-section-title').forEach(t => {
+                const grid = t.nextElementSibling;
+                if (grid && grid.classList.contains('genre-grid')) {
+                    const visible = [...grid.querySelectorAll('.genre-card')].some(c => c.style.display !== 'none');
+                    t.style.display = visible ? '' : 'none';
+                }
+            });
+        }
+
+        function selectGenreCard(el) {
+            const genre = el.dataset.genre;
+            const idx = selectedGenres.indexOf(genre);
+            if (idx >= 0) {
+                selectedGenres.splice(idx, 1);
+                el.classList.remove('selected');
+            } else {
+                selectedGenres.push(genre);
+                el.classList.add('selected');
+            }
+            updateGenreLabel();
+            scheduleSaveState();
+        }
+
+        function updateGenreLabel() {
+            const label = document.getElementById('genre-selected-label');
+            const chips = document.getElementById('genre-chips');
+            label.textContent = selectedGenres.length ? selectedGenres.join(', ') : 'None selected';
+            chips.innerHTML = selectedGenres.map(g => `<span style="background:var(--accent-primary);color:#fff;padding:4px 10px;border-radius:12px;font-size:0.8rem;">${g} <span onclick="removeGenreChip('${g}')" style="cursor:pointer;margin-left:4px;">✕</span></span>`).join('');
+        }
+
+        function removeGenreChip(genre) {
+            selectedGenres = selectedGenres.filter(g => g !== genre);
+            document.querySelectorAll('.genre-card').forEach(c => {
+                if (c.dataset.genre === genre) c.classList.remove('selected');
+            });
+            updateGenreLabel();
+            scheduleSaveState();
+        }
+
+        function cancelIdeas() {
+            ideasCancel = true;
+            hideProgress();
+            notify('Cancelled', 'Idea generation cancelled', '⚠️');
+        }
+
+        function showProgress(title, sub) {
+            document.getElementById('ideas-progress').style.display = 'block';
+            document.getElementById('progress-title').textContent = title;
+            document.getElementById('progress-sub').textContent = sub || '';
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-pct').textContent = '0%';
+            ideasCancel = false;
+        }
+
+        function setProgress(pct, title, sub) {
+            const clamped = Math.min(100, Math.max(0, pct));
+            document.getElementById('progress-bar').style.width = clamped + '%';
+            document.getElementById('progress-pct').textContent = clamped + '%';
+            if (title) document.getElementById('progress-title').textContent = title;
+            if (sub) document.getElementById('progress-sub').textContent = sub;
+        }
+
+        function hideProgress() {
+            document.getElementById('ideas-progress').style.display = 'none';
+        }
+
+        let _masterSystemPrompt = null;
+
+        async function loadMasterSystemPrompt() {
+            try {
+                const res = await fetch('/api/orchestrator/skill');
+                const data = await res.json();
+                if (data.success) {
+                    _masterSystemPrompt = data.skill;
+                }
+            } catch(e) {
+                console.log('Could not load master system prompt');
+            }
+        }
+
+        async function generateFromLLM(prompt, images, systemSuffix, signal) {
+            const cfg = getLLMConfig();
+            const host = document.getElementById('llm-host').value;
+            const apiKey = document.getElementById('llm-apikey').value;
+            let systemPrompt = _masterSystemPrompt || '';
+            if (systemSuffix) {
+                systemPrompt = systemPrompt ? systemPrompt + '\n\n' + systemSuffix : systemSuffix;
+            }
+            const body = { provider: cfg.provider, model: cfg.model, prompt: prompt };
+            if (systemPrompt) body.system_prompt = systemPrompt;
+            if (host) body.host = host;
+            if (apiKey) body.api_key = apiKey;
+            if (images && images.length) body.images = images;
+            const res = await fetch('/api/generate', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                signal,
+                body: JSON.stringify(body)
+            });
+            return await res.json();
+        }
+
+        function parseIdeas(text) {
+            const parts = text.split(/---|\*\*\*|\n\n\n+/).filter(s => s.trim());
+            const ideas = [];
+            for (const p of parts) {
+                const t = p.trim();
+                if (t.length < 50) continue;
+                if (t.includes('Title:') || t.includes('Logline:') || t.includes('Setting:') || t.includes('**Title**')) {
+                    ideas.push(t);
+                }
+                if (ideas.length >= 5) break;
+            }
+            return ideas;
+        }
+
+        function requireProject() {
+            if (!currentProject || !currentProject.path) {
+                notify('No Project Open', 'Please create or open a project first.', '⚠️');
+                openNewProject();
+                return false;
+            }
+            return true;
+        }
+
+        async function generateIdeas() {
+            if (!requireProject()) return;
+            const ideasBtn = document.getElementById('generate-ideas-btn');
+            if (ideasBtn) { ideasBtn.disabled = true; ideasBtn.textContent = '⏳ Generating...'; }
+            const checkedSources = Array.from(document.querySelectorAll('.src-chk:checked')).map(cb => cb.value);
+            if (checkedSources.length === 0 && selectedGenres.length === 0) {
+                notify('No Sources', 'Select a genre or check a source'); return;
+            }
+
+            // Validate
+            if (checkedSources.includes('custom') && !document.getElementById('custom-prompt').value.trim()) {
+                notify('Enter a Prompt', 'Please describe your concept'); return;
+            }
+            if (checkedSources.includes('web')) {
+                const q = document.getElementById('web-query').value.trim();
+                if (!q) { notify('Enter Search Term', 'Type what to search for'); return; }
+            }
+
+            showProgress('🔍 Gathering sources...', 'Preparing inputs');
+
+            // Build context
+            let contextParts = [];
+            let step = 0;
+            const steps = [];
+
+            if (selectedGenres.length) steps.push('genre');
+            if (selectedVisualStyle) steps.push('visual-style');
+            if (selectedFilmAesthetic) steps.push('film-aesthetic');
+            if (checkedSources.includes('era')) steps.push('era');
+            if (checkedSources.includes('custom')) steps.push('custom');
+            if (checkedSources.includes('web')) steps.push('web');
+
+            const totalSteps = steps.includes('web') ? steps.length + 1 : steps.length;
+
+            for (const src of steps) {
+                if (ideasCancel) return;
+                step++;
+                setProgress((step / totalSteps) * 50, 'Processing ' + src + '...');
+
+                if (src === 'genre') {
+                    contextParts.push(`**Genres:** ${selectedGenres.join(', ')}`);
+                } else if (src === 'visual-style') {
+                    contextParts.push(`**Visual Style:** ${selectedVisualStyle}`);
+                } else if (src === 'film-aesthetic') {
+                    contextParts.push(`**Film Aesthetic:** ${selectedFilmAesthetic}`);
+                } else if (src === 'era') {
+                    const year = document.getElementById('era-year').value.trim() || 'unspecified era';
+                    contextParts.push(`**Set in:** ${year}`);
+                } else if (src === 'custom') {
+                    const p = document.getElementById('custom-prompt').value.trim();
+                    const l = document.getElementById('custom-length').value;
+                    contextParts.push(`**Custom Concept:** ${p} (Target: ${l} runtime)`);
+                } else if (src === 'web') {
+                    setProgress((step / totalSteps) * 50, '🌐 Searching the web...');
+                    try {
+                        const q = document.getElementById('web-query').value.trim();
+                        const searchRes = await fetch('/api/websearch?q=' + encodeURIComponent(q));
+                        const searchData = await searchRes.json();
+                        const results = searchData.results || [];
+
+                        const resultsDiv = document.getElementById('web-results');
+                        const sourcesDiv = document.getElementById('web-sources');
+                        sourcesDiv.style.display = 'block';
+                        resultsDiv.innerHTML = results.map(r =>
+                            `<div style="margin-bottom:6px;padding:6px;background:var(--bg-secondary);border-radius:4px;">
+                                <strong>${r.title}</strong><br>
+                                <span style="color:var(--text-secondary);font-size:0.8rem;">${r.snippet}</span>
+                            </div>`
+                        ).join('') || '<div style="color:var(--text-secondary);">No results found</div>';
+
+                        const summary = results.map(r => r.title + ': ' + r.snippet).join('\n\n');
+                        if (summary.trim()) {
+                            contextParts.push(`**Web Trends:**\n${summary}`);
+                        }
+                    } catch(e) {
+                        contextParts.push('**Web Trends:** (search failed)');
+                    }
+                }
+            }
+
+            if (ideasCancel) return;
+
+            const context = contextParts.join('\n\n');
+
+            // Append dialogue preference
+            const dialogueSetting = selectedDialogue === 'with' ? 'Include dialogue in the film' : 'No dialogue — purely visual storytelling';
+            const dialogueNote = `**Dialogue:** ${dialogueSetting}`;
+
+            let progressInterval = null;
+            setProgress(50, '🧠 Generating ideas...', 'Starting...');
+
+            try {
+                const chars = parseInt(document.getElementById('sel-characters').value) || 3;
+                const locs = parseInt(document.getElementById('sel-locations').value) || 3;
+                const scenesCt = parseInt(document.getElementById('sel-scenes').value) || 10;
+                const totalShots = parseInt(document.getElementById('sel-total-shots').value) || 30;
+                const orchestatorParams = {
+                    genres: selectedGenres,
+                    visual_style: selectedVisualStyle,
+                    film_aesthetic: selectedFilmAesthetic,
+                    era: document.getElementById('era-year').value.trim() || '',
+                    custom_prompt: document.getElementById('custom-prompt').value.trim() || '',
+                    web_search_results: contextParts.find(p => p.includes('Web Trends')) || '',
+                    dialogue_enabled: selectedDialogue === 'with',
+                    aspect_ratio: selectedAspectRatio,
+                    character_count: chars,
+                    location_count: locs,
+                    scene_count: scenesCt,
+                    total_shot_count: totalShots,
+                    llm_provider: getLLMConfig().provider,
+                    llm_model: getLLMConfig().model
+                };
+
+                // Start progress polling
+                let ideasPollingActive = true;
+                async function pollIdeasProgress() {
+                    if (!ideasPollingActive) return;
+                    try {
+                        const pRes = await fetch('/api/orchestrator/progress');
+                        const p = await pRes.json();
+                        if (!ideasCancel && ideasPollingActive) {
+                            setProgress(p.pct, p.title, p.sub);
+                        }
+                        if (p.finished || p.error) {
+                            ideasPollingActive = false;
+                            if (p.error && !ideasCancel) {
+                                hideProgress();
+                                notify('Error', p.error);
+                            }
+                            return;
+                        }
+                    } catch(e) {}
+                    if (ideasPollingActive) {
+                        setTimeout(pollIdeasProgress, 1000);
+                    }
+                }
+                pollIdeasProgress();
+
+                const res = await fetch('/api/orchestrator/ideas', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(orchestatorParams)
+                });
+                const data = await res.json();
+
+                ideasPollingActive = false;
+                if (ideasCancel) return;
+                hideProgress();
+
+                if (data.success && data.ideas) {
+                    const ideas = data.ideas;
+                    topicIdeas = [];
+                    selectedIdeaIndex = -1;
+                    ideas.forEach((idea) => {
+                        if (typeof idea === 'object') {
+                            topicIdeas.push(idea);
+                        } else {
+                            topicIdeas.push({title: 'Idea', short_synopsis: String(idea)});
+                        }
+                    });
+                    renderIdeas();
+                    scheduleSaveState();
+                } else {
+                    notify('Generation Failed', data.error || data.message || 'Check LLM connection in Settings');
+                }
+            } catch(e) {
+                if (progressInterval) clearInterval(progressInterval);
+                if (!ideasCancel) { hideProgress(); notify('Error', e.message); }
+            }
+            if (ideasBtn) { ideasBtn.disabled = false; ideasBtn.textContent = '🚀 Generate Ideas'; }
+        }
+
+        function renderIdeas() {
+            const container = document.getElementById('ideas-container');
+            container.innerHTML = topicIdeas.map((idea, i) => {
+                const isSelected = selectedIdeaIndex === i;
+                const text = typeof idea === 'string' ? idea : formatIdeaForDisplay(idea);
+                return `
+                <div class="idea-card" style="${isSelected ? 'border-color:var(--accent-primary);border-width:2px;' : ''}">
+                    <div class="idea-title" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span>💡 Idea ${i+1}</span>
+                        ${isSelected ? '<span style="font-size:0.7rem;color:var(--accent-primary);font-weight:600;">✓ SELECTED</span>' : ''}
+                    </div>
+                    <div class="idea-text">${text}</div>
+                    <div style="display:flex;gap:6px;margin-top:10px;justify-content:space-between;">
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-primary" onclick="selectIdea(${i})" style="padding:4px 12px;font-size:0.75rem;">${isSelected ? '✓ Selected' : 'Select'}</button>
+                            <button class="btn btn-secondary" onclick="openVariantModal(${i})" style="padding:4px 12px;font-size:0.75rem;">✏️ Variant</button>
+                        </div>
+                        <button class="btn btn-secondary" onclick="openExpandModal(${i})" style="padding:4px 10px;font-size:0.75rem;">⛶ Expand</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function formatIdeaForDisplay(idea) {
+            if (typeof idea === 'string') return idea;
+            const parts = [];
+            if (idea.title) parts.push(`<b>Title:</b> ${idea.title}`);
+            if (idea.logline) parts.push(`<b>Logline:</b> ${idea.logline}`);
+            if (idea.genre_blend) parts.push(`<b>Genre:</b> ${idea.genre_blend}`);
+            if (idea.tone) parts.push(`<b>Tone:</b> ${idea.tone}`);
+            if (idea.emotional_hook) parts.push(`<b>Hook:</b> ${idea.emotional_hook}`);
+            if (idea.short_synopsis) parts.push(`<b>Synopsis:</b> ${idea.short_synopsis}`);
+            if (idea.cinematic_hook) parts.push(`<b>Cinematic Hook:</b> ${idea.cinematic_hook}`);
+            parts.push(`<span style="font-size:0.75rem;color:var(--text-secondary);">🎭 ${idea.character_count || '?'} chars · 🏠 ${idea.location_count || '?'} locs · 🎬 ${idea.estimated_scene_count || '?'} scenes · 🎥 ${idea.estimated_total_shots || '?'} shots</span>`);
+            return parts.join('<br>');
+        }
+
+        function selectIdea(idx) {
+            const prevIdx = selectedIdeaIndex;
+            if (selectedIdeaIndex === idx) {
+                selectedIdeaIndex = -1;
+            } else {
+                selectedIdeaIndex = idx;
+            }
+            // If the user switched to a different idea, wipe the old screenplay
+            // so the Screenplay page shows a clean slate (not the previous run's output).
+            if (selectedIdeaIndex !== prevIdx && selectedIdeaIndex >= 0) {
+                screenplayData = null;
+                // Also clear the screenplay container preview immediately
+                const container = document.getElementById('screenplay-container');
+                if (container) {
+                    container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
+                }
+                const shotBar = document.getElementById('shot-summary-bar');
+                if (shotBar) shotBar.style.display = 'none';
+                const filmInfo = document.getElementById('screenplay-film-info');
+                if (filmInfo) filmInfo.style.display = 'none';
+            }
+            renderIdeas();
+            scheduleSaveState();
+            const btn = document.getElementById('continue-to-screenplay-btn');
+            if (btn) btn.style.display = selectedIdeaIndex >= 0 ? 'inline-block' : 'none';
+        }
+
+        // === SERVICE STATUS POLLING ===
+        let _statusInterval = null;
+
+        function startStatusPolling() {
+            if (_statusInterval) clearInterval(_statusInterval);
+            pollServiceStatus();
+            _statusInterval = setInterval(pollServiceStatus, 5000);
+        }
+
+        async function pollServiceStatus() {
+            try {
+                const provider = document.getElementById('llm-provider')?.value || 'app_llm';
+                const llmRes = await fetch('/api/llm/status?provider=' + encodeURIComponent(provider));
+                const llmData = await llmRes.json();
+                updateStatusDot('llm-dot', llmData.running ? 'green' : 'red');
+                document.getElementById('llm-model-name').textContent = llmData.model_name || (llmData.running ? 'connected' : 'offline');
+            } catch(e) {
+                updateStatusDot('llm-dot', 'red');
+                document.getElementById('llm-model-name').textContent = 'error';
+            }
+            try {
+                const comfyRes = await fetch('/api/comfyui/status');
+                const comfyData = await comfyRes.json();
+                updateStatusDot('comfyui-dot', comfyData.running ? 'green' : 'red');
+                document.getElementById('comfyui-status-text').textContent = comfyData.running ? 'Connected' : 'Offline';
+            } catch(e) {
+                updateStatusDot('comfyui-dot', 'red');
+                document.getElementById('comfyui-status-text').textContent = 'error';
+            }
+            try {
+                const orRes = await fetch('/api/omniroute/status');
+                const orData = await orRes.json();
+                updateStatusDot('omniroute-dot', orData.running ? 'green' : 'red');
+                document.getElementById('omniroute-status-text').textContent = orData.running ? 'Connected' : 'Offline';
+            } catch(e) {
+                updateStatusDot('omniroute-dot', 'red');
+                document.getElementById('omniroute-status-text').textContent = 'Offline';
+            }
+        }
+
+        function updateStatusDot(id, color) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.className = 'status-dot ' + color;
+            }
+        }
+
+        // === EXPAND / VARIANT MODAL ===
+        let _expandIdeaIdx = -1;
+        let _variantResults = [];
+
+        function openExpandModal(idx) {
+            _expandIdeaIdx = idx;
+            const idea = topicIdeas[idx];
+            if (!idea) return;
+            const numEl = document.getElementById('expand-idea-num');
+            const contentEl = document.getElementById('expand-idea-content');
+            const refreshBtn = document.getElementById('expand-regenerate-btn');
+            const variantSection = document.getElementById('expand-variant-section');
+            if (numEl) numEl.textContent = '#' + (idx + 1);
+            if (contentEl) contentEl.innerHTML = formatIdeaForDisplayFull(idea);
+            if (variantSection) variantSection.style.display = 'block';
+            if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '🔄 Regenerate This Idea'; }
+            document.getElementById('variant-results-inline').innerHTML = '';
+            document.getElementById('variant-change-input').value = '';
+            document.getElementById('expand-modal').style.display = 'flex';
+        }
+
+        function closeExpandModal() {
+            document.getElementById('expand-modal').style.display = 'none';
+        }
+
+        function formatIdeaForDisplayFull(idea) {
+            if (typeof idea === 'string') return '<pre style="white-space:pre-wrap;font-size:0.85rem;">' + idea + '</pre>';
+            let html = '<div style="font-size:0.85rem;line-height:1.6;">';
+            const fields = [
+                ['🎬 Title', 'title'],
+                ['📝 Logline', 'logline'],
+                ['🎭 Genre Blend', 'genre_blend'],
+                ['🎨 Tone', 'tone'],
+                ['👁 Visual Identity', 'visual_identity'],
+                ['🎞 Film Aesthetic', 'film_aesthetic_interpretation'],
+                ['💔 Emotional Hook', 'emotional_hook'],
+                ['🎥 Cinematic Hook', 'cinematic_hook'],
+                ['🏁 Ending Style', 'ending_style'],
+                ['💬 Dialogue Density', 'dialogue_density'],
+                ['⚙ Production Complexity', 'production_complexity'],
+                ['📸 Thumbnail Moment', 'thumbnail_moment'],
+                ['📖 Synopsis', 'short_synopsis'],
+            ];
+            fields.forEach(([label, key]) => {
+                if (idea[key]) html += `<div style="margin-bottom:8px;"><strong>${label}:</strong><br>${idea[key]}</div>`;
+            });
+            // Counts
+            html += '<div style="margin-top:12px;padding:8px;background:var(--bg-tertiary);border-radius:6px;font-size:0.8rem;">';
+            html += `👥 ${idea.character_count || '?'} characters · 🏠 ${idea.location_count || '?'} locations · 🎬 ${idea.estimated_scene_count || '?'} scenes · 🎥 ${idea.estimated_total_shots || '?'} total shots`;
+            if (idea.main_characters && Array.isArray(idea.main_characters)) {
+                html += '<br><b>Main Characters:</b> ' + idea.main_characters.join(', ');
+            }
+            if (idea.main_locations && Array.isArray(idea.main_locations)) {
+                html += '<br><b>Main Locations:</b> ' + idea.main_locations.join(', ');
+            }
+            if (idea.shot_distribution_per_scene) {
+                html += '<br><b>Shot Distribution:</b><br>';
+                const dist = typeof idea.shot_distribution_per_scene === 'object' ? idea.shot_distribution_per_scene : {};
+                Object.entries(dist).forEach(([scene, shots]) => {
+                    html += `<span style="margin-right:8px;">${scene}: ${shots}</span>`;
+                });
+            }
+            html += '</div></div>';
+            return html;
+        }
+
+        async function regenerateExpandedIdea() {
+            const btn = document.getElementById('expand-regenerate-btn');
+            if (!btn) return;
+            btn.disabled = true;
+            btn.textContent = '⏳ Regenerating...';
+            try {
+                const chars = parseInt(document.getElementById('sel-characters').value) || 3;
+                const locs = parseInt(document.getElementById('sel-locations').value) || 3;
+                const scenesCt = parseInt(document.getElementById('sel-scenes').value) || 10;
+                const totalShots = parseInt(document.getElementById('sel-total-shots').value) || 30;
+                const res = await fetch('/api/orchestrator/regenerate-idea', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        genres: selectedGenres,
+                        visual_style: selectedVisualStyle,
+                        film_aesthetic: selectedFilmAesthetic,
+                        era: document.getElementById('era-year').value.trim() || '',
+                        custom_prompt: document.getElementById('custom-prompt').value.trim() || '',
+                        dialogue_enabled: selectedDialogue === 'with',
+                        aspect_ratio: selectedAspectRatio,
+                        character_count: chars,
+                        location_count: locs,
+                        scene_count: scenesCt,
+                        total_shot_count: totalShots
+                    })
+                });
+                const data = await res.json();
+                if (data.success && data.ideas && data.ideas.length > 0) {
+                    topicIdeas[_expandIdeaIdx] = data.ideas[0];
+                    renderIdeas();
+                    const contentEl = document.getElementById('expand-idea-content');
+                    if (contentEl) contentEl.innerHTML = formatIdeaForDisplayFull(data.ideas[0]);
+                    notify('Regenerated', 'Idea updated');
+                } else {
+                    notify('Error', data.error || 'Regeneration failed');
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+            btn.disabled = false;
+            btn.textContent = '🔄 Regenerate This Idea';
+        }
+
+        function openVariantModal(idx) {
+            _expandIdeaIdx = idx;
+            const idea = topicIdeas[idx];
+            if (!idea) return;
+            document.getElementById('variant-idea-num').textContent = '#' + (idx + 1);
+            document.getElementById('variant-current-idea').innerHTML = formatIdeaForDisplayFull(idea);
+            document.getElementById('variant-change-input').value = '';
+            document.getElementById('variant-results-inline').innerHTML = '';
+            document.getElementById('variant-generate-btn').style.display = 'block';
+            // Reset popup fields too
+            const popupInput = document.getElementById('variant-change-input-popup');
+            if (popupInput) popupInput.value = '';
+            const popupResults = document.getElementById('variant-results-popup');
+            if (popupResults) popupResults.innerHTML = '';
+            document.getElementById('variant-modal').style.display = 'flex';
+        }
+
+        function closeVariantModal() {
+            document.getElementById('variant-modal').style.display = 'none';
+        }
+
+        async function generateVariants() {
+            if (!requireProject()) return;
+            const idea = topicIdeas[_expandIdeaIdx];
+            if (!idea) return;
+            const userChange = document.getElementById('variant-change-input').value.trim();
+            if (!userChange) { notify('Input Required', 'Describe what you want to change'); return; }
+            const btn = document.getElementById('variant-generate-btn');
+            const resultsEl = document.getElementById('variant-results-inline');
+            btn.disabled = true;
+            btn.textContent = '⏳ Generating...';
+            resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">⏳ Generating variants...</div>';
+            try {
+                const res = await fetch('/api/orchestrator/idea-variants', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({idea, user_change: userChange})
+                });
+                const data = await res.json();
+                if (data.success && data.variants && data.variants.length > 0) {
+                    _variantResults = data.variants;
+                    renderVariants();
+                } else {
+                    resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + (data.error || 'Generation failed') + '</div>';
+                }
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + e.message + '</div>';
+            }
+            btn.disabled = false;
+            btn.textContent = '🚀 Generate Variants';
+        }
+
+        function renderVariants() {
+            const resultsEl = document.getElementById('variant-results-inline');
+            let html = '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:8px;">' + _variantResults.length + ' variant(s) generated</div>';
+            _variantResults.forEach((v, i) => {
+                const label = v.title || v.logline || 'Variant ' + (i + 1);
+                html += '<div style="border:1px solid var(--border-color);border-radius:8px;padding:12px;margin-bottom:10px;background:var(--bg-secondary);">';
+                html += '<div style="font-weight:600;font-size:0.85rem;margin-bottom:6px;">Variant ' + (i + 1) + ': ' + (v.title || '') + '</div>';
+                html += '<div style="font-size:0.8rem;margin-bottom:8px;max-height:120px;overflow-y:auto;">' + formatIdeaForDisplayFull(v) + '</div>';
+                html += '<div style="display:flex;gap:6px;">';
+                html += '<button class="btn btn-primary" onclick="selectVariant(' + i + ')" style="padding:3px 10px;font-size:0.7rem;">✓ Select Variant</button>';
+                html += '<button class="btn btn-secondary" onclick="editVariantAgain(' + i + ')" style="padding:3px 10px;font-size:0.7rem;">✏️ Edit Further</button>';
+                html += '<button class="btn btn-secondary" onclick="generateVariants()" style="padding:3px 10px;font-size:0.7rem;">🔄 Regenerate</button>';
+                html += '</div></div>';
+            });
+            resultsEl.innerHTML = html;
+        }
+
+        function selectVariant(idx) {
+            if (_expandIdeaIdx >= 0 && _variantResults[idx]) {
+                topicIdeas[_expandIdeaIdx] = _variantResults[idx];
+                renderIdeas();
+                // If in expand modal, update content
+                const contentEl = document.getElementById('expand-idea-content');
+                if (contentEl) contentEl.innerHTML = formatIdeaForDisplayFull(_variantResults[idx]);
+                closeVariantModal();
+                scheduleSaveState();
+                notify('Selected', 'Variant applied to Idea #' + (_expandIdeaIdx + 1));
+            }
+        }
+
+        function editVariantAgain(idx) {
+            if (_variantResults[idx]) {
+                const textarea = document.getElementById('variant-change-input');
+                const prevText = textarea.value;
+                const v = _variantResults[idx];
+                const summary = v.title || v.logline || 'Variant ' + (idx + 1);
+                textarea.value = prevText + '\n[Refining variant: ' + summary + '] Please adjust further: ';
+                textarea.focus();
+            }
+        }
+
+        async function generateVariantsPopup() {
+            const idea = topicIdeas[_expandIdeaIdx];
+            if (!idea) return;
+            const userChange = document.getElementById('variant-change-input-popup').value.trim();
+            if (!userChange) { notify('Input Required', 'Describe what you want to change'); return; }
+            const btn = document.getElementById('generate-variants-popup-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            const resultsEl = document.getElementById('variant-results-popup');
+            resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">⏳ Generating variants...</div>';
+            try {
+                const res = await fetch('/api/orchestrator/idea-variants', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({idea, user_change: userChange})
+                });
+                const data = await res.json();
+                if (data.success && data.variants && data.variants.length > 0) {
+                    _variantResults = data.variants;
+                    let html = '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:8px;">' + data.variants.length + ' variant(s) generated</div>';
+                    data.variants.forEach((v, i) => {
+                        html += '<div style="border:1px solid var(--border-color);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--bg-secondary);">';
+                        html += '<div style="font-size:0.8rem;max-height:100px;overflow-y:auto;">' + formatIdeaForDisplayFull(v) + '</div>';
+                        html += '<div style="display:flex;gap:6px;margin-top:6px;">';
+                        html += '<button class="btn btn-primary" onclick="selectVariantPopup(' + i + ')" style="padding:2px 8px;font-size:0.7rem;">✓ Select</button>';
+                        html += '<button class="btn btn-secondary" onclick="editVariantAgainPopup(' + i + ')" style="padding:2px 8px;font-size:0.7rem;">✏️ Edit</button>';
+                        html += '<button class="btn btn-secondary" onclick="generateVariantsPopup()" style="padding:2px 8px;font-size:0.7rem;">🔄 Regenerate</button>';
+                        html += '</div></div>';
+                    });
+                    resultsEl.innerHTML = html;
+                } else {
+                    resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + (data.error || 'Generation failed') + '</div>';
+                }
+            } catch(e) {
+                resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + e.message + '</div>';
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🚀 Generate Variants'; }
+        }
+
+        function selectVariantPopup(idx) {
+            if (_expandIdeaIdx >= 0 && _variantResults[idx]) {
+                topicIdeas[_expandIdeaIdx] = _variantResults[idx];
+                renderIdeas();
+                document.getElementById('variant-modal').style.display = 'none';
+                scheduleSaveState();
+                notify('Selected', 'Variant applied');
+            }
+        }
+
+        function editVariantAgainPopup(idx) {
+            if (_variantResults[idx]) {
+                const textarea = document.getElementById('variant-change-input-popup');
+                const v = _variantResults[idx];
+                textarea.value = (textarea.value || '') + '\n[Refining: ' + (v.title || 'variant ' + (idx+1)) + '] ';
+                textarea.focus();
+            }
+        }
+
+        // === STARTUP ===
+        startStatusPolling();
+
+        // === SCREENPLAY MODULE ===
+        // === BACKEND PROGRESS POLLING ===
+        let _progressTimer = null;
+        let _sceneProgressStarted = false;
+
+        function startProgressPolling() {
+            const pb = document.getElementById('screenplay-progress');
+            const bar = document.getElementById('screenplay-progress-bar');
+            const pct = document.getElementById('screenplay-progress-pct');
+            const title = document.getElementById('screenplay-progress-title');
+            const sub = document.getElementById('screenplay-progress-sub');
+            const cancelBtn = document.getElementById('progress-cancel-btn');
+            if (!pb) return;
+            pb.style.display = 'block';
+            if (cancelBtn) cancelBtn.style.display = 'inline-block';
+            _sceneProgressStarted = false;
+            if (_progressTimer) clearInterval(_progressTimer);
+            _progressTimer = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/orchestrator/progress');
+                    const d = await res.json();
+                    if (d && d.pct !== undefined) {
+                        // Ignore stale 100% from previous scene
+                        if (d.pct === 100 && d.finished && !_sceneProgressStarted) return;
+                        if (d.pct > 0 && d.pct < 100) _sceneProgressStarted = true;
+                        bar.style.width = d.pct + '%';
+                        pct.textContent = d.pct + '%';
+                        if (d.title) title.textContent = d.title;
+                        sub.textContent = d.sub || '';
+                    }
+                } catch(e) {}
+            }, 300);
+        }
+
+        function cancelCurrentGeneration() {
+            if (_currentAbortController) {
+                _currentAbortController.abort();
+                _currentAbortController = null;
+            }
+            // Immediately interrupt ComfyUI execution on the backend
+            fetch('/api/image/interrupt', { method: 'POST' }).catch(err => console.error(err));
+            const cancelBtn = document.getElementById('progress-cancel-btn');
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            stopProgressPolling(false, 'Cancelled');
+            notify('Cancelled', 'Generation cancelled', '✕');
+        }
+
+        function stopProgressPolling(success, msg) {
+            if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+            const pb = document.getElementById('screenplay-progress');
+            const bar = document.getElementById('screenplay-progress-bar');
+            const pct = document.getElementById('screenplay-progress-pct');
+            const title = document.getElementById('screenplay-progress-title');
+            const sub = document.getElementById('screenplay-progress-sub');
+            const cancelBtn = document.getElementById('progress-cancel-btn');
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            if (!pb) return;
+            bar.style.width = '100%';
+            pct.textContent = '100%';
+            title.textContent = success ? ('✅ ' + (msg || 'Complete!')) : ('❌ ' + (msg || 'Failed'));
+            sub.textContent = '';
+            if (success) {
+                setTimeout(() => { pb.style.display = 'none'; }, 2000);
+            } else {
+                setTimeout(() => { pb.style.display = 'none'; }, 4000);
+            }
+        }
+
+        async function clearScreenplay() {
+            if (!screenplayData || !screenplayData.scenes) {
+                notify('Nothing to Clear', 'No screenplay data to clear', '⚠️');
+                return;
+            }
+            const confirmed = await showConfirm(
+                '🗑 Clear Screenplay?',
+                'The current screenplay will be archived as XML and cleared from the workspace. You can restore it later using "📂 Load Archive".'
+            );
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/archive-screenplay`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        screenplay: screenplayData,
+                        project_path: currentProject?.path || ''
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    screenplayData = null;
+                    renderScreenplay();
+                    scheduleSaveState();
+                    notify('✅ Archived & Cleared', `Screenplay saved as ${data.filename}. Use "📂 Load Archive" to restore.`, 'ℹ️');
+                } else {
+                    notify('Archive Failed', data.error || 'Could not archive screenplay', '❌');
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        async function loadScreenplayArchive() {
+            try {
+                const res = await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/screenplay-archives?project_path=${encodeURIComponent(currentProject?.path || '')}`);
+                const data = await res.json();
+                if (!data.success || !data.archives || !data.archives.length) {
+                    notify('No Archives', 'No archived screenplays found for this project.', 'ℹ️');
+                    return;
+                }
+                // Build selection modal
+                const overlay = document.createElement('div');
+                overlay.className = 'modal-overlay active';
+                overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+                const modal = document.createElement('div');
+                modal.style.cssText = 'background:var(--bg-secondary);border-radius:12px;padding:24px;max-width:500px;width:90%;max-height:70vh;overflow-y:auto;border:1px solid var(--border-color);';
+                modal.innerHTML = `
+                    <h3 style="margin:0 0 16px 0;color:var(--accent-primary);">📂 Restore Screenplay Archive</h3>
+                    <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:12px;">Select an archive to restore. Current screenplay will be replaced.</div>
+                    ${data.archives.map((a, i) => `
+                        <div class="archive-item" data-idx="${i}" style="padding:10px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:6px;margin-bottom:8px;cursor:pointer;transition:all 0.2s;"
+                             onmouseover="this.style.borderColor='var(--accent-primary)';this.style.transform='translateX(4px)'"
+                             onmouseout="this.style.borderColor='var(--border-color)';this.style.transform='none'">
+                            <div style="font-weight:600;font-size:0.85rem;color:var(--text-primary);">${a.title || 'Untitled'}</div>
+                            <div style="font-size:0.7rem;color:var(--text-secondary);margin-top:2px;">${a.scenes} scenes · ${a.archived_at ? new Date(a.archived_at).toLocaleString() : '—'}</div>
+                            <div style="font-size:0.65rem;color:var(--text-secondary);margin-top:2px;">📄 ${a.filename}</div>
+                        </div>
+                    `).join('')}
+                    <button class="btn btn-secondary" style="width:100%;margin-top:8px;padding:8px;" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+                `;
+                overlay.appendChild(modal);
+                document.body.appendChild(overlay);
+                overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+                modal.querySelectorAll('.archive-item').forEach(item => {
+                    item.onclick = async () => {
+                        const idx = parseInt(item.dataset.idx);
+                        const archive = data.archives[idx];
+                        overlay.remove();
+                        try {
+                            const restoreRes = await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/restore-screenplay`, {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ filename: archive.filename, project_path: currentProject?.path || '' })
+                            });
+                            const restoreData = await restoreRes.json();
+                            if (restoreData.success && restoreData.screenplay) {
+                                screenplayData = restoreData.screenplay;
+                                renderScreenplay();
+                                scheduleSaveState();
+                                notify('✅ Restored', `Screenplay "${archive.title}" restored from archive.`, '📂');
+                            } else {
+                                notify('Restore Failed', restoreData.error || 'Could not restore screenplay', '❌');
+                            }
+                        } catch(e) {
+                            notify('Error', e.message, '❌');
+                        }
+                    };
+                });
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        async function generateScreenplay() {
+            if (!requireProject()) return;
+
+            const scrBtn = document.getElementById('generate-screenplay-btn');
+            if (scrBtn) { scrBtn.disabled = true; scrBtn.textContent = '⏳ Generating...'; }
+            if (!topicIdeas.length) {
+                notify('No Ideas', 'Generate story ideas first on the Ideas page');
+                return;
+            }
+            if (selectedIdeaIndex < 0) {
+                notify('No Idea Selected', 'Click "Select" on an idea first');
+                return;
+            }
+
+            startProgressPolling();
+
+            const selectedIdea = topicIdeas[selectedIdeaIndex];
+            const chars = selectedIdea.character_count || parseInt(document.getElementById('sel-characters').value) || 3;
+            const locs = selectedIdea.location_count || parseInt(document.getElementById('sel-locations').value) || 3;
+            const scenesCt = selectedIdea.estimated_scene_count || parseInt(document.getElementById('sel-scenes').value) || 10;
+            const totalShots = selectedIdea.estimated_total_shots || parseInt(document.getElementById('sel-total-shots').value) || 30;
+            const params = {
+                idea_index: selectedIdeaIndex,
+                character_count: chars,
+                location_count: locs,
+                scene_count: scenesCt,
+                total_shot_count: totalShots,
+                ideas: topicIdeas   // sent as fallback in case backend memory was wiped by restart
+            };
+
+            _currentAbortController = new AbortController();
+            try {
+                const res = await fetch('/api/orchestrator/screenplay', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(params),
+                    signal: _currentAbortController.signal
+                });
+                _currentAbortController = null;
+                const data = await res.json();
+
+                if (data.success && data.screenplay) {
+                    screenplayData = data.screenplay;
+                    renderScreenplay();
+                    scheduleSaveState();
+                    document.getElementById('proceed-to-asset-studio-btn').style.display = 'inline-block';
+                    stopProgressPolling(true, 'Screenplay generated!');
+                } else {
+                    stopProgressPolling(false, data.error || 'Generation failed');
+                    notify('Screenplay Failed', data.error || 'Generation failed. Check LLM connection.');
+                    if (scrBtn) { scrBtn.disabled = false; scrBtn.textContent = '📜 Generate/Regenerate'; }
+                    return;
+                }
+            } catch(e) {
+                if (e.name === 'AbortError') return;
+                stopProgressPolling(false, e.message);
+                notify('Error', e.message);
+            }
+            if (scrBtn) { scrBtn.disabled = false; scrBtn.textContent = '📜 Generate/Regenerate'; }
+        }
+
+        let _siShotId = null; // currently open shot inspector shot_id
+        let _shotVariantShotId = null; // shot_id being varied
+        let _shotVariantResults = []; // array of 3 variant objects
+        let _psSceneIdx = -1; // scene index for placeholder shot modal
+        let _psShotNum = -1; // shot number within scene for placeholder modal
+        let _psResults = []; // array of 3 variant objects from placeholder modal
+        let _currentAbortController = null; // for cancelling generation requests
+
+        function getLocationOptions(currentVal) {
+            const names = new Set();
+            if (typeof locationData !== 'undefined' && locationData) {
+                locationData.forEach(loc => {
+                    if (loc.name) names.add(loc.name);
+                });
+            }
+            if (currentVal) names.add(currentVal);
+            
+            let html = '';
+            names.forEach(name => {
+                html += `<option value="${escapeHtml(name)}" ${name === currentVal ? 'selected' : ''}>${escapeHtml(name)}</option>`;
+            });
+            if (names.size === 0) {
+                html += `<option value="" selected>— Select Location —</option>`;
+            }
+            return html;
+        }
+
+        function syncScreenplayShots() {
+            scheduleSaveState();
+            if (screenplayData) {
+                try {
+                    fetch('/api/orchestrator/sync-shots', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ screenplay: screenplayData })
+                    });
+                } catch(e) {}
+            }
+        }
+
+        function renderScreenplay() {
+            try {
+            const container = document.getElementById('screenplay-container');
+            if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.length) {
+                container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
+                document.getElementById('shot-summary-bar').style.display = 'none';
+                document.getElementById('screenplay-film-info').style.display = 'none';
+                return;
+            }
+
+            const sp = screenplayData;
+            const hasShotNodes = sp.scenes.some(s => s.shots && s.shots.length > 0);
+
+            // Show film info
+            document.getElementById('screenplay-film-info').style.display = 'block';
+            document.getElementById('sp-film-title').textContent = sp.title || 'Untitled';
+            document.getElementById('sp-film-logline').textContent = (sp.logline || '').substring(0, 80);
+            document.getElementById('sp-tone').textContent = '🎭 ' + (sp.tone || '—');
+            document.getElementById('sp-scenes').textContent = '🎬 ' + sp.scenes.length + ' scenes';
+            document.getElementById('sp-dialogue').textContent = '💬 ' + (sp.dialogue_enabled ? 'Enabled' : 'Visual');
+
+            // Show summary bar
+            const totalShots = sp.scenes.reduce((sum, s) => sum + (s.shots && s.shots.length > 0 ? s.shots.length : (s.estimated_shots || 1)), 0);
+            document.getElementById('shot-summary-bar').style.display = 'flex';
+            document.getElementById('ss-total-shots').textContent = totalShots;
+
+            // Count statuses
+            let approvedCt = 0, enrichedCt = 0, pendingCt = 0;
+            sp.scenes.forEach(s => {
+                if (s.shots && s.shots.length > 0) {
+                    s.shots.forEach(sh => {
+                        const st = sh.storyboard_status || 'pending';
+                        if (st === 'approved') approvedCt++;
+                        else if (st === 'enriched' || st === 'regenerated') enrichedCt++;
+                        else pendingCt++;
+                    });
+                } else {
+                    pendingCt += (s.estimated_shots || 1);
+                }
+            });
+            document.getElementById('ss-approved').textContent = approvedCt;
+            document.getElementById('ss-enriched').textContent = enrichedCt;
+            document.getElementById('ss-pending').textContent = pendingCt;
+
+
+            document.getElementById('proceed-to-asset-studio-btn').style.display = 'inline-block';
+            document.getElementById('proceed-to-asset-studio-btn-bottom').style.display = 'inline-block';
+
+            let html = '<div style="display:flex;flex-direction:column;gap:8px;">';
+
+            sp.scenes.forEach((s, i) => {
+                const chars = (s.characters_present || []).join(', ') || '';
+                const sceneHasShots = s.shots && s.shots.length > 0;
+                const shotCount = sceneHasShots ? s.shots.length : (s.estimated_shots || 1);
+                const timeOfDay = s.time_of_day || (s.emotional_tone && s.emotional_tone.toLowerCase().includes('night') ? 'Night' : 'Day');
+
+                // Horizontal scene row: scene card (left) + shot cards (right)
+                html += `<div data-scene-idx="${i}" style="display:flex;gap:10px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color);padding:10px;">`;
+
+                // === LEFT: Scene Info Card (~280px) ===
+                html += `
+                    <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:6px;">
+                        <div style="display:flex;align-items:center;gap:6px;width:100%;">
+                            <strong style="color:var(--accent-primary);font-size:0.8rem;flex-shrink:0;">${s.scene_id || '#' + (s.scene_number || i+1)}</strong>
+                            <input type="text" class="form-input" value="${escapeHtml(s.scene_title || '')}" 
+                                   onchange="updateSceneField(${i}, 'scene_title', this.value)" 
+                                   style="font-size:0.75rem;font-weight:600;padding:2px 4px;height:22px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);width:100%;">
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text-secondary);line-height:1.6;display:flex;flex-direction:column;gap:4px;margin-top:4px;">
+                            <div style="display:flex;align-items:center;gap:4px;">
+                                <span style="flex-shrink:0;" title="Location">📍</span>
+                                <select class="form-select" onchange="updateSceneField(${i}, 'location_id', this.value)"
+                                        style="font-size:0.7rem;padding:2px;height:22px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);width:100%;">
+                                    ${getLocationOptions(s.location_id)}
+                                </select>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:4px;">
+                                <span style="flex-shrink:0;" title="Characters">👥</span>
+                                <input type="text" class="form-input" value="${escapeHtml(chars)}"
+                                       placeholder="Characters (comma separated)"
+                                       onchange="updateSceneCharacters(${i}, this.value)"
+                                       style="font-size:0.7rem;padding:2px 4px;height:22px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);width:100%;">
+                            </div>
+                            <div style="display:flex;align-items:center;gap:4px;">
+                                <span style="flex-shrink:0;" title="Emotional Tone">🎭</span>
+                                <input type="text" class="form-input" value="${escapeHtml(s.emotional_tone || '')}"
+                                       placeholder="Tone"
+                                       onchange="updateSceneField(${i}, 'emotional_tone', this.value)"
+                                       style="font-size:0.7rem;padding:2px 4px;height:22px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);width:100%;">
+                            </div>
+                            <div style="display:flex;align-items:center;gap:4px;">
+                                <span style="flex-shrink:0;" title="Time of Day">🌅</span>
+                                <select class="form-select" onchange="updateSceneField(${i}, 'time_of_day', this.value)"
+                                        style="font-size:0.7rem;padding:2px;height:22px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);width:100%;">
+                                    <option value="Day" ${timeOfDay === 'Day' ? 'selected' : ''}>Day</option>
+                                    <option value="Night" ${timeOfDay === 'Night' ? 'selected' : ''}>Night</option>
+                                    <option value="Dawn" ${timeOfDay === 'Dawn' ? 'selected' : ''}>Dawn</option>
+                                    <option value="Dusk" ${timeOfDay === 'Dusk' ? 'selected' : ''}>Dusk</option>
+                                </select>
+                            </div>
+                        </div>
+                        <textarea class="form-textarea" onchange="updateSceneField(${i}, 'synopsis', this.value)"
+                                  placeholder="Synopsis"
+                                  style="font-size:0.7rem;color:var(--text-primary);line-height:1.4;height:60px;min-height:40px;margin-top:4px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;padding:4px 6px;width:100%;resize:vertical;">${escapeHtml(s.synopsis || '')}</textarea>
+                        
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:4px;">
+                            <span style="font-size:0.65rem;color:var(--text-secondary);background:var(--bg-primary);padding:2px 6px;border-radius:3px;text-align:center;flex:1;">
+                                ${shotCount} shot${shotCount !== 1 ? 's' : ''}
+                            </span>
+                            ${!sceneHasShots ? `<button class="btn btn-secondary" onclick="generateSceneShots(${i})" id="gen-scene-shots-${i}" style="padding:2px 6px;font-size:0.6rem;">🎬 AI Shots</button>` : ''}
+                            <button class="btn btn-secondary" onclick="deleteScene(${i})" style="padding:2px 6px;font-size:0.6rem;color:var(--accent-danger);" title="Delete scene">🗑️ Scene</button>
+                        </div>
+                    </div>`;
+
+                // === RIGHT: Shot Cards (flex-wrap) ===
+                html += `<div style="flex:1;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;">`;
+
+                if (sceneHasShots) {
+                    s.shots.forEach(sh => {
+                        const status = sh.storyboard_status || 'pending';
+                        const statusColor = status === 'approved' ? '#4caf50' : (status === 'enriched' || status === 'regenerated' ? '#ff9800' : '#555');
+                        const lighting = (sh.lighting_language || '').toLowerCase();
+                        const todIcon = (lighting.includes('night') || lighting.includes('dark') || lighting.includes('moon') || lighting.includes('shadow')) ? '🌙' : '☀️';
+                        function _str(v) { return Array.isArray(v) ? v.join(', ') : (v || ''); }
+                        const charsStr = (sh.characters_present || []).join(', ') || '—';
+                        const actionStr = _str(sh.action).substring(0, 120);
+                        const motifStr = _str(sh.visual_motifs).substring(0, 60);
+                        const camStr = _str(sh.camera_language).substring(0, 60);
+                        const litStr = _str(sh.lighting_language).substring(0, 60);
+                        const emotion = _str(sh.emotion);
+                        html += `
+                            <div style="width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                                    <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${sh.shot_id || 'SHOT_?'}</span>
+                                    <span style="font-size:0.55rem;color:var(--text-secondary);">${sh.shot_type || ''} ${todIcon}</span>
+                                    <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${statusColor};color:#fff;">${status}</span>
+                                </div>
+                                <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
+                                    <div style="color:var(--text-secondary);font-size:0.6rem;">👥 ${charsStr}</div>
+                                    ${motifStr ? `<div style="color:var(--accent-secondary);font-size:0.6rem;">🎨 ${motifStr}</div>` : ''}
+                                    <div style="color:var(--text-primary);font-size:0.65rem;">${actionStr}${_str(sh.action).length > 120 ? 'ΓǪ' : ''}</div>
+                                    <div style="color:var(--text-secondary);font-size:0.6rem;">📷 ${camStr}</div>
+                                    <div style="color:var(--text-secondary);font-size:0.6rem;">💡 ${litStr}</div>
+                                    <div style="color:var(--text-secondary);font-size:0.6rem;">🎭 ${emotion}</div>
+                                </div>
+                                <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                                    <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect shot details">⛶</button>
+                                    <button class="btn btn-secondary" onclick="openShotInspector('${sh.shot_id}');setTimeout(()=>siShowVariantInput('${sh.shot_id}'),300)" style="padding:2px 4px;font-size:0.5rem;" title="Generate shot variants">✏️</button>
+                                    <button class="btn btn-secondary" onclick="shotRegenerate('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;" title="Regenerate with continuity">🔄</button>
+                                    <button class="btn btn-secondary" onclick="shotApprove('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;" title="Approve for timeline">✅</button>
+                                    <button class="btn btn-secondary" onclick="deleteShot('${sh.shot_id}')" style="padding:2px 4px;font-size:0.5rem;color:var(--accent-danger);" title="Delete shot">🗑️</button>
+                                </div>
+                            </div>`;
+                    });
+                    // ADD SHOT Card at end of scene list
+                    html += `
+                        <div onclick="addShotManually(${i})" style="width:280px;min-height:140px;background:transparent;border-radius:6px;border:2px dashed var(--border-color);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;opacity:0.6;transition:all 0.2s;" onmouseover="this.style.opacity=1;this.style.borderColor='var(--accent-primary)';" onmouseout="this.style.opacity=0.6;this.style.borderColor='var(--border-color)';">
+                            <span style="font-size:0.85rem;font-weight:700;color:var(--text-primary);letter-spacing:1px;text-transform:uppercase;">ADD SHOT</span>
+                            <span style="font-size:1.8rem;font-weight:300;color:var(--accent-primary);margin-top:2px;line-height:1;">+</span>
+                        </div>
+                    `;
+                } else {
+                    // Placeholder cards for estimated_shots
+                    const placeholderCount = s.estimated_shots || 1;
+                    const locSnippet = (s.location_id || '??').substring(0, 18);
+                    for (let pi = 0; pi < placeholderCount; pi++) {
+                        const shotNum = s.scene_number ? s.scene_number + '.' + (pi+1) : (s.scene_id ? s.scene_id.replace('SC_','') + '_' + (pi+1) : (i+1) + '-' + (pi+1));
+                        const lightingHint = (s.emotional_tone || '').toLowerCase();
+                        const todIcon = (lightingHint.includes('night') || lightingHint.includes('dark')) ? '🌙' : '☀️';
+                        html += `
+                            <div data-placeholder="true" style="width:165px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px dashed var(--border-color);opacity:0.7;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);">
+                                    <span style="font-size:0.6rem;color:var(--text-secondary);font-weight:600;">SHOT_${shotNum}</span>
+                                    <span style="font-size:0.55rem;color:var(--text-secondary);">— ${todIcon}</span>
+                                    <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:#555;color:#fff;">pending</span>
+                                </div>
+                                <div style="aspect-ratio:16/9;background:var(--bg-secondary);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:0.55rem;color:var(--text-secondary);padding:4px;text-align:center;gap:2px;">
+                                    <div class="placeholder-body" style="font-size:0.6rem;color:var(--text-secondary);">🎬 Not generated</div>
+                                    <div>👥 ${chars.substring(0, 20)}</div>
+                                    <div>📍 ${locSnippet}</div>
+                                    <div>🎭 ${(s.emotional_tone || '—').substring(0, 15)}</div>
+                                </div>
+                                <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                                    <button class="btn btn-secondary" onclick="openPlaceholderShotModal(${i}, ${pi})" style="padding:2px 4px;font-size:0.5rem;" title="Generate shot variants">⛶</button>
+                                    <button class="btn btn-secondary" onclick="deletePlaceholderShot(${i})" style="padding:2px 4px;font-size:0.5rem;color:var(--accent-danger);" title="Delete placeholder shot">🗑️</button>
+                                </div>
+                            </div>`;
+                    }
+                    // ADD SHOT Card at end of placeholder list
+                    html += `
+                        <div onclick="addShotManually(${i})" style="width:165px;min-height:120px;background:transparent;border-radius:6px;border:2px dashed var(--border-color);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;opacity:0.6;transition:all 0.2s;" onmouseover="this.style.opacity=1;this.style.borderColor='var(--accent-primary)';" onmouseout="this.style.opacity=0.6;this.style.borderColor='var(--border-color)';">
+                            <span style="font-size:0.65rem;font-weight:700;color:var(--text-primary);letter-spacing:0.5px;text-transform:uppercase;">ADD SHOT</span>
+                            <span style="font-size:1.5rem;font-weight:300;color:var(--accent-primary);margin-top:2px;line-height:1;">+</span>
+                        </div>
+                    `;
+                }
+
+                html += `</div>`; // end right
+                html += `</div>`; // end scene row
+            });
+
+            // Add New Scene / Add Shot row at the bottom
+            html += `
+                <div style="display:flex;gap:10px;background:var(--bg-secondary);border-radius:8px;border:1px dashed var(--border-color);padding:10px;margin-top:10px;align-items:stretch;">
+                    <!-- LEFT: ADD SCENE Card -->
+                    <div onclick="addSceneManually()" style="width:280px;min-height:140px;flex-shrink:0;background:transparent;border-radius:6px;border:2px dashed var(--border-color);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;opacity:0.6;transition:all 0.2s;" onmouseover="this.style.opacity=1;this.style.borderColor='var(--accent-primary)';" onmouseout="this.style.opacity=0.6;this.style.borderColor='var(--border-color)';">
+                        <span style="font-size:1rem;font-weight:700;color:var(--text-primary);letter-spacing:1px;text-transform:uppercase;">ADD SCENE</span>
+                        <span style="font-size:2.2rem;font-weight:300;color:var(--accent-primary);margin-top:4px;line-height:1;">+</span>
+                    </div>
+                    
+                    <!-- RIGHT: ADD SHOT Card -->
+                    <div style="flex:1;display:flex;align-items:stretch;">
+                        <div onclick="addShotManually(${sp.scenes.length - 1})" style="width:280px;min-height:140px;background:transparent;border-radius:6px;border:2px dashed var(--border-color);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;opacity:0.6;transition:all 0.2s;" onmouseover="this.style.opacity=1;this.style.borderColor='var(--accent-primary)';" onmouseout="this.style.opacity=0.6;this.style.borderColor='var(--border-color)';">
+                            <span style="font-size:1rem;font-weight:700;color:var(--text-primary);letter-spacing:1px;text-transform:uppercase;">ADD SHOT</span>
+                            <span style="font-size:2.2rem;font-weight:300;color:var(--accent-primary);margin-top:4px;line-height:1;">+</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            html += '</div>';
+            container.innerHTML = html;
+            _updateShotSummaryCounts();
+            } catch(e) { console.error('renderScreenplay error:', e); notify('Render Error', e.message, '⚠️'); }
+        }
+
+        function _updateShotSummaryCounts() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            const hasShotNodes = screenplayData.scenes.some(s => s.shots && s.shots.length > 0);
+            if (!hasShotNodes) return;
+            let approved = 0, enriched = 0, pending = 0;
+            screenplayData.scenes.forEach(s => (s.shots || []).forEach(sh => {
+                const st = sh.storyboard_status || 'pending';
+                if (st === 'approved') approved++;
+                else if (st === 'enriched' || st === 'regenerated') enriched++;
+                else pending++;
+            }));
+            document.getElementById('ss-approved').textContent = approved;
+            document.getElementById('ss-enriched').textContent = enriched;
+            document.getElementById('ss-pending').textContent = pending;
+        }
+
+        function updateSceneField(sceneIdx, field, value) {
+            if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes[sceneIdx]) return;
+            screenplayData.scenes[sceneIdx][field] = value;
+            syncScreenplayShots();
+        }
+
+        function updateSceneCharacters(sceneIdx, value) {
+            if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes[sceneIdx]) return;
+            const chars = value.split(',').map(s => s.trim()).filter(Boolean);
+            screenplayData.scenes[sceneIdx].characters_present = chars;
+            syncScreenplayShots();
+        }
+
+        function addSceneManually() {
+            if (!screenplayData) {
+                screenplayData = {
+                    title: 'Untitled Film',
+                    logline: '',
+                    tone: '',
+                    dialogue_enabled: true,
+                    scenes: []
+                };
+            }
+            if (!screenplayData.scenes) screenplayData.scenes = [];
+            
+            // Generate next scene ID
+            let maxNum = 0;
+            screenplayData.scenes.forEach(s => {
+                const m = s.scene_id ? s.scene_id.match(/\d+/) : null;
+                if (m) {
+                    const val = parseInt(m[0], 10);
+                    if (val > maxNum) maxNum = val;
+                }
+            });
+            const nextNum = maxNum + 1;
+            const sceneId = `SC_${String(nextNum).padStart(3, '0')}`;
+            
+            const newScene = {
+                scene_id: sceneId,
+                scene_number: screenplayData.scenes.length + 1,
+                scene_title: 'New Scene',
+                location_id: (typeof locationData !== 'undefined' && locationData.length > 0) ? (locationData[0].name || '') : 'New Location',
+                characters_present: [],
+                emotional_tone: 'Neutral',
+                time_of_day: 'Day',
+                synopsis: 'Describe scene context here...',
+                estimated_shots: 1,
+                shots: []
+            };
+            
+            screenplayData.scenes.push(newScene);
+            renderScreenplay();
+            syncScreenplayShots();
+            notify('Added Scene', `New scene ${sceneId} created`, '🎬');
+        }
+
+        function deleteScene(sceneIdx) {
+            if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes[sceneIdx]) return;
+            const sceneId = screenplayData.scenes[sceneIdx].scene_id || '#' + (sceneIdx + 1);
+            if (confirm(`Are you sure you want to delete Scene ${sceneId}? This will also delete all its shots.`)) {
+                screenplayData.scenes.splice(sceneIdx, 1);
+                // Re-number scenes to keep them sequential
+                screenplayData.scenes.forEach((s, idx) => {
+                    s.scene_number = idx + 1;
+                });
+                renderScreenplay();
+                syncScreenplayShots();
+                notify('Deleted', `Scene ${sceneId} removed`, '🗑️');
+            }
+        }
+
+        function addShotManually(sceneIdx) {
+            if (sceneIdx < 0 || !screenplayData || !screenplayData.scenes || !screenplayData.scenes[sceneIdx]) {
+                notify('Cannot Add Shot', 'Please create a scene first.', '⚠️');
+                return;
+            }
+            const scene = screenplayData.scenes[sceneIdx];
+            if (!scene.shots) scene.shots = [];
+            
+            // Find next shot number and unique ID
+            let maxNum = 0;
+            scene.shots.forEach(sh => {
+                if (sh.shot_number > maxNum) maxNum = sh.shot_number;
+            });
+            
+            const nextShotNum = maxNum + 1;
+            const sceneId = scene.scene_id || `SC_${sceneIdx + 1}`;
+            const shotId = `${sceneId}_SHOT_${nextShotNum}`;
+            
+            const newShot = {
+                shot_id: shotId,
+                shot_number: nextShotNum,
+                shot_type: 'Medium Shot',
+                storyboard_status: 'pending',
+                characters_present: [...(scene.characters_present || [])],
+                visual_motifs: [],
+                action: 'Describe the shot action here...',
+                camera_language: 'Static shot',
+                lighting_language: 'Natural lighting',
+                emotion: 'Neutral',
+                dialogue: [],
+                continuity_notes: '',
+                cinematic_notes: '',
+                cinematic_composition: ''
+            };
+            
+            scene.shots.push(newShot);
+            renderScreenplay();
+            syncScreenplayShots();
+            notify('Added Shot', `New shot ${shotId} added to scene`, '➕');
+        }
+
+        function deleteShot(shotId) {
+            if (!screenplayData || !screenplayData.scenes) return;
+            let deleted = false;
+            for (const scene of screenplayData.scenes) {
+                if (scene.shots) {
+                    const idx = scene.shots.findIndex(sh => sh.shot_id === shotId);
+                    if (idx >= 0) {
+                        if (confirm(`Are you sure you want to delete Shot ${shotId}?`)) {
+                            scene.shots.splice(idx, 1);
+                            // Re-number remaining shots and update their IDs within the scene
+                            scene.shots.forEach((sh, sIdx) => {
+                                sh.shot_number = sIdx + 1;
+                                sh.shot_id = `${scene.scene_id || 'SHOT'}_SHOT_${sIdx + 1}`;
+                            });
+                            deleted = true;
+                            break;
+                        }
+                        return; // User cancelled confirmation
+                    }
+                }
+            }
+            if (deleted) {
+                renderScreenplay();
+                syncScreenplayShots();
+                notify('Deleted Shot', `Shot ${shotId} removed and remaining shots re-numbered`, '🗑️');
+            }
+        }
+
+        function deletePlaceholderShot(sceneIdx) {
+            if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes[sceneIdx]) return;
+            const scene = screenplayData.scenes[sceneIdx];
+            if (scene.estimated_shots && scene.estimated_shots > 1) {
+                if (confirm(`Are you sure you want to decrease the estimated shots of Scene ${scene.scene_id || '#' + (sceneIdx + 1)}?`)) {
+                    scene.estimated_shots--;
+                    renderScreenplay();
+                    syncScreenplayShots();
+                    notify('Updated', 'Estimated shots count decreased', '🗑️');
+                }
+            } else {
+                notify('Cannot delete', 'A scene must have at least 1 estimated shot.', '⚠️');
+            }
+        }
+
+        // === SHOT INSPECTOR ===
+
+        function openShotInspector(shotId) {
+            _siShotId = shotId;
+            if (!screenplayData || !screenplayData.scenes) return;
+            let found = null, sceneObj = null;
+            for (const s of screenplayData.scenes) {
+                if (s.shots) {
+                    for (const sh of s.shots) {
+                        if (sh.shot_id === shotId) { found = sh; sceneObj = s; break; }
+                    }
+                }
+                if (found) break;
+            }
+            if (!found) { notify('Not Found', `Shot ${shotId}`, '⚠️'); return; }
+
+            // Set header
+            document.getElementById('si-shot-title').textContent = shotId;
+            document.getElementById('si-shot-type').textContent = found.shot_type || '—';
+            const status = found.storyboard_status || 'pending';
+            const badge = document.getElementById('si-status-badge');
+            const statusColors = {approved: '#4caf50', enriched: '#ff9800', regenerated: '#ff9800', pending: '#555'};
+            badge.style.background = statusColors[status] || '#555';
+            badge.textContent = status;
+
+            // Scene context
+            const ctxDiv = document.getElementById('si-scene-context');
+            if (sceneObj) {
+                ctxDiv.style.display = 'block';
+                ctxDiv.textContent = `📍 ${sceneObj.scene_id}: ${sceneObj.scene_title} @ ${sceneObj.location_id} · 🎭 ${sceneObj.emotional_tone || '—'}`;
+            } else {
+                ctxDiv.style.display = 'none';
+            }
+
+            // Metadata
+            const metaDiv = document.getElementById('si-metadata');
+            const _safeStr = (v) => {
+                if (v === null || v === undefined) return '';
+                if (Array.isArray(v)) return v.join(', ');
+                return String(v);
+            };
+
+            const charsList = _safeStr(found.characters_present);
+            
+            let dialogueText = '';
+            if (Array.isArray(found.dialogue)) {
+                dialogueText = found.dialogue.map(d => {
+                    if (typeof d === 'string') return d;
+                    if (d && typeof d === 'object') return `${d.speaker || ''}: ${d.text || ''}`;
+                    return '';
+                }).join('\n');
+            } else {
+                dialogueText = _safeStr(found.dialogue);
+            }
+
+            const motifs = _safeStr(found.visual_motifs);
+            const motionOps = _safeStr(found.motion_opportunities);
+            const envMotion = _safeStr(found.environmental_motion);
+            const audioNotes = _safeStr(found.audio_notes);
+            
+            const shotTypes = [
+                'Close Up', 'Medium Shot', 'Wide Shot', 'Extreme Close Up', 'Medium Close Up', 
+                'Extreme Wide Shot', 'Over the Shoulder', 'Two Shot', 'POV', 'Establishing Shot', 
+                'Low Angle', 'High Angle', 'Dutch Angle', 'Tracking Shot', 'Crane Shot', 
+                'Pan', 'Tilt', 'Zoom', 'Rack Focus'
+            ];
+            let shotTypeSelectOptions = '';
+            shotTypes.forEach(st => {
+                shotTypeSelectOptions += `<option value="${escapeHtml(st)}" ${st === found.shot_type ? 'selected' : ''}>${escapeHtml(st)}</option>`;
+            });
+            if (found.shot_type && !shotTypes.includes(found.shot_type)) {
+                shotTypeSelectOptions += `<option value="${escapeHtml(found.shot_type)}" selected>${escapeHtml(found.shot_type)}</option>`;
+            }
+
+            metaDiv.innerHTML = `
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
+                    <!-- LEFT COLUMN -->
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🎬 Shot Type</label>
+                            <select id="edit-si-shot-type" class="form-select" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                                ${shotTypeSelectOptions}
+                            </select>
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">👥 Characters Present (comma separated)</label>
+                            <input type="text" id="edit-si-characters" class="form-input" value="${escapeHtml(charsList)}" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">📷 Camera Language</label>
+                            <input type="text" id="edit-si-camera" class="form-input" value="${escapeHtml(_safeStr(found.camera_language))}" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">💡 Lighting Language</label>
+                            <input type="text" id="edit-si-lighting" class="form-input" value="${escapeHtml(_safeStr(found.lighting_language))}" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🎭 Emotion</label>
+                            <input type="text" id="edit-si-emotion" class="form-input" value="${escapeHtml(_safeStr(found.emotion))}" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🎨 Visual Motifs (comma separated)</label>
+                            <input type="text" id="edit-si-motifs" class="form-input" value="${escapeHtml(motifs)}" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                        </div>
+                    </div>
+                    
+                    <!-- RIGHT COLUMN -->
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🏃 Motion Opportunities (comma separated)</label>
+                            <input type="text" id="edit-si-motion-ops" class="form-input" value="${escapeHtml(motionOps)}" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🌊 Environmental Motion (comma separated)</label>
+                            <input type="text" id="edit-si-env-motion" class="form-input" value="${escapeHtml(envMotion)}" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🎵 Audio Notes (comma separated)</label>
+                            <input type="text" id="edit-si-audio" class="form-input" value="${escapeHtml(audioNotes)}" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">📋 Continuity Notes</label>
+                            <textarea id="edit-si-continuity" class="form-textarea" style="font-size:0.75rem;padding:4px 8px;min-height:48px;height:48px;resize:vertical;">${escapeHtml(_safeStr(found.continuity_notes))}</textarea>
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🎥 Cinematic Notes</label>
+                            <textarea id="edit-si-cinematic" class="form-textarea" style="font-size:0.75rem;padding:4px 8px;min-height:48px;height:48px;resize:vertical;">${escapeHtml(_safeStr(found.cinematic_notes))}</textarea>
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🖼️ Cinematic Composition</label>
+                            <input type="text" id="edit-si-composition" class="form-input" value="${escapeHtml(_safeStr(found.cinematic_composition))}" style="font-size:0.75rem;padding:4px 8px;height:28px;">
+                        </div>
+                    </div>
+                </div>
+                
+                <hr style="border:none;border-top:1px solid var(--border-color);margin:8px 0;">
+                
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🏃 Action Description</label>
+                        <textarea id="edit-si-action" class="form-textarea" style="font-size:0.75rem;padding:6px 8px;min-height:75px;height:75px;resize:vertical;">${escapeHtml(_safeStr(found.action))}</textarea>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">💬 Dialogue (Format: SPEAKER: dialogue line)</label>
+                        <textarea id="edit-si-dialogue" class="form-textarea" style="font-size:0.75rem;padding:6px 8px;min-height:75px;height:75px;resize:vertical;" placeholder="SPEAKER: dialogue text...">${escapeHtml(dialogueText)}</textarea>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom:0;margin-top:8px;">
+                    <label class="form-label" style="font-size:0.75rem;margin-bottom:2px;">🎬 Video Prompt</label>
+                    <textarea id="edit-si-video-prompt" class="form-textarea" style="font-size:0.75rem;padding:6px 8px;min-height:60px;height:60px;resize:vertical;" placeholder="Describe video generation intent...">${escapeHtml(_safeStr(found.video_prompt))}</textarea>
+                </div>
+            `;
+
+            // Variant gallery
+            document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">No variants yet</span>';
+            document.getElementById('si-variant-input-area').style.display = 'none';
+            document.getElementById('shot-inspector-modal').style.display = 'flex';
+
+            // Try to fetch enriched data from backend
+            _fetchShotEnrichment(shotId, found);
+        }
+
+        async function _fetchShotEnrichment(shotId, localShot) {
+            try {
+                const res = await fetch(`/api/orchestrator/shot/${shotId}`);
+                const data = await res.json();
+                if (!data.success) return;
+                const shot = data.shot || localShot;
+
+                // Show storyboard image if enrichment has a prompt
+                if (data.storyboard_enrichment && data.storyboard_enrichment.storyboard_prompt) {
+                    // Future: trigger image generation automatically or show prompt
+                }
+
+                // Show variants
+                const variants = data.variants || [];
+                if (variants.length) {
+                    _shotVariantResults = variants;
+                    _shotVariantShotId = shotId;
+                    const gallery = document.getElementById('si-variant-gallery');
+                    renderShotVariantCards(gallery, variants);
+                }
+
+            } catch(e) {
+                // Silently fall back to local data
+            }
+        }
+
+        function saveShotInspectorEdits() {
+            if (!_siShotId || !screenplayData || !screenplayData.scenes) return;
+            
+            // Find the shot
+            let shot = null;
+            for (const s of screenplayData.scenes) {
+                if (s.shots) {
+                    shot = s.shots.find(sh => sh.shot_id === _siShotId);
+                    if (shot) break;
+                }
+            }
+            if (!shot) { notify('Not Found', `Shot ${_siShotId}`, '⚠️'); return; }
+            
+            // Collect form values defensively
+            const elShotType = document.getElementById('edit-si-shot-type');
+            const elCamera = document.getElementById('edit-si-camera');
+            const elLighting = document.getElementById('edit-si-lighting');
+            const elEmotion = document.getElementById('edit-si-emotion');
+            const elAction = document.getElementById('edit-si-action');
+            const elComposition = document.getElementById('edit-si-composition');
+            const elContinuity = document.getElementById('edit-si-continuity');
+            const elCinematic = document.getElementById('edit-si-cinematic');
+            const elCharacters = document.getElementById('edit-si-characters');
+            const elMotifs = document.getElementById('edit-si-motifs');
+            const elMotionOps = document.getElementById('edit-si-motion-ops');
+            const elEnvMotion = document.getElementById('edit-si-env-motion');
+            const elAudio = document.getElementById('edit-si-audio');
+            const elDialogue = document.getElementById('edit-si-dialogue');
+            const elVideoPrompt = document.getElementById('edit-si-video-prompt');
+            
+            if (elShotType) shot.shot_type = elShotType.value;
+            if (elCamera) shot.camera_language = elCamera.value;
+            if (elLighting) shot.lighting_language = elLighting.value;
+            if (elEmotion) shot.emotion = elEmotion.value;
+            if (elAction) shot.action = elAction.value;
+            if (elComposition) shot.cinematic_composition = elComposition.value;
+            if (elContinuity) shot.continuity_notes = elContinuity.value;
+            if (elCinematic) shot.cinematic_notes = elCinematic.value;
+            
+            // Comma separated arrays
+            if (elCharacters) {
+                shot.characters_present = elCharacters.value
+                    .split(',')
+                    .map(s => s.trim())
+                    .filter(Boolean);
+            }
+            if (elMotifs) {
+                shot.visual_motifs = elMotifs.value
+                    .split(',')
+                    .map(s => s.trim())
+                    .filter(Boolean);
+            }
+            if (elMotionOps) {
+                shot.motion_opportunities = elMotionOps.value
+                    .split(',')
+                    .map(s => s.trim())
+                    .filter(Boolean);
+            }
+            if (elEnvMotion) {
+                shot.environmental_motion = elEnvMotion.value
+                    .split(',')
+                    .map(s => s.trim())
+                    .filter(Boolean);
+            }
+            if (elAudio) {
+                shot.audio_notes = elAudio.value
+                    .split(',')
+                    .map(s => s.trim())
+                    .filter(Boolean);
+            }
+            
+            if (elVideoPrompt) shot.video_prompt = elVideoPrompt.value;
+
+            // Dialogue parsing
+            if (elDialogue) {
+                const diagLines = elDialogue.value.split('\n');
+                const dialogue = [];
+                diagLines.forEach(line => {
+                    const tr = line.trim();
+                    if (!tr) return;
+                    const idx = tr.indexOf(':');
+                    if (idx > 0) {
+                        dialogue.push({
+                            speaker: tr.substring(0, idx).trim(),
+                            text: tr.substring(idx + 1).trim()
+                        });
+                    } else {
+                        dialogue.push({
+                            speaker: '',
+                            text: tr
+                        });
+                    }
+                });
+                shot.dialogue = dialogue;
+            }
+            
+            // Sync with backend and save
+            renderScreenplay();
+            syncScreenplayShots();
+            
+            // Show feedback
+            notify('Saved', `Shot ${_siShotId} updated successfully`, '💾');
+            
+            // Update header display in the modal
+            const elTitleShotType = document.getElementById('si-shot-type');
+            if (elTitleShotType) elTitleShotType.textContent = shot.shot_type || '—';
+        }
+
+        function closeShotInspector() {
+            document.getElementById('shot-inspector-modal').style.display = 'none';
+            _siShotId = null;
+        }
+
+        // === SHOT ACTIONS ===
+
+        async function siGenerateImage(shotId) {
+            const id = shotId || _siShotId;
+            if (!id) return;
+            try {
+                const res = await fetch('/api/orchestrator/generate-shot-image', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ shot_id: id }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('si-image-area').innerHTML = `
+                        <div style="text-align:center;padding:20px;">
+                            <div style="font-size:0.8rem;color:var(--accent-primary);margin-bottom:8px;">📄 Storyboard Prompt</div>
+                            <div style="font-size:0.7rem;color:var(--text-primary);max-width:400px;">${escapeHtml(data.prompt)}</div>
+                            <div style="margin-top:10px;font-size:0.7rem;color:var(--text-secondary);">Send this prompt to Flux2 Klein via the Storyboard page</div>
+                        </div>`;
+                    notify('Prompt Ready', `Storyboard prompt generated for ${id}`, '📄');
+                    _updateShotSummaryCounts();
+                } else {
+                    notify('Failed', data.error || 'Generation failed', '❌');
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        function siShowVariantInput(shotId) {
+            _siShotId = shotId || _siShotId;
+            document.getElementById('si-variant-input-area').style.display = 'block';
+            document.getElementById('si-variant-instruction').value = '';
+            document.getElementById('si-variant-instruction').focus();
+        }
+
+        async function siSubmitVariant(shotId) {
+            const id = shotId || _siShotId;
+            if (!id) return;
+            const btn = document.getElementById('si-submit-variant-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            const instruction = document.getElementById('si-variant-instruction').value.trim() || 'Generate 3 creative alternative versions';
+            const gallery = document.getElementById('si-variant-gallery');
+            gallery.innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">⏳ Generating 3 variants...</span>';
+            startProgressPolling();
+            _currentAbortController = new AbortController();
+            try {
+                const res = await fetch('/api/orchestrator/shot-variant', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ shot_id: id, user_instruction: instruction }),
+                    signal: _currentAbortController.signal
+                });
+                _currentAbortController = null;
+                const data = await res.json();
+                if (data.success && data.variants) {
+                    stopProgressPolling(true, '3 variants ready');
+                    _shotVariantResults = data.variants;
+                    _shotVariantShotId = id;
+                    renderShotVariantCards(gallery, data.variants);
+                    notify('Variants', `3 variants generated for ${id}`, '✏️');
+                } else {
+                    stopProgressPolling(false, data.error || 'Generation failed');
+                    gallery.innerHTML = '<span style="font-size:0.7rem;color:#f87171;">Failed: ' + (data.error || 'Generation failed') + '</span>';
+                }
+            } catch(e) {
+                if (e.name === 'AbortError') return;
+                stopProgressPolling(false, e.message);
+                document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:#f87171;">Error: ' + e.message + '</span>';
+            }
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate 3 Variants'; }
+            document.getElementById('si-variant-input-area').style.display = 'none';
+        }
+
+        async function siRegenerate() {
+            if (!_siShotId) return;
+            const regenBtn = document.getElementById('si-regen-btn');
+            if (regenBtn) { regenBtn.disabled = true; regenBtn.textContent = '⏳ Regen...'; }
+            startProgressPolling();
+            _currentAbortController = new AbortController();
+            try {
+                const res = await fetch('/api/orchestrator/shot-regenerate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ shot_id: _siShotId }),
+                    signal: _currentAbortController.signal
+                });
+                _currentAbortController = null;
+                const data = await res.json();
+                if (data.success) {
+                    stopProgressPolling(true, 'Shot regenerated');
+                    notify('Regenerated', `${_siShotId} regenerated with continuity preserved`, '🔄');
+                    // Update local screenplayData
+                    if (screenplayData && screenplayData.scenes) {
+                        for (const s of screenplayData.scenes) {
+                            if (s.shots) {
+                                for (let i = 0; i < s.shots.length; i++) {
+                                    if (s.shots[i].shot_id === _siShotId) {
+                                        s.shots[i] = data.shot;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    openShotInspector(_siShotId);
+                    renderScreenplay();
+                    scheduleSaveState();
+                } else {
+                    stopProgressPolling(false, data.error || 'Regeneration failed');
+                    notify('Failed', data.error || 'Regeneration failed', '❌');
+                }
+            } catch(e) {
+                if (e.name === 'AbortError') return;
+                stopProgressPolling(false, e.message);
+                notify('Error', e.message, '❌');
+            }
+            if (regenBtn) { regenBtn.disabled = false; regenBtn.textContent = '🔄 Regen'; }
+        }
+
+        async function siApprove() {
+            if (!_siShotId) return;
+            try {
+                const res = await fetch('/api/orchestrator/shot-approve', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ shot_id: _siShotId }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Approved', `${_siShotId} approved for timeline`, '✅');
+                    setTimeout(() => notify('🎯 Next Step', 'Approve all shots, then proceed to Asset Studio to generate character & location images.', 'ℹ️'), 600);
+                    const badge = document.getElementById('si-status-badge');
+                    if (badge) {
+                        badge.style.background = '#4caf50';
+                        badge.textContent = 'approved';
+                    }
+                    // Update local data
+                    if (screenplayData && screenplayData.scenes) {
+                        for (const s of screenplayData.scenes) {
+                            if (s.shots) {
+                                for (let i = 0; i < s.shots.length; i++) {
+                                    if (s.shots[i].shot_id === _siShotId) {
+                                        s.shots[i].storyboard_status = 'approved';
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    renderScreenplay();
+                    scheduleSaveState();
+                } else {
+                    notify('Failed', data.error || 'Approval failed', '❌');
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        // Card-level shot actions (called from shot card buttons)
+        async function shotRegenerate(shotId) {
+            _siShotId = shotId;
+            await siRegenerate();
+        }
+
+        async function shotApprove(shotId) {
+            _siShotId = shotId;
+            await siApprove();
+        }
+
+        function siCreateVariant() {
+            siShowVariantInput(_siShotId);
+        }
+
+        function renderShotVariantCards(containerEl, variants) {
+            let html = '<div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:8px;">3 variants generated</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+            variants.forEach((v, i) => {
+                const lighting = (v.lighting_language || '').toLowerCase();
+                const todIcon = (lighting.includes('night') || lighting.includes('dark') || lighting.includes('moon') || lighting.includes('shadow')) ? '🌙' : '☀️';
+                html += `
+                    <div style="flex:1;min-width:180px;max-width:220px;border:1px solid var(--border-color);border-radius:6px;padding:8px;background:var(--bg-primary);">
+                        <div style="font-weight:600;font-size:0.7rem;color:var(--accent-primary);margin-bottom:4px;">Variant ${i+1}: ${v.shot_type || ''} ${todIcon}</div>
+                        <div style="font-size:0.65rem;color:var(--text-secondary);line-height:1.5;">
+                            <div>📷 ${(v.camera_language || '—').substring(0, 50)}</div>
+                            <div>💡 ${(v.lighting_language || '—').substring(0, 50)}</div>
+                            <div>🎭 ${v.emotion || '—'}</div>
+                            ${v.action ? `<div>🎬 ${v.action.substring(0, 60)}</div>` : ''}
+                        </div>
+                        <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="siKeepVariant(${i})" style="padding:3px 8px;font-size:0.6rem;">✓ Keep</button>
+                            <button class="btn btn-secondary" onclick="siEditVariantAgain(${i})" style="padding:3px 8px;font-size:0.6rem;">✏️ Edit</button>
+                            <button class="btn btn-secondary" onclick="siCancelVariants()" style="padding:3px 8px;font-size:0.6rem;">Cancel</button>
+                        </div>
+                    </div>`;
+            });
+            html += '</div>';
+            containerEl.innerHTML = html;
+        }
+
+        // Inspector variant actions
+        function siKeepVariant(idx) {
+            if (!_shotVariantResults[idx] || !_shotVariantShotId) return;
+            const variant = _shotVariantResults[idx];
+            if (screenplayData && screenplayData.scenes) {
+                for (const s of screenplayData.scenes) {
+                    if (s.shots) {
+                        for (let i = 0; i < s.shots.length; i++) {
+                            if (s.shots[i].shot_id === _shotVariantShotId) {
+                                Object.assign(s.shots[i], variant);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            renderScreenplay();
+            openShotInspector(_shotVariantShotId);
+            scheduleSaveState();
+            notify('Kept', `Variant applied to ${_shotVariantShotId}`, '✓');
+        }
+
+        function siEditVariantAgain(idx) {
+            if (!_shotVariantResults[idx]) return;
+            const v = _shotVariantResults[idx];
+            const textarea = document.getElementById('si-variant-instruction');
+            const prevText = textarea.value;
+            textarea.value = prevText + `\n[Refining variant: ${v.shot_type || ''}] Please adjust: `;
+            document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">No variants yet</span>';
+            document.getElementById('si-variant-input-area').style.display = 'block';
+            textarea.focus();
+        }
+
+        function siCancelVariants() {
+            document.getElementById('si-variant-gallery').innerHTML = '<span style="font-size:0.7rem;color:var(--text-secondary);">No variants yet</span>';
+            _shotVariantResults = [];
+        }
+
+        // === PLACEHOLDER SHOT EXPAND MODAL ===
+
+        function openPlaceholderShotModal(sceneIdx, shotNum) {
+            _psSceneIdx = sceneIdx;
+            _psShotNum = shotNum;
+            _psResults = [];
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s) return;
+            const totalShots = s.estimated_shots || 1;
+            const chars = (s.characters_present || []).join(', ') || 'None';
+            document.getElementById('ps-shot-label').textContent = `${s.scene_id || 'SC_'+(sceneIdx+1)} Shot #${shotNum+1} of ${totalShots}`;
+            document.getElementById('ps-scene-context').innerHTML =
+                `<strong>${escapeHtml(s.scene_title || '')}</strong><br>` +
+                `<span style="color:var(--text-secondary);">📍 ${s.location_id || 'Unknown'} · 👥 ${chars} · 🎭 ${s.emotional_tone || '—'}</span><br>` +
+                `<span style="font-size:0.75rem;">${escapeHtml((s.synopsis || '').substring(0, 350))}</span>`;
+            document.getElementById('ps-change-input').value = '';
+            document.getElementById('ps-results').innerHTML = '';
+            document.getElementById('placeholder-shot-modal').style.display = 'flex';
+        }
+
+        function closePlaceholderShotModal() {
+            document.getElementById('placeholder-shot-modal').style.display = 'none';
+            _psSceneIdx = -1;
+            _psShotNum = -1;
+            _psResults = [];
+        }
+
+        async function generatePlaceholderShotVariants() {
+            const s = screenplayData.scenes[_psSceneIdx];
+            if (!s) return;
+            const userChange = document.getElementById('ps-change-input').value.trim();
+            const resultsEl = document.getElementById('ps-results');
+            const btn = document.querySelector('#placeholder-shot-modal .btn-primary');
+            btn.disabled = true;
+            btn.textContent = '⏳ Generating...';
+            resultsEl.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);">⏳ Generating 3 shot variants...</div>';
+            startProgressPolling();
+            _currentAbortController = new AbortController();
+            try {
+                const res = await fetch('/api/orchestrator/generate-shot-from-scene', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        scene_id: s.scene_id || '',
+                        scene_title: s.scene_title || '',
+                        location_id: s.location_id || '',
+                        characters_present: s.characters_present || [],
+                        emotional_tone: s.emotional_tone || '',
+                        synopsis: s.synopsis || '',
+                        shot_number: _psShotNum + 1,
+                        user_instruction: userChange
+                    }),
+                    signal: _currentAbortController.signal
+                });
+                _currentAbortController = null;
+                const data = await res.json();
+                if (data.success && data.variants && data.variants.length > 0) {
+                    _psResults = data.variants;
+                    renderPlaceholderVariantCards(resultsEl, data.variants);
+                    stopProgressPolling(true, '3 shot variants ready');
+                } else {
+                    stopProgressPolling(false, data.error || 'Generation failed');
+                    resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + (data.error || 'Generation failed') + '</div>';
+                }
+            } catch(e) {
+                if (e.name === 'AbortError') return;
+                stopProgressPolling(false, e.message);
+                resultsEl.innerHTML = '<div style="color:#f87171;padding:8px;">Error: ' + e.message + '</div>';
+            }
+            btn.disabled = false;
+            btn.textContent = '🚀 Generate 3 Shot Variants';
+        }
+
+        function renderPlaceholderVariantCards(containerEl, variants) {
+            let html = '<div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:8px;">3 shot variants generated</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+            variants.forEach((v, i) => {
+                const lighting = (v.lighting_language || '').toLowerCase();
+                const todIcon = (lighting.includes('night') || lighting.includes('dark') || lighting.includes('moon') || lighting.includes('shadow')) ? '🌙' : '☀️';
+                html += `
+                    <div style="flex:1;min-width:180px;max-width:220px;border:1px solid var(--border-color);border-radius:6px;padding:8px;background:var(--bg-primary);">
+                        <div style="font-weight:600;font-size:0.7rem;color:var(--accent-primary);margin-bottom:4px;">Variant ${i+1}: ${v.shot_type || ''} ${todIcon}</div>
+                        <div style="font-size:0.65rem;color:var(--text-secondary);line-height:1.5;">
+                            <div>📷 ${(v.camera_language || '—').substring(0, 60)}</div>
+                            <div>💡 ${(v.lighting_language || '—').substring(0, 60)}</div>
+                            <div>🎭 ${v.emotion || '—'}</div>
+                            ${v.action ? `<div>🎬 ${v.action.substring(0, 60)}</div>` : ''}
+                        </div>
+                        <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="keepPlaceholderShotVariant(${i})" style="padding:3px 8px;font-size:0.6rem;">✓ Keep</button>
+                            <button class="btn btn-secondary" onclick="editPlaceholderShotVariantAgain(${i})" style="padding:3px 8px;font-size:0.6rem;">✏️ Edit</button>
+                            <button class="btn btn-secondary" onclick="cancelPlaceholderShotVariants()" style="padding:3px 8px;font-size:0.6rem;">Cancel</button>
+                        </div>
+                    </div>`;
+            });
+            html += '</div>';
+            containerEl.innerHTML = html;
+        }
+
+        function keepPlaceholderShotVariant(idx) {
+            if (!_psResults[idx] || _psSceneIdx < 0) return;
+            const s = screenplayData.scenes[_psSceneIdx];
+            if (!s) return;
+            const variant = _psResults[idx];
+            // Create shot node from variant and add to scene
+            if (!s.shots) s.shots = [];
+            const shotId = s.scene_id ? s.scene_id + '_Shot_' + (_psShotNum + 1) : 'SHOT_' + (_psSceneIdx + 1) + '_' + (_psShotNum + 1);
+            const shotNode = {
+                shot_id: shotId,
+                shot_number: _psShotNum + 1,
+                shot_type: variant.shot_type || 'Medium',
+                camera_language: variant.camera_language || '',
+                lighting_language: variant.lighting_language || '',
+                emotion: variant.emotion || '',
+                characters_present: variant.characters_present || s.characters_present || [],
+                dialogue: variant.dialogue || [],
+                action: variant.action || '',
+                visual_motifs: variant.visual_motifs || [],
+                motion_opportunities: variant.motion_opportunities || [],
+                environmental_motion: variant.environmental_motion || [],
+                audio_notes: variant.audio_notes || [],
+                continuity_notes: variant.continuity_notes || '',
+                cinematic_notes: variant.cinematic_notes || '',
+                storyboard_status: 'pending',
+            };
+            // Find the right position for this shot
+            const existingIdx = s.shots.findIndex(sh => sh.shot_number === _psShotNum + 1);
+            if (existingIdx >= 0) {
+                s.shots[existingIdx] = shotNode;
+            } else {
+                s.shots.push(shotNode);
+                s.shots.sort((a, b) => (a.shot_number || 0) - (b.shot_number || 0));
+            }
+            renderScreenplay();
+            closePlaceholderShotModal();
+            scheduleSaveState();
+            // Sync the new shot to orchestrator for approve/lock
+            try {
+                fetch('/api/orchestrator/sync-shots', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ screenplay: screenplayData })
+                });
+            } catch(e) {}
+            notify('Kept', `Shot ${shotId} created from variant`, '✓');
+        }
+
+        function editPlaceholderShotVariantAgain(idx) {
+            if (!_psResults[idx]) return;
+            const v = _psResults[idx];
+            const textarea = document.getElementById('ps-change-input');
+            const prevText = textarea.value;
+            textarea.value = prevText + `\n[Refining: ${v.shot_type || ''}] Please adjust further: `;
+            document.getElementById('ps-results').innerHTML = '';
+            textarea.focus();
+        }
+
+        function cancelPlaceholderShotVariants() {
+            document.getElementById('ps-results').innerHTML = '';
+            document.getElementById('ps-change-input').value = '';
+            document.getElementById('ps-change-input').focus();
+        }
+
+        async function generateSceneShots(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s) return;
+            const btn = document.getElementById('gen-scene-shots-' + sceneIdx);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            startProgressPolling();
+            _currentAbortController = new AbortController();
+            try {
+                const res = await fetch('/api/orchestrator/generate-scene-shots', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        scene_id: s.scene_id || '',
+                        scene_title: s.scene_title || '',
+                        location_id: s.location_id || '',
+                        characters_present: s.characters_present || [],
+                        emotional_tone: s.emotional_tone || '',
+                        synopsis: s.synopsis || '',
+                        time_of_day: s.time_of_day || '',
+                        shot_count: s.estimated_shots || 1,
+                        dialogue_enabled: screenplayData.dialogue_enabled !== false,
+                    }),
+                    signal: _currentAbortController.signal
+                });
+                _currentAbortController = null;
+                const data = await res.json();
+                if (data.success && data.shots && data.shots.length > 0) {
+                    if (!s.shots) s.shots = [];
+                    const prefix = s.scene_id ? s.scene_id + '_' : 'SHOT_';
+                    data.shots.forEach((sh, idx) => {
+                        if (!sh.shot_id) sh.shot_id = prefix + (idx + 1);
+                        if (!sh.shot_number) sh.shot_number = idx + 1;
+                    });
+                    s.shots = data.shots;
+                    renderScreenplay();
+                    stopProgressPolling(true, `${data.shots.length} shots created`);
+                    notify('Shots Generated', `${data.shots.length} shots created for ${s.scene_id}`, '🎬');
+                } else {
+                    stopProgressPolling(false, data.error || 'Shot generation failed');
+                    notify('Failed', data.error || 'Shot generation failed', '❌');
+                    if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate Shots'; }
+                }
+            } catch(e) {
+                if (e.name === 'AbortError') return;
+                stopProgressPolling(false, e.message);
+                notify('Error', e.message, '❌');
+                if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate Shots'; }
+            }
+        }
+
+        async function generateAllShots() {
+            if (!requireProject()) return;
+
+            if (!screenplayData || !screenplayData.scenes) return;
+            const btn = document.getElementById('generate-all-shots-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating all shots...'; }
+            const pb = document.getElementById('screenplay-progress');
+            const bar = document.getElementById('screenplay-progress-bar');
+            const pct = document.getElementById('screenplay-progress-pct');
+            const titleEl = document.getElementById('screenplay-progress-title');
+            const subEl = document.getElementById('screenplay-progress-sub');
+            pb.style.display = 'block';
+
+            let total = 0, failed = 0, skipped = 0;
+            for (let i = 0; i < screenplayData.scenes.length; i++) {
+                _currentAbortController = new AbortController();
+                const s = screenplayData.scenes[i];
+                if (s.shots && s.shots.length > 0) { _currentAbortController = null; skipped++; continue; }
+                // Show per-scene progress in the bar, start polling for backend progress
+                titleEl.textContent = `Scene ${i+1}/${screenplayData.scenes.length}: Generating ${s.scene_id || '#'+(i+1)}...`;
+                subEl.textContent = `Preparing...`;
+                pct.textContent = '0%';
+                bar.style.width = '0%';
+                startProgressPolling();
+                // Spinner on placeholder cards in this scene
+                const sceneRow = document.querySelector(`[data-scene-idx="${i}"]`);
+                if (sceneRow) {
+                    sceneRow.querySelectorAll('[data-placeholder="true"] .placeholder-body').forEach(el => {
+                        el.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> Generating...';
+                    });
+                }
+                try {
+                    const res = await fetch('/api/orchestrator/generate-scene-shots', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            scene_id: s.scene_id || '',
+                            scene_title: s.scene_title || '',
+                            location_id: s.location_id || '',
+                            characters_present: s.characters_present || [],
+                            emotional_tone: s.emotional_tone || '',
+                            synopsis: s.synopsis || '',
+                            time_of_day: s.time_of_day || '',
+                            shot_count: s.estimated_shots || 1,
+                            dialogue_enabled: screenplayData.dialogue_enabled !== false,
+                        }),
+                        signal: _currentAbortController.signal
+                    });
+                    _currentAbortController = null;
+                    const data = await res.json();
+                    if (data.success && data.shots && data.shots.length > 0) {
+                        if (!s.shots) s.shots = [];
+                        const prefix = s.scene_id ? s.scene_id + '_' : 'SHOT_';
+                        data.shots.forEach((sh, idx) => {
+                            if (!sh.shot_id) sh.shot_id = prefix + (idx + 1);
+                            if (!sh.shot_number) sh.shot_number = idx + 1;
+                        });
+                        s.shots = data.shots;
+                        total += data.shots.length;
+                        renderScreenplay();
+                    } else {
+                        failed++;
+                        // Restore placeholder text on failure
+                        if (sceneRow) {
+                            sceneRow.querySelectorAll('[data-placeholder="true"] .placeholder-body').forEach(el => {
+                                el.textContent = '🎬 Not generated';
+                            });
+                        }
+                        console.error(`Scene ${s.scene_id || i} shot generation failed:`, data.error);
+                    }
+                } catch(e) {
+                    if (e.name === 'AbortError') { skipped++; break; }
+                    failed++;
+                    if (sceneRow) {
+                        sceneRow.querySelectorAll('[data-placeholder="true"] .placeholder-body').forEach(el => {
+                            el.textContent = '🎬 Not generated';
+                        });
+                    }
+                    console.error(`Scene ${s.scene_id || i} error:`, e);
+                }
+                if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+            }
+            _currentAbortController = null;
+            if (btn) { btn.disabled = false; btn.textContent = '🎬 Generate All Shots'; }
+            if (total === 0 && skipped > 0) {
+                bar.style.width = '100%';
+                pct.textContent = '100%';
+                titleEl.textContent = '✅ All scenes already have shots';
+                subEl.textContent = '';
+                notify('All Done', 'All scenes already have shots', '✓');
+                setTimeout(() => { pb.style.display = 'none'; }, 2000);
+            } else {
+                stopProgressPolling(total > 0, total > 0 ? `${total} shots across scenes` : 'All failed');
+                if (total > 0) notify('All Shots Generated', `${total} shots created across scenes${failed ? `, ${failed} failed` : ''}${skipped ? `, ${skipped} skipped` : ''}`, '🎬');
+                else if (failed > 0) notify('Failed', 'All scenes failed to generate shots', '❌');
+            }
+        }
+
+        async function approveAllShots() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            const btn = document.getElementById('approve-all-shots-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Approving...'; }
+            const pb = document.getElementById('screenplay-progress');
+            const bar = document.getElementById('screenplay-progress-bar');
+            const pct = document.getElementById('screenplay-progress-pct');
+            const titleEl = document.getElementById('screenplay-progress-title');
+            const subEl = document.getElementById('screenplay-progress-sub');
+            pb.style.display = 'block';
+
+            // Collect all shots
+            const allShots = [];
+            for (const s of screenplayData.scenes) {
+                if (s.shots) {
+                    for (const sh of s.shots) {
+                        if (sh.storyboard_status !== 'approved') {
+                            allShots.push({ scene: s, shot: sh });
+                        }
+                    }
+                }
+            }
+
+            if (allShots.length === 0) {
+                titleEl.textContent = '✅ All shots already approved';
+                pct.textContent = '100%';
+                bar.style.width = '100%';
+                notify('All Approved', 'No unapproved shots found', '✅');
+                setTimeout(() => { pb.style.display = 'none'; }, 1500);
+                if (btn) { btn.disabled = false; btn.textContent = '✅ Approve All'; }
+                return;
+            }
+
+            let approved = 0, failed = 0;
+            for (let i = 0; i < allShots.length; i++) {
+                const { shot } = allShots[i];
+                titleEl.textContent = `Approving ${i+1}/${allShots.length}: ${shot.shot_id}...`;
+                pct.textContent = Math.round((i / allShots.length) * 100) + '%';
+                bar.style.width = Math.round((i / allShots.length) * 100) + '%';
+                try {
+                    const res = await fetch('/api/orchestrator/shot-approve', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ shot_id: shot.shot_id }),
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        shot.storyboard_status = 'approved';
+                        approved++;
+                    } else {
+                        failed++;
+                        console.error(`Approve ${shot.shot_id} failed:`, data.error);
+                    }
+                } catch(e) {
+                    failed++;
+                    console.error(`Approve ${shot.shot_id} error:`, e);
+                }
+                renderScreenplay();
+            }
+
+            bar.style.width = '100%';
+            pct.textContent = '100%';
+            titleEl.textContent = approved > 0 ? `✅ ${approved} shots approved` : '❌ All failed';
+            subEl.textContent = failed > 0 ? `${failed} failed` : '';
+            if (approved > 0) {
+                notify('Approved', `${approved} shots approved${failed ? `, ${failed} failed` : ''}`, '✅');
+                setTimeout(() => notify('🎯 All Done', 'All shots approved! Click "Continue to Asset Studio" to generate character & location images.', 'ℹ️'), 800);
+            }
+            else notify('Failed', 'All approvals failed', '❌');
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve All'; }
+            scheduleSaveState();
+            setTimeout(() => { pb.style.display = 'none'; }, 2000);
+        }
+
+        function proceedToScenesFromScreenplay() {
+            if (!screenplayData) {
+                notify('Generate Screenplay', 'Please generate the screenplay first');
+                return;
+            }
+            const chars = parseInt(document.getElementById('sel-characters').value) || 3;
+            const locs = parseInt(document.getElementById('sel-locations').value) || 3;
+            const scenes = screenplayData.scenes ? screenplayData.scenes.length : parseInt(document.getElementById('sel-scenes').value) || 10;
+            const imgRes = document.getElementById('sel-img-resolution').value || '1024x576';
+            const vidRes = document.getElementById('sel-vid-resolution').value || '1280x720';
+            const totalShots = parseInt(document.getElementById('sel-total-shots').value) || 30;
+            currentProject.settings = {
+                style: selectedVisualStyle, aesthetic: selectedFilmAesthetic,
+                characters: chars, locations: locs, scenes: scenes, totalShots: totalShots,
+                aspectRatio: selectedAspectRatio,
+                imgResolution: imgRes, vidResolution: vidRes,
+                dialogue: selectedDialogue
+            };
+            scheduleSaveState();
+            navigateToWorkflow('locations');
+            setTimeout(() => generateLocations(), 300);
+        }
+
+        // === GENRE MANAGER MODAL ===
+        let gmFile = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('gm-image')?.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    gmFile = file;
+                    const reader = new FileReader();
+                    reader.onload = function(ev) {
+                        document.getElementById('gm-preview-img').src = ev.target.result;
+                        document.getElementById('gm-preview').style.display = 'block';
+                        document.getElementById('gm-preview-name').textContent = file.name;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        });
+
+        function openGenreManagerModal() {
+            document.getElementById('genre-manager-modal').style.display = 'flex';
+            loadGenreManagerGrid();
+        }
+
+        function closeGenreManagerModal() {
+            document.getElementById('genre-manager-modal').style.display = 'none';
+        }
+
+        async function loadGenreManagerGrid() {
+            const container = document.getElementById('gm-grid');
+            try {
+                const res = await fetch('/api/genres');
+                const data = await res.json();
+                const genres = data.genres || [];
+                document.getElementById('gm-count').textContent = genres.length + ' total';
+                if (genres.length === 0) {
+                    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No genres yet. Add one above or drop a folder.</div>';
+                    return;
+                }
+                const categories = [...new Set(genres.map(g => g.category || 'Other'))].sort();
+                let html = '';
+                for (const cat of categories) {
+                    const catGenres = genres.filter(g => (g.category || 'Other') === cat);
+                    if (!catGenres.length) continue;
+                    html += `<div class="genre-section-title">${cat}</div><div class="genre-grid">`;
+                    html += catGenres.map(g => renderGenreManagerCard(g)).join('');
+                    html += '</div>';
+                }
+                container.innerHTML = html;
+            } catch(e) {
+                container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">Could not load genres</div>';
+            }
+        }
+
+        function renderGenreManagerCard(g) {
+            const imgUrl = g.image ? '/api/genres/image/' + encodeURIComponent(g.image) : null;
+            return `<div class="genre-card" data-genre="${g.name}" style="position:relative;">
+                <button class="btn btn-secondary" onclick="deleteGenreFromManager('${g.name.replace(/'/g, "\\'")}')" style="position:absolute;top:4px;right:4px;padding:2px 8px;font-size:0.7rem;z-index:2;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:4px;cursor:pointer;">✕</button>
+                ${imgUrl ? `<img src="${imgUrl}" alt="${g.name}" onerror="this.style.display='none'">` : `<div style="height:140px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:var(--text-secondary);">${g.name.charAt(0).toUpperCase()}</div>`}
+                <div class="genre-label" style="padding:8px;font-size:0.8rem;">${g.name}</div>
+            </div>`;
+        }
+
+        function filterGenreManagerGrid() {
+            const q = document.getElementById('gm-search').value.toLowerCase().trim();
+            document.querySelectorAll('#gm-grid .genre-card').forEach(c => {
+                const name = (c.dataset.genre || '').toLowerCase();
+                c.style.display = (!q || name.includes(q)) ? '' : 'none';
+            });
+            document.querySelectorAll('#gm-grid .genre-section-title').forEach(t => {
+                const grid = t.nextElementSibling;
+                if (grid && grid.classList.contains('genre-grid')) {
+                    const visible = [...grid.querySelectorAll('.genre-card')].some(c => c.style.display !== 'none');
+                    t.style.display = visible ? '' : 'none';
+                }
+            });
+        }
+
+        async function addGenreFromManager() {
+            const name = document.getElementById('gm-name').value.trim();
+            if (!name) { notify('Enter Name', 'Please enter a genre name'); return; }
+            const category = document.getElementById('gm-category').value.trim() || 'Other';
+
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('category', category);
+            if (gmFile) formData.append('file', gmFile);
+
+            try {
+                const res = await fetch('/api/genres', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('gm-name').value = '';
+                    document.getElementById('gm-category').value = '';
+                    document.getElementById('gm-image').value = '';
+                    gmFile = null;
+                    document.getElementById('gm-preview').style.display = 'none';
+                    await loadGenreManagerGrid();
+                    await loadGenreModalGrid();
+                    notify('✅ Genre Added', name + ' added');
+                } else {
+                    notify('Error', data.error || 'Failed to add');
+                }
+            } catch(e) {
+                notify('Error', 'Could not add genre');
+            }
+        }
+
+        async function deleteGenreFromManager(name) {
+            try {
+                const res = await fetch('/api/genres/' + encodeURIComponent(name), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    await loadGenreManagerGrid();
+                    await loadGenreModalGrid();
+                    notify('Deleted', name + ' removed');
+                }
+            } catch(e) {}
+        }
+
+        // === FOLDER DROP HANDLING (shared) ===
+        async function handleFolderDrop(files, endpoint, progressEl, type) {
+            if (!files.length) return;
+            const formData = new FormData();
+            for (const f of files) {
+                if (f.type.startsWith('image/')) {
+                    formData.append('files', f, f.webkitRelativePath || f.name);
+                }
+            }
+            if (!formData.getAll('files').length) {
+                notify('No Images', 'No image files found in folder');
+                return;
+            }
+            progressEl.style.display = 'block';
+            progressEl.textContent = `Uploading ${formData.getAll('files').length} images...`;
+            try {
+                const res = await fetch(endpoint, { method: 'POST', body: formData });
+                const data = await res.json();
+                progressEl.textContent = `✅ Added ${data.count || 0} items` + (data.errors?.length ? `, ${data.errors.length} skipped` : '');
+                setTimeout(() => { progressEl.style.display = 'none'; }, 3000);
+                // Refresh grids
+                if (type === 'genre') {
+                    await loadGenreManagerGrid();
+                    await loadGenreModalGrid();
+                } else if (type === 'vs') {
+                    await loadVisualStyleManagerGrid();
+                    await loadVisualStyleGrid();
+                } else if (type === 'fa') {
+                    await loadFilmAestheticManagerGrid();
+                    await loadFilmAestheticGrid();
+                }
+            } catch(e) {
+                progressEl.textContent = 'Upload failed';
+            }
+        }
+
+        function getFilesFromDrop(event) {
+            event.preventDefault();
+            const items = event.dataTransfer.items;
+            const files = [];
+            const queue = [];
+            if (items) {
+                for (let i = 0; i < items.length; i++) {
+                    const entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
+                    if (entry) {
+                        if (entry.isDirectory) {
+                            queue.push(entry);
+                        } else if (entry.isFile) {
+                            files.push(items[i].getAsFile());
+                        }
+                    } else {
+                        const f = items[i].getAsFile();
+                        if (f) files.push(f);
+                    }
+                }
+            } else {
+                for (let i = 0; i < event.dataTransfer.files.length; i++) {
+                    files.push(event.dataTransfer.files[i]);
+                }
+            }
+            // Process directory entries recursively
+            function traverseDir(entry, callback) {
+                const reader = entry.createReader();
+                reader.readEntries(function(entries) {
+                    for (const e of entries) {
+                        if (e.isDirectory) {
+                            traverseDir(e, callback);
+                        } else if (e.isFile) {
+                            e.file(callback);
+                        }
+                    }
+                });
+            }
+            return new Promise((resolve) => {
+                let pending = queue.length;
+                if (!pending) { resolve(files); return; }
+                for (const dirEntry of queue) {
+                    traverseDir(dirEntry, (file) => {
+                        files.push(file);
+                        pending--;
+                        if (pending === 0) resolve(files);
+                    });
+                }
+            });
+        }
+
+        function handleGenreFolderDrop(event) {
+            getFilesFromDrop(event).then(files => {
+                handleFolderDrop(files, '/api/genres/batch', document.getElementById('gm-progress'), 'genre');
+            });
+        }
+
+        function handleVSMFolderDrop(event) {
+            getFilesFromDrop(event).then(files => {
+                handleFolderDrop(files, '/api/visual-styles/batch', document.getElementById('vsm-progress'), 'vs');
+            });
+        }
+
+        function handleFAFolderDrop(event) {
+            getFilesFromDrop(event).then(files => {
+                handleFolderDrop(files, '/api/film-aesthetics/batch', document.getElementById('fam-progress'), 'fa');
+            });
+        }
+
+        let selectedAspectRatio = '16:9';
+        let selectedDialogue = 'with';
+        let selectedVisualStyle = null;
+        let selectedFilmAesthetic = null;
+
+        function selectDialogue(value) {
+            selectedDialogue = value;
+            document.querySelectorAll('.dialogue-btn').forEach(b => {
+                if (b.dataset.value === value) {
+                    b.className = 'btn btn-primary dialogue-btn';
+                } else {
+                    b.className = 'btn btn-secondary dialogue-btn';
+                }
+            });
+            if (currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.dialogue = value;
+                scheduleSaveState();
+            }
+        }
+
+        function selectAspectRatio(value) {
+            selectedAspectRatio = value;
+            document.querySelectorAll('.ar-btn').forEach(b => b.style.border = '');
+            const btn = document.querySelector(`.ar-btn[data-value="${value}"]`);
+            if (btn) btn.style.border = '2px solid var(--accent-primary)';
+            // Adjust image resolution options based on aspect ratio
+            const sel = document.getElementById('sel-img-resolution');
+            if (!sel) {
+                if (currentProject) {
+                    if (!currentProject.settings) currentProject.settings = {};
+                    currentProject.settings.aspectRatio = value;
+                    scheduleSaveState();
+                }
+                return;
+            }
+            const current = sel.value;
+            sel.innerHTML = '';
+            const ratios = {
+                '16:9': ['1024x576', '1280x720', '1920x1080', '3840x2160', '960x544'],
+                '4:3': ['1024x768', '1280x960', '1600x1200', '3840x2880', '800x600'],
+                '1:1': ['1024x1024', '768x768', '512x512', '3840x3840', '1216x1216'],
+                '9:16': ['576x1024', '720x1280', '1080x1920', '2160x3840', '544x960'],
+                '3:2': ['1024x683', '1280x853', '1536x1024', '3840x2560', '960x640'],
+                '2:1': ['1024x512', '1280x640', '1536x768', '3840x1920', '960x480']
+            };
+            (ratios[value] || ratios['16:9']).forEach(r => {
+                const o = document.createElement('option');
+                o.value = r; o.textContent = r.replace('x', '\u00d7');
+                sel.appendChild(o);
+            });
+            if (current && ratios[value] && ratios[value].includes(current)) sel.value = current;
+            // Update project settings and save
+            if (currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.aspectRatio = value;
+                scheduleSaveState();
+            }
+        }
+
+        function onResolutionChange() {
+            const res = document.getElementById('sel-img-resolution').value;
+            if (res) {
+                const [w, h] = res.split('x').map(Number);
+                if (w && h) {
+                    const gcd = (a, b) => b ? gcd(b, a % b) : a;
+                    const g = gcd(w, h);
+                    const ratio = `${w/g}:${h/g}`;
+                    const validRatios = ['16:9','4:3','1:1','9:16','3:2','2:1'];
+                    if (validRatios.includes(ratio)) {
+                        selectAspectRatio(ratio);
+                    }
+                }
+            }
+            if (currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.imgResolution = res;
+                scheduleSaveState();
+            }
+        }
+
+        function onSheetPromptChange(type, value) {
+            if (!currentProject) currentProject = {};
+            if (!currentProject.settings) currentProject.settings = {};
+            if (type === 'char') {
+                currentProject.settings.character_sheet_prompt = value;
+            } else {
+                currentProject.settings.location_sheet_prompt = value;
+            }
+            scheduleSaveState();
+        }
+
+        function onSheetCfgChange() {
+            const val = parseFloat(document.getElementById('sheet-cfg')?.value);
+            if (val && currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.sheetCfg = val;
+                scheduleSaveState();
+            }
+        }
+
+        function onSheetStepsChange() {
+            const val = parseInt(document.getElementById('sheet-steps')?.value);
+            if (val && currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.sheetSteps = val;
+                scheduleSaveState();
+            }
+        }
+
+        function onGenCfgChange() {
+            const val = parseFloat(document.getElementById('gen-cfg')?.value);
+            if (val && currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.genCfg = val;
+                scheduleSaveState();
+            }
+        }
+
+        function onGenStepsChange() {
+            const val = parseInt(document.getElementById('gen-steps')?.value);
+            if (val && currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.genSteps = val;
+                scheduleSaveState();
+            }
+        }
+
+        // === Asset Studio State ===
+        let _assetStudioData = { characters: [], locations: [], assets: {}, approvals: {}, locks: {}, character_sheets: {}, location_sheets: {} };
+        window._currentAssetExpandId = null;
+        window._currentAssetExpandType = null;
+        window._assetStudioApprovals = { characters: false, locations: false };
+
+        async function loadAssetStudioData() {
+            try {
+                const _asPath = currentProject?.path ? ('?path=' + encodeURIComponent(currentProject.path)) : '';
+                let res = await fetch('/api/orchestrator/asset-studio' + _asPath);
+                let data = await res.json();
+                if (!data.success) return;
+                // Auto-sync: if backend bible is empty but frontend has an active project (e.g. after server restart)
+                if ((!data.character_bible || !data.character_bible.length) && currentProject && currentProject.name) {
+                    await loadProject(currentProject.name);
+                    res = await fetch('/api/orchestrator/asset-studio' + _asPath);
+                    data = await res.json();
+                    if (!data.success) return;
+                }
+                _assetStudioData = data;
+                // Normalize bible entries to ensure every item has character_id/location_id/prop_id + names
+                if (_assetStudioData.character_bible) {
+                    _assetStudioData.character_bible.forEach((ch, i) => {
+                        if (!ch.character_id && !ch.id) ch.character_id = ch.name || 'CHAR_' + (i+1);
+                        if (!ch.full_name && !ch.character_name && ch.name) ch.full_name = ch.name;
+                    });
+                }
+                if (_assetStudioData.location_bible) {
+                    _assetStudioData.location_bible.forEach((loc, i) => {
+                        if (!loc.location_id && !loc.id) loc.location_id = loc.name || 'LOC_' + (i+1);
+                        if (!loc.location_name && !loc.environment_type && loc.name) loc.location_name = loc.name;
+                    });
+                }
+                if (_assetStudioData.prop_bible) {
+                    _assetStudioData.prop_bible.forEach((pr, i) => {
+                        if (!pr.prop_id && !pr.id) pr.prop_id = pr.name || 'PROP_' + (i+1);
+                        if (!pr.prop_name && pr.name) pr.prop_name = pr.name;
+                    });
+                }
+                // Also populate charData / locationData / propData from bible for backward compat
+                if (data.character_bible && data.character_bible.length) {
+                    charData = data.character_bible.map((ch, i) => ({
+                        ...ch,
+                        character_id: ch.character_id || 'CHAR_' + (i+1),
+                        character_name: ch.full_name || ch.character_name || '',
+                        role: ch.role || '',
+                        physical_appearance: ch.physical_appearance || '',
+                        personality: ch.personality || '',
+                        savedImage: (data.character_assets && data.character_assets[ch.character_id || ch.id] && data.character_assets[ch.character_id || ch.id].approved_image) || '',
+                    }));
+                }
+                if (data.location_bible && data.location_bible.length) {
+                    locationData = data.location_bible.map((loc, i) => ({
+                        ...loc,
+                        location_id: loc.location_id || 'LOC_' + (i+1),
+                        location_name: loc.location_name || '',
+                        environment_type: loc.environment_type || '',
+                        mood: loc.mood || '',
+                        savedImage: (data.location_assets && data.location_assets[loc.location_id || loc.id] && data.location_assets[loc.location_id || loc.id].approved_image) || '',
+                    }));
+                }
+                if (data.prop_bible && data.prop_bible.length) {
+                    propData = data.prop_bible.map((pr, i) => ({
+                        ...pr,
+                        prop_id: pr.prop_id || 'PROP_' + (i+1),
+                        prop_name: pr.prop_name || pr.name || '',
+                        description: pr.description || '',
+                        savedImage: (data.prop_assets && data.prop_assets[pr.prop_id || pr.id] && data.prop_assets[pr.prop_id || pr.id].approved_image) || '',
+                    }));
+                }
+                window._assetStudioApprovals = {
+                    characters: !!(data.approvals && data.approvals.characters_approved),
+                    locations: !!(data.approvals && data.approvals.locations_approved),
+                    props: !!(data.approvals && data.approvals.props_approved),
+                };
+                renderAssetStudio();
+                _updateApprovalUI();
+                renderCharacterSheets();
+                renderLocationSheets();
+                _updateSheetUI();
+                loadQCDashboard();
+            } catch (e) {
+                console.error('Failed to load asset studio data:', e);
+            }
+        }
+
+                function renderAssetStudio() {
+            const charBible = _assetStudioData.character_bible || [];
+            const locBible = _assetStudioData.location_bible || [];
+            const propBible = _assetStudioData.prop_bible || [];
+            document.getElementById('asset-char-count').textContent = charBible.length;
+            document.getElementById('asset-loc-count').textContent = locBible.length;
+            document.getElementById('asset-prop-count').textContent = propBible.length;
+            renderCharacterAssets(charBible);
+            renderLocationAssets(locBible);
+            renderPropAssets(propBible);
+        }
+
+        function getAssetImageSrc(path, thumbnail) {
+            if (!path) return '';
+            if (path.startsWith('http')) return path;
+            if (path.startsWith('/api/')) return path;
+            const sep = path.includes('?') ? '&' : '?';
+            const projectPathQuery = currentProject?.path ? ('&path=' + encodeURIComponent(currentProject.path)) : '';
+            let url = '/api/projects/' + (currentProject?.name || '') + '/saved-image/' + path + sep + 't=' + Date.now() + projectPathQuery;
+            if (thumbnail) url += '&thumbnail=true';
+            return url;
+        }
+
+        function resolveSavedImagePath(savedImage, stage) {
+            if (!savedImage) return '';
+            let path = savedImage;
+            if (!path.includes('/') && !path.endsWith('.png')) {
+                path = stage + '/' + path.replace(/\s+/g, '_') + '.png';
+            }
+            return getAssetImageSrc(path);
+        }
+
+        async function uploadCharacterImage(cid, file) {
+            const formData = new FormData();
+            formData.append('project_name', currentProject?.name || '');
+            formData.append('project_path', currentProject?.path || '');
+            formData.append('asset_type', 'character');
+            formData.append('asset_id', cid);
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/assets/upload-image', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    if (!_assetStudioData.character_assets) _assetStudioData.character_assets = {};
+                    if (!_assetStudioData.character_assets[cid]) _assetStudioData.character_assets[cid] = {};
+                    if (!_assetStudioData.character_assets[cid].generation_history) _assetStudioData.character_assets[cid].generation_history = [];
+                    _assetStudioData.character_assets[cid].generation_history.push(data.path);
+                    _assetStudioData.character_assets[cid].approved_image = data.path;
+                    _assetStudioData.character_assets[cid].approved = true;
+                    addAsset('character', cid, data.path);
+                    renderCharacterAssets(_assetStudioData.character_bible || []);
+                    notify('Imported', 'Character image saved', '📷');
+                    scheduleSaveState();
+                    return true;
+                } else {
+                    notify('Upload Failed', data.error || 'Upload error', '❌');
+                    return false;
+                }
+            } catch(e) {
+                notify('Upload Error', e.message, '❌');
+                return false;
+            }
+        }
+
+        async function uploadCharacterSheetImage(cid, file) {
+            const formData = new FormData();
+            formData.append('project_name', currentProject?.name || '');
+            formData.append('project_path', currentProject?.path || '');
+            formData.append('asset_type', 'character_sheet');
+            formData.append('asset_id', cid);
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/assets/upload-image', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    await fetch('/api/orchestrator/save-character-sheet', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ character_id: cid, sheet_image: data.path, approved: true })
+                    });
+                    await loadAssetStudioData();
+                    addAsset('sheet', cid + '_sheet', data.path);
+                    
+                    renderCharacterSheets();
+                    _updateSheetUI();
+                    notify('Imported', 'Character turnaround sheet saved', '📋');
+                    await saveProjectState();
+                    return true;
+                } else {
+                    notify('Upload Failed', data.error || 'Upload error', '❌');
+                    return false;
+                }
+            } catch(e) {
+                notify('Upload Error', e.message, '❌');
+                return false;
+            }
+        }
+
+        async function uploadLocationSheetImage(lid, file) {
+            const formData = new FormData();
+            formData.append('project_name', currentProject?.name || '');
+            formData.append('project_path', currentProject?.path || '');
+            formData.append('asset_type', 'location_sheet');
+            formData.append('asset_id', lid);
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/assets/upload-image', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    await fetch('/api/orchestrator/save-location-sheet', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ location_id: lid, sheet_image: data.path, approved: true })
+                    });
+                    await loadAssetStudioData();
+                    addAsset('sheet', lid + '_sheet', data.path);
+                    
+                    renderLocationSheets();
+                    _updateSheetUI();
+                    notify('Imported', 'Location reference board saved', '📋');
+                    await saveProjectState();
+                    return true;
+                } else {
+                    notify('Upload Failed', data.error || 'Upload error', '❌');
+                    return false;
+                }
+            } catch(e) {
+                notify('Upload Error', e.message, '❌');
+                return false;
+            }
+        }
+
+        function renderCharacterAssets(bible) {
+            const container = document.getElementById('char-asset-container');
+            const empty = document.getElementById('char-asset-empty');
+            container.innerHTML = '';
+            container.style.display = 'flex';
+            container.style.flexWrap = 'wrap';
+            container.style.gap = '6px';
+            container.style.alignContent = 'flex-start';
+            if (!bible || !bible.length) { empty.style.display = 'block'; return; }
+            empty.style.display = 'none';
+            bible.forEach(ch => {
+                const cid = ch.character_id || ch.id || '';
+                const assetInfo = (_assetStudioData.character_assets || {})[cid] || {};
+                const locked = assetInfo.locked || false;
+                const approved = assetInfo.approved || false;
+                const approvedImg = assetInfo.approved_image || '';
+                const hasImage = !!approvedImg;
+                const card = document.createElement('div');
+                card.style.cssText = 'width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;cursor:pointer;';
+                card.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${cid}</span>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);">${ch.role || ''}</span>
+                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${approved ? '#4caf50' : '#555'};color:#fff;">${approved ? 'Approved' : 'Pending'}</span>
+                    </div>
+                    <div class="char-img-zone" data-cid="${cid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
+                        ${hasImage
+                            ? `<img src="${getAssetImageSrc(approvedImg, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">${ch.image_prompt ? '🎨 ' + ch.image_prompt.substring(0, 100) + 'ΓǪ' : (ch.role || 'Drop image or click to import')}</span>`
+                        }
+                        ${hasImage ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${approvedImg.includes('_4k_') ? '#e74c3c' : '#222'};z-index:2;">${getResolutionLabel(approvedImg)}</span>` : ''}
+                    </div>
+                    <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
+                        ${ch.physical_appearance ? `<div style="color:var(--text-secondary);font-size:0.6rem;">👁 ${ch.physical_appearance.substring(0, 80)}${ch.physical_appearance.length > 80 ? 'ΓǪ' : ''}</div>` : ''}
+                        ${ch.personality ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🧠 ${ch.personality.substring(0, 80)}${ch.personality.length > 80 ? 'ΓǪ' : ''}</div>` : ''}
+                    </div>
+                    <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('char','${cid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                        <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Generate with T2I">🎨 Gen</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetUpscaleImage('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Upscale to 4K">🔍 4K</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${cid}','char')" style="padding:2px 4px;font-size:0.5rem;" title="Approve">✅</button>
+                    </div>
+                `;
+                card.onclick = () => expandAssetItem('char', cid);
+                const imgZone = card.querySelector('.char-img-zone');
+                imgZone.ondragover = function(e) { e.preventDefault(); this.style.borderColor = '#4ade80'; this.style.background = 'rgba(74,222,128,0.08)'; };
+                imgZone.ondragleave = function(e) { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; };
+                imgZone.ondrop = function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    this.style.borderColor = 'var(--border-color)';
+                    this.style.background = 'transparent';
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) uploadCharacterImage(cid, file);
+                };
+                imgZone.onclick = function(e) {
+                    e.stopPropagation();
+                    const input = document.getElementById('char-file-input') || (function() {
+                        const el = document.createElement('input');
+                        el.id = 'char-file-input'; el.type = 'file'; el.accept = 'image/*';
+                        el.style.display = 'none'; document.body.appendChild(el);
+                        return el;
+                    })();
+                    input.onchange = () => {
+                        if (input.files[0]) uploadCharacterImage(cid, input.files[0]);
+                        input.value = '';
+                    };
+                    input.click();
+                };
+                container.appendChild(card);
+            });
+        }
+
+        function switchSheetTab(tab) {
+            document.getElementById('sheet-chars-tab').style.display = tab === 'characters' ? 'block' : 'none';
+            document.getElementById('sheet-locs-tab').style.display = tab === 'locations' ? 'block' : 'none';
+            const csBtn = document.getElementById('tab-cs-btn');
+            const lsBtn = document.getElementById('tab-ls-btn');
+            csBtn.className = tab === 'characters' ? 'btn btn-primary' : 'btn btn-secondary';
+            lsBtn.className = tab === 'locations' ? 'btn btn-primary' : 'btn btn-secondary';
+        }
+
+        function renderCharacterSheets() {
+            const container = document.getElementById('character-sheet-container');
+            const empty = document.getElementById('character-sheet-empty');
+            container.innerHTML = '';
+            container.style.display = 'flex';
+            container.style.flexWrap = 'wrap';
+            container.style.gap = '6px';
+            container.style.alignContent = 'flex-start';
+            const sheets = _assetStudioData.character_sheets || {};
+            const bible = _assetStudioData.character_bible || [];
+            if (!bible || !bible.length) {
+                empty.innerHTML = 'No characters found. Generate a screenplay first to populate character data.';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            bible.forEach(ch => {
+                const cid = ch.character_id || ch.id || '';
+                const sheetInfo = sheets[cid] || {};
+                const sheetApproved = sheetInfo.approved || false;
+                const sheetImage = sheetInfo.sheet_image || '';
+                const hasSheet = !!sheetImage;
+                
+                const assetInfo = (_assetStudioData.character_assets || {})[cid] || {};
+                const canGenerate = assetInfo.approved_image && assetInfo.approved;
+                
+                const card = document.createElement('div');
+                card.style.cssText = 'width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;cursor:pointer;';
+                card.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${cid}</span>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);">${ch.role || ''}</span>
+                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${sheetApproved ? '#4caf50' : '#555'};color:#fff;">${sheetApproved ? 'Approved' : 'Pending'}</span>
+                    </div>
+                    <div class="cs-img-zone" data-cid="${cid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
+                        ${hasSheet
+                            ? `<img src="${getAssetImageSrc(sheetImage, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">Drop turnaround sheet or click to import</span>`
+                        }
+                        ${hasSheet ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${sheetImage.includes('_4k_') ? '#e74c3c' : '#222'};z-index:2;">${getResolutionLabel(sheetImage)}</span>` : ''}
+                    </div>
+                    <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
+                        <div style="color:var(--text-secondary);font-size:0.6rem;">${ch.full_name || ch.character_name || ''}</div>
+                        <div style="color:var(--text-secondary);font-size:0.55rem;margin-top:2px;">I2I input: approved character image → turnaround sheet</div>
+                    </div>
+                    <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('char_sheet','${cid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                        <button class="btn btn-primary" onclick="event.stopPropagation();generateCharacterSheet('${cid}')" id="cs-gen-${cid}" style="padding:2px 4px;font-size:0.5rem;" ${canGenerate ? '' : 'disabled'} title="${!canGenerate ? 'Approve a character image first' : ''}">🎨 Gen</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${cid}','char_sheet')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetUpscaleImage('${cid}','char_sheet')" style="padding:2px 4px;font-size:0.5rem;" title="Upscale to 4K">🔍 4K</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();approveCharacterSheet('${cid}')" id="cs-approve-${cid}" style="padding:2px 4px;font-size:0.5rem;" ${hasSheet && !sheetApproved ? '' : 'disabled'} title="Approve">✅</button>
+                    </div>
+                `;
+                card.onclick = () => expandAssetItem('char_sheet', cid);
+                const imgZone = card.querySelector('.cs-img-zone');
+                imgZone.ondragover = function(e) { e.preventDefault(); this.style.borderColor = '#4ade80'; this.style.background = 'rgba(74,222,128,0.08)'; };
+                imgZone.ondragleave = function(e) { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; };
+                imgZone.ondrop = function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    this.style.borderColor = 'var(--border-color)';
+                    this.style.background = 'transparent';
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) uploadCharacterSheetImage(cid, file);
+                };
+                imgZone.onclick = function(e) {
+                    e.stopPropagation();
+                    const input = document.getElementById('cs-file-input') || (function() {
+                        const el = document.createElement('input');
+                        el.id = 'cs-file-input'; el.type = 'file'; el.accept = 'image/*';
+                        el.style.display = 'none'; document.body.appendChild(el);
+                        return el;
+                    })();
+                    input.onchange = () => {
+                        if (input.files[0]) uploadCharacterSheetImage(cid, input.files[0]);
+                        input.value = '';
+                    };
+                    input.click();
+                };
+                container.appendChild(card);
+            });
+        }
+
+        function renderLocationSheets() {
+            const container = document.getElementById('location-sheet-container');
+            const empty = document.getElementById('location-sheet-empty');
+            container.innerHTML = '';
+            container.style.display = 'flex';
+            container.style.flexWrap = 'wrap';
+            container.style.gap = '6px';
+            container.style.alignContent = 'flex-start';
+            const sheets = _assetStudioData.location_sheets || {};
+            const bible = _assetStudioData.location_bible || [];
+            if (!bible || !bible.length) {
+                empty.innerHTML = 'No locations found. Generate a screenplay first to populate location data.';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            bible.forEach(loc => {
+                const lid = loc.location_id || loc.id || '';
+                const sheetInfo = sheets[lid] || {};
+                const sheetApproved = sheetInfo.approved || false;
+                const sheetImage = sheetInfo.sheet_image || '';
+                const hasSheet = !!sheetImage;
+                
+                const assetInfo = (_assetStudioData.location_assets || {})[lid] || {};
+                const canGenerate = assetInfo.approved_image && assetInfo.approved;
+                
+                const card = document.createElement('div');
+                card.style.cssText = 'width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;cursor:pointer;';
+                card.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${lid}</span>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);">${loc.environment_type || ''}</span>
+                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${sheetApproved ? '#4caf50' : '#555'};color:#fff;">${sheetApproved ? 'Approved' : 'Pending'}</span>
+                    </div>
+                    <div class="ls-img-zone" data-lid="${lid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
+                        ${hasSheet
+                            ? `<img src="${getAssetImageSrc(sheetImage, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">Drop reference board or click to import</span>`
+                        }
+                        ${hasSheet ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${sheetImage.includes('_4k_') ? '#e74c3c' : '#222'};z-index:2;">${getResolutionLabel(sheetImage)}</span>` : ''}
+                    </div>
+                    <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
+                        <div style="color:var(--text-secondary);font-size:0.6rem;">${loc.location_name || loc.environment_type || ''}</div>
+                        <div style="color:var(--text-secondary);font-size:0.55rem;margin-top:2px;">I2I input: approved location image → reference board</div>
+                    </div>
+                    <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('loc_sheet','${lid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                        <button class="btn btn-primary" onclick="event.stopPropagation();generateLocationSheet('${lid}')" id="ls-gen-${lid}" style="padding:2px 4px;font-size:0.5rem;" ${canGenerate ? '' : 'disabled'} title="${!canGenerate ? 'Approve a location image first' : ''}">🎨 Gen</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${lid}','loc_sheet')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetUpscaleImage('${lid}','loc_sheet')" style="padding:2px 4px;font-size:0.5rem;" title="Upscale to 4K">🔍 4K</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();approveLocationSheet('${lid}')" id="ls-approve-${lid}" style="padding:2px 4px;font-size:0.5rem;" ${hasSheet && !sheetApproved ? '' : 'disabled'} title="Approve">✅</button>
+                    </div>
+                `;
+                card.onclick = () => expandAssetItem('loc_sheet', lid);
+                const imgZone = card.querySelector('.ls-img-zone');
+                imgZone.ondragover = function(e) { e.preventDefault(); this.style.borderColor = '#4ade80'; this.style.background = 'rgba(74,222,128,0.08)'; };
+                imgZone.ondragleave = function(e) { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; };
+                imgZone.ondrop = function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    this.style.borderColor = 'var(--border-color)';
+                    this.style.background = 'transparent';
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) uploadLocationSheetImage(lid, file);
+                };
+                imgZone.onclick = function(e) {
+                    e.stopPropagation();
+                    const input = document.getElementById('ls-file-input') || (function() {
+                        const el = document.createElement('input');
+                        el.id = 'ls-file-input'; el.type = 'file'; el.accept = 'image/*';
+                        el.style.display = 'none'; document.body.appendChild(el);
+                        return el;
+                    })();
+                    input.onchange = () => {
+                        if (input.files[0]) uploadLocationSheetImage(lid, input.files[0]);
+                        input.value = '';
+                    };
+                    input.click();
+                };
+                container.appendChild(card);
+            });
+        }
+
+        async function generateCharacterSheet(charId, abortSignal) {
+            if (!requireProject()) return;
+            const genBtn = document.getElementById('cs-gen-' + charId) || document.getElementById('asset-gen-btn');
+            if (genBtn && genBtn.id !== 'asset-gen-btn' && genBtn.disabled) return;
+            if (genBtn) {
+                genBtn.disabled = true;
+                genBtn.textContent = '⏳ Generating...';
+            }
+            const originalText = (genBtn && genBtn.id === 'asset-gen-btn') ? '🎨 Generate' : '🎨 Gen';
+            const assetInfo = (_assetStudioData.character_assets || {})[charId] || {};
+            const approvedImg = assetInfo.approved_image || '';
+            if (!approvedImg) {
+                notify('No Image', 'No approved character image found', '❌');
+                if (genBtn) { genBtn.disabled = false; genBtn.textContent = originalText; }
+                return;
+            }
+
+            if (!abortSignal) {
+                cancelSheetBatch();
+                const ac = new AbortController();
+                window._sheetBatchAbortController = ac;
+                abortSignal = ac.signal;
+            }
+
+            // Step 1: LLM vision analysis of the approved character image
+            let llmDescription = "";
+            setSheetProgress(5, "Analyzing reference image with AI vision...");
+            try {
+                const descRes = await fetch("/api/orchestrator/describe-character-image", {
+                    method: "POST", headers: {"Content-Type": "application/json"},
+                    signal: abortSignal,
+                    body: JSON.stringify({ character_id: charId, project_path: currentProject?.path || "" })
+                });
+                const descData = await descRes.json();
+                if (descData.success && descData.description) {
+                    llmDescription = descData.description;
+                    setSheetProgress(15, "Vision analysis complete. Building prompt...");
+                }
+            } catch(e) {
+                if (e.name !== "AbortError") console.warn("Vision analysis failed, falling back to bible:", e);
+            }
+
+            if (abortSignal && abortSignal.aborted) {
+                if (genBtn) { genBtn.disabled = false; genBtn.textContent = originalText; }
+                setAssetCardSpinner(charId, "char_sheet", false);
+                hideSheetProgress();
+                return;
+            }
+
+            // Step 2: Build prompt using LLM description or fallback to bible text
+            let characterPrompt = "";
+            try {
+                const promptRes = await fetch("/api/orchestrator/generate-turnaround", {
+                    method: "POST", headers: {"Content-Type": "application/json"},
+                    signal: abortSignal,
+                    body: JSON.stringify({ character_id: charId, image_description: llmDescription })
+                });
+                const promptData = await promptRes.json();
+                if (promptData.success && promptData.turnaround_request) {
+                    characterPrompt = promptData.turnaround_request.prompt;
+                    characterPrompt = characterPrompt.replace(/\s*ZImage\s+Turbo\.?/gi, "");
+                }
+            } catch(e) {
+                if (e.name !== "AbortError") console.warn("Could not fetch turnaround prompt:", e);
+            }
+
+            if (abortSignal && abortSignal.aborted) {
+                if (genBtn) { genBtn.disabled = false; genBtn.textContent = originalText; }
+                setAssetCardSpinner(charId, "char_sheet", false);
+                hideSheetProgress();
+                return;
+            }
+
+            if (!characterPrompt) {
+                const char = (_assetStudioData.character_bible || []).find(c => (c.character_id === charId || c.id === charId));
+                if (char) {
+                    const name = char.full_name || char.character_name || char.name || charId;
+                    const desc = char.physical_appearance || '';
+                    const clothing = char.clothing || '';
+                    const traits = char.distinctive_traits || char.personality_traits || '';
+                    characterPrompt = `${name} — ${desc}, wearing ${clothing}`;
+                    if (traits) characterPrompt += `, with ${traits}`;
+                    characterPrompt += `. Full turnaround reference sheet rendered in a clean studio style with four consistently-lit panels showing front view, three-quarter view, side profile view, and back view. Every panel maintains identical facial features, hairstyle, body proportions, and costume details. Neutral gray background with soft wraparound studio lighting. Professional character design sheet presentation.`;
+                } else {
+                    characterPrompt = `${charId}. Full turnaround reference sheet rendered in a clean studio style with four consistently-lit panels showing front view, three-quarter view, side profile view, and back view. Neutral gray background with soft wraparound studio lighting. Professional character design sheet presentation.`;
+                }
+            }
+
+            const instructions = currentProject?.settings?.character_sheet_prompt || 'Preserve the character exactly as shown in the reference image: same face, same clothing, same accessories, same dark atmospheric background, same lighting, same color palette, same environment and mood. The character must look identical to the reference.';
+            
+            let finalPrompt = instructions + "\n\n" + characterPrompt;
+            const styleSuffix = [];
+            if (selectedVisualStyle) styleSuffix.push(selectedVisualStyle);
+            if (selectedFilmAesthetic) styleSuffix.push(selectedFilmAesthetic);
+            if (styleSuffix.length) {
+                finalPrompt = finalPrompt + ", " + styleSuffix.join(", ");
+            }
+
+            // Show card spinner and progress text
+            setAssetCardSpinner(charId, 'char_sheet', true);
+            setSheetProgress(0, `Generating Character Sheet for ${charId}...`);
+            
+            // Start progress polling
+            let pollingActive = true;
+            async function pollProgress() {
+                if (!pollingActive) return;
+                if (abortSignal && abortSignal.aborted) {
+                    pollingActive = false;
+                    return;
+                }
+                try {
+                    const pRes = await fetch('/api/image/progress');
+                    const p = await pRes.json();
+                    if (p && p.pct !== undefined && p.status === 'running') {
+                        setCardProgress(charId, 'char_sheet', p.pct, p.step_label, p.node_label);
+                        const isBatch = window._sheetBatchActive;
+                        const progressTitle = isBatch ? document.getElementById('sheet-progress-title').textContent : `Generating Character Sheet for ${charId}...`;
+                        setSheetProgress(p.pct, progressTitle, p.step_label, p.node_label);
+                    } else if (p && (p.status === 'done' || p.status === 'error')) {
+                        pollingActive = false;
+                        const isBatch = window._sheetBatchActive;
+                        if (!isBatch) {
+                            hideSheetProgress();
+                        }
+                        return;
+                    }
+                } catch(e) {}
+                if (pollingActive) {
+                    setTimeout(pollProgress, 1500);
+                }
+            }
+            pollProgress();
+
+            const seedOverride = document.getElementById('sheet-seed')?.value;
+            const seed = seedOverride ? parseInt(seedOverride) : Math.floor(Math.random() * 999999999) + 1;
+            const cfgVal = parseFloat(document.getElementById('sheet-cfg')?.value) || 1.5;
+            const stepsVal = parseInt(document.getElementById('sheet-steps')?.value) || 4;
+            try {
+                const settings = await fetch('/api/settings', { signal: abortSignal }).then(r => r.json()).catch(() => ({}));
+                const imgSettings = settings.image_gen || {};
+                const provider = imgSettings.provider || 'comfyui';
+                const model = imgSettings.model || '';
+                const host = imgSettings.host || '';
+                const apiKey = imgSettings.apiKey || '';
+                const workflowName = settings.workflows?.sheet || 'image_flux2_klein_image_sheets';
+
+                notify('Generating', `Sending to ${provider}...`, '🎨');
+
+                const csResEl = document.getElementById('sel-img-resolution');
+                const csResolution = csResEl ? csResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+                const res = await fetch('/api/image/generate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    signal: abortSignal,
+                    body: JSON.stringify({
+                        provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey,
+                        seed: seed, steps: stepsVal, cfg: cfgVal, resolution: csResolution,
+                        project_path: currentProject?.path || '',
+                        input_images: [approvedImg]
+                    })
+                });
+                const data = await res.json();
+                pollingActive = false;
+                setAssetCardSpinner(charId, 'char_sheet', false);
+                const isBatch = window._sheetBatchActive;
+                if (!isBatch) {
+                    hideSheetProgress();
+                }
+                if (data.success && (data.image_url || data.filename)) {
+                    const tempFilename = data.filename || data.image_url;
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal: abortSignal,
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: 'character_sheets',
+                            filename: tempFilename,
+                            subfolder: data.subfolder || '',
+                            card_name: charId + '_' + seed
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const sheetPath = 'character_sheets/' + charId + '_' + seed + '.png';
+                        await fetch('/api/orchestrator/save-character-sheet', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            signal: abortSignal,
+                            body: JSON.stringify({
+                                character_id: charId, sheet_image: sheetPath, approved: false
+                            })
+                        });
+                        await loadAssetStudioData();
+                        notify('Sheet Generated', 'Turnaround sheet for ' + charId, '📋');
+                        if (window._currentAssetExpandId === charId && window._currentAssetExpandType === 'char_sheet') {
+                            expandAssetItem('char_sheet', charId);
+                        }
+                    } else {
+                        notify('Save Failed', saveData.error || 'Save error', '❌');
+                    }
+                } else {
+                    notify('Generation Failed', data.error || 'I2I error', '❌');
+                }
+            } catch(e) {
+                pollingActive = false;
+                setAssetCardSpinner(charId, 'char_sheet', false);
+                const isBatch = window._sheetBatchActive;
+                if (!isBatch) {
+                    hideSheetProgress();
+                }
+                if (e.name !== 'AbortError') {
+                    notify('Error', e.message, '❌');
+                }
+            } finally {
+                if (genBtn) {
+                    genBtn.disabled = false;
+                    genBtn.textContent = originalText;
+                }
+                const isBatch = window._sheetBatchActive;
+                if (!isBatch && window._sheetBatchAbortController && window._sheetBatchAbortController.signal === abortSignal) {
+                    window._sheetBatchAbortController = null;
+                }
+            }
+        }
+
+        async function approveCharacterSheet(charId) {
+            const cardBtn = document.getElementById('cs-approve-' + charId);
+            const modalBtn = document.getElementById('asset-approve-btn');
+            if (cardBtn) { cardBtn.disabled = true; cardBtn.textContent = '⏳ Approving...'; }
+            if (modalBtn && window._currentAssetExpandId === charId && window._currentAssetExpandType === 'char_sheet') {
+                modalBtn.disabled = true; modalBtn.textContent = '⏳ Approving...';
+            }
+            const sheets = _assetStudioData.character_sheets || {};
+            const sheetInfo = sheets[charId] || {};
+            const sheetImage = sheetInfo.sheet_image || '';
+            if (!sheetImage) {
+                notify('No Sheet', 'Generate a sheet first', '❌');
+                if (cardBtn) { cardBtn.disabled = false; cardBtn.textContent = '✅'; }
+                if (modalBtn && window._currentAssetExpandId === charId && window._currentAssetExpandType === 'char_sheet') {
+                    modalBtn.disabled = false; modalBtn.textContent = '✅ Approve';
+                }
+                return;
+            }
+            // Upscale warning
+            if (currentProject?.settings?.upscaleWarning !== false && !isImageUpscaled(charId, 'char_sheet')) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await assetUpscaleImage(charId, 'char_sheet');
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        if (cardBtn) { cardBtn.disabled = false; cardBtn.textContent = '✅'; }
+                        if (modalBtn && window._currentAssetExpandId === charId && window._currentAssetExpandType === 'char_sheet') {
+                            modalBtn.disabled = false; modalBtn.textContent = '✅ Approve';
+                        }
+                        return;
+                    }
+                }
+            }
+            try {
+                const sheets = _assetStudioData.character_sheets || {};
+                const approveImage = (sheets[charId] || {}).sheet_image || sheetImage;
+                await fetch('/api/orchestrator/save-character-sheet', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ character_id: charId, sheet_image: approveImage, approved: true })
+                });
+                await loadAssetStudioData();
+                addAsset('sheet', charId + '_sheet', 'character_sheets/approved/' + charId + '.png');
+                notify('Sheet Approved', charId + ' turnaround approved', '✅');
+                if (window._currentAssetExpandId === charId && window._currentAssetExpandType === 'char_sheet') {
+                    expandAssetItem('char_sheet', charId);
+                }
+                scheduleSaveState();
+            } catch(e) {
+                notify('Error', e.message, '❌');
+                if (cardBtn) { cardBtn.disabled = false; cardBtn.textContent = '✅'; }
+                if (modalBtn && window._currentAssetExpandId === charId && window._currentAssetExpandType === 'char_sheet') {
+                    modalBtn.disabled = false; modalBtn.textContent = '✅ Approve';
+                }
+            }
+        }
+        window._locationSheetControllers = window._locationSheetControllers || {};
+
+        async function generateLocationSheet(locId, abortSignal) {
+            if (!requireProject()) return;
+            const isBatch = !!abortSignal;
+            
+            if (!isBatch && window._locationSheetControllers[locId]) {
+                window._locationSheetControllers[locId].abort();
+                delete window._locationSheetControllers[locId];
+                
+                // Tell ComfyUI to interrupt generation
+                fetch('/api/comfyui/interrupt', { method: 'POST' }).catch(() => {});
+                
+                const genBtn = document.getElementById('ls-gen-' + locId);
+                if (genBtn) {
+                    genBtn.textContent = '🎨 Gen';
+                    genBtn.classList.remove('btn-danger');
+                    genBtn.classList.add('btn-primary');
+                }
+                const modalBtn = document.getElementById('asset-gen-btn');
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.textContent = '🎨 Generate';
+                    modalBtn.classList.remove('btn-danger');
+                    modalBtn.classList.add('btn-primary');
+                }
+                setAssetCardSpinner(locId, 'loc_sheet', false);
+                notify('Cancelled', 'Generation cancelled for ' + locId, '⚠️');
+                return;
+            }
+
+            const modalBtn = document.getElementById('asset-gen-btn');
+            const genBtn = document.getElementById('ls-gen-' + locId) || modalBtn;
+            if (genBtn && genBtn.id !== 'asset-gen-btn' && genBtn.disabled) return;
+            
+            if (genBtn) {
+                if (isBatch) {
+                    genBtn.disabled = true;
+                    genBtn.textContent = '⏳ Generating...';
+                } else {
+                    genBtn.disabled = false;
+                    genBtn.textContent = '🛑 Cancel';
+                    genBtn.classList.remove('btn-primary');
+                    genBtn.classList.add('btn-danger');
+                }
+            }
+            if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                if (isBatch) {
+                    modalBtn.disabled = true;
+                    modalBtn.textContent = '⏳ Generating...';
+                } else {
+                    modalBtn.disabled = false;
+                    modalBtn.textContent = '🛑 Cancel';
+                    modalBtn.classList.remove('btn-primary');
+                    modalBtn.classList.add('btn-danger');
+                }
+                const spinner = document.getElementById('asset-expand-spinner');
+                if (spinner) {
+                    spinner.style.display = 'flex';
+                    const spinnerText = document.getElementById('asset-expand-spinner-text');
+                    if (spinnerText) spinnerText.textContent = 'Generating...';
+                }
+            }
+            
+            const originalText = (genBtn && genBtn.id === 'asset-gen-btn') ? '🎨 Generate' : '🎨 Gen';
+            const assetInfo = (_assetStudioData.location_assets || {})[locId] || {};
+            const approvedImg = assetInfo.approved_image || '';
+            if (!approvedImg) {
+                notify('No Image', 'No approved location image found', '❌');
+                if (genBtn) { 
+                    genBtn.disabled = false; genBtn.textContent = originalText; 
+                    genBtn.classList.remove('btn-danger');
+                    genBtn.classList.add('btn-primary');
+                }
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.disabled = false;
+                    modalBtn.textContent = '🎨 Generate';
+                    modalBtn.classList.remove('btn-danger');
+                    modalBtn.classList.add('btn-primary');
+                    const spinner = document.getElementById('asset-expand-spinner');
+                    if (spinner) spinner.style.display = 'none';
+                }
+                return;
+            }
+
+            if (!abortSignal) {
+                const ac = new AbortController();
+                window._locationSheetControllers[locId] = ac;
+                abortSignal = ac.signal;
+            }
+
+            // Step 1: LLM vision analysis of the approved location image
+            let llmLocationDesc = "";
+            setSheetProgress(5, "Analyzing location reference with AI vision...");
+            try {
+                const descRes = await fetch("/api/orchestrator/describe-location-image", {
+                    method: "POST", headers: {"Content-Type": "application/json"},
+                    signal: abortSignal,
+                    body: JSON.stringify({ location_id: locId, project_path: currentProject?.path || "" })
+                });
+                const descData = await descRes.json();
+                if (descData.success && descData.description) {
+                    llmLocationDesc = descData.description;
+                    setSheetProgress(15, "Vision analysis complete. Building prompt...");
+                }
+            } catch(e) {
+                if (e.name !== "AbortError") console.warn("Vision analysis failed:", e);
+            }
+
+            // Step 2: Build location prompt
+            let locationPrompt = "";
+            if (llmLocationDesc) {
+                locationPrompt = llmLocationDesc;
+            } else {
+                // Fallback to bible text
+                const loc = (_assetStudioData.location_bible || []).find(l => (l.location_id === locId || l.id === locId));
+                if (loc) {
+                    const name = loc.location_name || loc.name || locId;
+                    const type = loc.environment_type || "";
+                    const mood = loc.mood || "";
+                    const details = loc.visual_details || loc.description || "";
+                    const architecture = loc.architecture || loc.architectural_style || "";
+                    const lighting = loc.lighting || loc.lighting_style || "";
+                    locationPrompt = name + " — a " + type + " environment";
+                    if (mood) locationPrompt += " with a " + mood + " atmosphere";
+                    if (details) locationPrompt += ". " + details;
+                    if (architecture) locationPrompt += " Featuring " + architecture + " architecture";
+                    if (lighting) locationPrompt += " with " + lighting + " lighting";
+                    locationPrompt += ". Comprehensive location reference board showing the full environment across multiple curated views capturing the spatial layout, atmosphere, and key architectural details.";
+                } else {
+                    locationPrompt = locId + ". Comprehensive location reference board.";
+                }
+            }
+
+            const instructions = currentProject?.settings?.location_sheet_prompt || "Ensure the image is a seamless 360 equirectangular HDRI panorama.";
+            
+            let finalPrompt = instructions + "\n\n" + locationPrompt;
+            const styleSuffix = [];
+            if (selectedVisualStyle) styleSuffix.push(selectedVisualStyle);
+            if (selectedFilmAesthetic) styleSuffix.push(selectedFilmAesthetic);
+            if (styleSuffix.length) {
+                finalPrompt = finalPrompt + ", " + styleSuffix.join(", ");
+            }
+
+            // Show card spinner and progress text
+            setAssetCardSpinner(locId, 'loc_sheet', true);
+            setSheetProgress(0, `Generating Location Sheet for ${locId}...`);
+            
+            // Start progress polling
+            let pollingActive = true;
+            async function pollProgress() {
+                if (!pollingActive) return;
+                if (abortSignal && abortSignal.aborted) {
+                    pollingActive = false;
+                    return;
+                }
+                try {
+                    const pRes = await fetch('/api/image/progress');
+                    const p = await pRes.json();
+                    if (p && p.pct !== undefined && p.status === 'running') {
+                        setCardProgress(locId, 'loc_sheet', p.pct, p.step_label, p.node_label);
+                        const isBatch = window._sheetBatchActive;
+                        const progressTitle = isBatch ? document.getElementById('sheet-progress-title').textContent : `Generating Location Sheet for ${locId}...`;
+                        setSheetProgress(p.pct, progressTitle, p.step_label, p.node_label);
+                    } else if (p && (p.status === 'done' || p.status === 'error')) {
+                        pollingActive = false;
+                        const isBatch = window._sheetBatchActive;
+                        if (!isBatch) {
+                            hideSheetProgress();
+                        }
+                        return;
+                    }
+                } catch(e) {}
+                if (pollingActive) {
+                    setTimeout(pollProgress, 1500);
+                }
+            }
+            pollProgress();
+
+            const seedOverride = document.getElementById('sheet-seed')?.value;
+            const seed = seedOverride ? parseInt(seedOverride) : Math.floor(Math.random() * 999999999) + 1;
+            const cfgVal = parseFloat(document.getElementById('sheet-cfg')?.value) || 1.5;
+            const stepsVal = parseInt(document.getElementById('sheet-steps')?.value) || 4;
+            try {
+                const settings = await fetch('/api/settings', { signal: abortSignal }).then(r => r.json()).catch(() => ({}));
+                const imgSettings = settings.image_gen || {};
+                const provider = imgSettings.provider || 'comfyui';
+                const model = imgSettings.model || '';
+                const host = imgSettings.host || '';
+                const apiKey = imgSettings.apiKey || '';
+                const workflowName = settings.workflows?.loc_sheet || settings.workflows?.sheet || '360_image_v1';
+
+                notify('Generating', `Sending to ${provider}...`, '🎨');
+
+                const lsResEl = document.getElementById('sel-img-resolution');
+                const lsResolution = lsResEl ? lsResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+                const res = await fetch('/api/image/generate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    signal: abortSignal,
+                    body: JSON.stringify({
+                        provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey,
+                        seed: seed, steps: stepsVal, cfg: cfgVal, resolution: lsResolution,
+                        project_path: currentProject?.path || '',
+                        input_images: [approvedImg]
+                    })
+                });
+                const data = await res.json();
+                pollingActive = false;
+                setAssetCardSpinner(locId, 'loc_sheet', false);
+                const isBatch = window._sheetBatchActive;
+                if (!isBatch) {
+                    hideSheetProgress();
+                }
+                
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.disabled = false;
+                    modalBtn.textContent = '🎨 Generate';
+                    const spinner = document.getElementById('asset-expand-spinner');
+                    if (spinner) spinner.style.display = 'none';
+                }
+
+                if (data.success && (data.image_url || data.filename)) {
+                    const tempFilename = data.filename || data.image_url;
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal: abortSignal,
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: 'location_sheets',
+                            filename: tempFilename,
+                            subfolder: data.subfolder || '',
+                            card_name: locId + '_' + seed
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const sheetPath = 'location_sheets/' + locId + '_' + seed + '.png';
+                        await fetch('/api/orchestrator/save-location-sheet', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            signal: abortSignal,
+                            body: JSON.stringify({
+                                location_id: locId, sheet_image: sheetPath, approved: false
+                            })
+                        });
+                        await loadAssetStudioData();
+                        notify('Sheet Generated', 'Reference board for ' + locId, '📋');
+                        if (window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                            expandAssetItem('loc_sheet', locId);
+                        }
+                    } else {
+                        notify('Save Failed', saveData.error || 'Save error', '❌');
+                    }
+                } else {
+                    notify('Generation Failed', data.error || 'I2I error', '❌');
+                }
+            } catch(e) {
+                pollingActive = false;
+                setAssetCardSpinner(locId, 'loc_sheet', false);
+                const isBatch = window._sheetBatchActive;
+                if (!isBatch) {
+                    hideSheetProgress();
+                }
+                if (e.name !== 'AbortError') {
+                    notify('Error', e.message, '❌');
+                }
+            } finally {
+                if (genBtn) {
+                    genBtn.disabled = false;
+                    genBtn.textContent = originalText;
+                    genBtn.classList.remove('btn-danger');
+                    genBtn.classList.add('btn-primary');
+                }
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.disabled = false;
+                    modalBtn.textContent = '🎨 Generate';
+                    modalBtn.classList.remove('btn-danger');
+                    modalBtn.classList.add('btn-primary');
+                }
+                const isBatch = window._sheetBatchActive;
+                if (!isBatch && window._locationSheetControllers && window._locationSheetControllers[locId]) {
+                    delete window._locationSheetControllers[locId];
+                }
+            }
+        }
+
+        async function approveLocationSheet(locId) {
+            const cardBtn = document.getElementById('ls-approve-' + locId);
+            const modalBtn = document.getElementById('asset-approve-btn');
+            if (cardBtn) { cardBtn.disabled = true; cardBtn.textContent = '⏳ Approving...'; }
+            if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                modalBtn.disabled = true; modalBtn.textContent = '⏳ Approving...';
+            }
+            const sheets = _assetStudioData.location_sheets || {};
+            const sheetInfo = sheets[locId] || {};
+            const sheetImage = sheetInfo.sheet_image || '';
+            if (!sheetImage) {
+                notify('No Sheet', 'Generate a sheet first', '❌');
+                if (cardBtn) { cardBtn.disabled = false; cardBtn.textContent = '✅'; }
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.disabled = false; modalBtn.textContent = '✅ Approve';
+                }
+                return;
+            }
+            // Upscale warning
+            if (currentProject?.settings?.upscaleWarning !== false && !isImageUpscaled(locId, 'loc_sheet')) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await assetUpscaleImage(locId, 'loc_sheet');
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        if (cardBtn) { cardBtn.disabled = false; cardBtn.textContent = '✅'; }
+                        if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                            modalBtn.disabled = false; modalBtn.textContent = '✅ Approve';
+                        }
+                        return;
+                    }
+                }
+            }
+            try {
+                const sheets = _assetStudioData.location_sheets || {};
+                const approveImage = (sheets[locId] || {}).sheet_image || sheetImage;
+                await fetch('/api/orchestrator/save-location-sheet', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ location_id: locId, sheet_image: approveImage, approved: true })
+                });
+                await loadAssetStudioData();
+                addAsset('sheet', locId + '_sheet', 'location_sheets/approved/' + locId + '.png');
+                notify('Sheet Approved', locId + ' reference board approved', '✅');
+                if (window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    expandAssetItem('loc_sheet', locId);
+                }
+                scheduleSaveState();
+            } catch(e) {
+                notify('Error', e.message, '❌');
+                if (cardBtn) { cardBtn.disabled = false; cardBtn.textContent = '✅'; }
+                if (modalBtn && window._currentAssetExpandId === locId && window._currentAssetExpandType === 'loc_sheet') {
+                    modalBtn.disabled = false; modalBtn.textContent = '✅ Approve';
+                }
+            }
+        }
+
+        async function generateAllCharacterSheets() {
+            cancelSheetBatch();
+            const ac = new AbortController();
+            window._sheetBatchAbortController = ac;
+            window._sheetBatchActive = true;
+            const btn = document.getElementById('gen-all-cs-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            
+            const bible = _assetStudioData.character_bible || [];
+            const assets = _assetStudioData.character_assets || {};
+            const items = bible.filter(ch => {
+                const id = ch.character_id || ch.id || '';
+                const info = assets[id] || {};
+                return info.approved_image && info.approved;
+            });
+
+            if (!items.length) {
+                notify('Nothing', 'No characters with approved images found', '⚠️');
+                if (btn) { btn.disabled = false; btn.textContent = '🎬 Char Sheets'; }
+                window._sheetBatchAbortController = null;
+                window._sheetBatchActive = false;
+                return;
+            }
+
+            let done = 0;
+            try {
+                for (const ch of items) {
+                    if (ac.signal.aborted) break;
+                    done++;
+                    const id = ch.character_id || ch.id || '';
+                    const name = ch.full_name || ch.character_name || ch.name || id;
+                    
+                    setSheetProgress(Math.round(((done - 1) / items.length) * 100), `Generating sheet ${done}/${items.length}: ${name}`);
+                    
+                    try {
+                        await generateCharacterSheet(id, ac.signal);
+                    } catch(e) {
+                        if (e.name !== 'AbortError') console.warn('Character sheet gen error', e.message);
+                    }
+                }
+            } finally {
+                window._sheetBatchAbortController = null;
+                window._sheetBatchActive = false;
+                if (btn) { btn.disabled = false; btn.textContent = '🎬 Char Sheets'; }
+                hideSheetProgress();
+                if (!ac.signal.aborted) {
+                    notify('Done', 'Character sheet generation complete', '✅');
+                } else {
+                    notify('Cancelled', 'Sheet generation cancelled', '⚠️');
+                }
+            }
+        }
+
+        async function generateAllLocationSheets() {
+            cancelSheetBatch();
+            const ac = new AbortController();
+            window._sheetBatchAbortController = ac;
+            window._sheetBatchActive = true;
+            const btn = document.getElementById('gen-all-ls-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            
+            const bible = _assetStudioData.location_bible || [];
+            const assets = _assetStudioData.location_assets || {};
+            const locSheets = _assetStudioData.location_sheets || {};
+            const items = bible.filter(loc => {
+                const id = loc.location_id || loc.id || '';
+                const info = assets[id] || {};
+                const sheetInfo = locSheets[id] || {};
+                const hasSheet = !!sheetInfo.sheet_image;
+                return info.approved_image && info.approved && !hasSheet;
+            });
+
+            if (!items.length) {
+                notify('Nothing', 'No locations with approved images found', '⚠️');
+                if (btn) { btn.disabled = false; btn.textContent = '🎬 Loc Sheets'; }
+                window._sheetBatchAbortController = null;
+                window._sheetBatchActive = false;
+                return;
+            }
+
+            let done = 0;
+            try {
+                for (const loc of items) {
+                    if (ac.signal.aborted) break;
+                    done++;
+                    const id = loc.location_id || loc.id || '';
+                    const name = loc.location_name || loc.name || id;
+                    
+                    setSheetProgress(Math.round(((done - 1) / items.length) * 100), `Generating sheet ${done}/${items.length}: ${name}`);
+                    
+                    try {
+                        await generateLocationSheet(id, ac.signal);
+                    } catch(e) {
+                        if (e.name !== 'AbortError') console.warn('Location sheet gen error', e.message);
+                    }
+                }
+            } finally {
+                window._sheetBatchAbortController = null;
+                window._sheetBatchActive = false;
+                if (btn) { btn.disabled = false; btn.textContent = '🎬 Loc Sheets'; }
+                hideSheetProgress();
+                if (!ac.signal.aborted) {
+                    notify('Done', 'Location sheet generation complete', '✅');
+                } else {
+                    notify('Cancelled', 'Sheet generation cancelled', '⚠️');
+                }
+            }
+        }
+
+        function _updateSheetUI() {
+            const charBible = _assetStudioData?.character_bible || [];
+            const locBible = _assetStudioData?.location_bible || [];
+            const charAssets = _assetStudioData?.character_assets || {};
+            const locAssets = _assetStudioData?.location_assets || {};
+            const charSheets = _assetStudioData?.character_sheets || {};
+            const locSheets = _assetStudioData?.location_sheets || {};
+
+            let csPending = 0, csApproved = 0;
+            charBible.forEach(ch => {
+                const id = ch.character_id || ch.id || '';
+                const sheet = charSheets[id] || {};
+                if (sheet.approved) csApproved++;
+                else csPending++;
+            });
+            document.getElementById('cs-pending-count').textContent = `⏳ Pending(${csPending})`;
+            document.getElementById('cs-approved-count').textContent = `✅ Approved(${csApproved})`;
+
+            let lsPending = 0, lsApproved = 0;
+            locBible.forEach(loc => {
+                const id = loc.location_id || loc.id || '';
+                const sheet = locSheets[id] || {};
+                if (sheet.approved) lsApproved++;
+                else lsPending++;
+            });
+            document.getElementById('ls-pending-count').textContent = `⏳ Pending(${lsPending})`;
+            document.getElementById('ls-approved-count').textContent = `✅ Approved(${lsApproved})`;
+
+            document.getElementById('sheet-char-count').textContent = charBible.length;
+            document.getElementById('sheet-loc-count').textContent = locBible.length;
+        }
+
+        async function uploadLocationImage(lid, file) {
+            const formData = new FormData();
+            formData.append('project_name', currentProject?.name || '');
+            formData.append('project_path', currentProject?.path || '');
+            formData.append('asset_type', 'location');
+            formData.append('asset_id', lid);
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/assets/upload-image', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    if (!_assetStudioData.location_assets) _assetStudioData.location_assets = {};
+                    if (!_assetStudioData.location_assets[lid]) _assetStudioData.location_assets[lid] = {};
+                    if (!_assetStudioData.location_assets[lid].generation_history) _assetStudioData.location_assets[lid].generation_history = [];
+                    _assetStudioData.location_assets[lid].generation_history.push(data.path);
+                    _assetStudioData.location_assets[lid].approved_image = data.path;
+                    _assetStudioData.location_assets[lid].approved = true;
+                    addAsset('location', lid, data.path);
+                    renderLocationAssets(_assetStudioData.location_bible || []);
+                    notify('Imported', 'Location image saved', '📷');
+                    scheduleSaveState();
+                    return true;
+                } else {
+                    notify('Upload Failed', data.error || 'Upload error', '❌');
+                    return false;
+                }
+            } catch(e) {
+                notify('Upload Error', e.message, '❌');
+                return false;
+            }
+        }
+
+        function renderLocationAssets(bible) {
+            const container = document.getElementById('loc-asset-container');
+            const empty = document.getElementById('loc-asset-empty');
+            container.innerHTML = '';
+            container.style.display = 'flex';
+            container.style.flexWrap = 'wrap';
+            container.style.gap = '6px';
+            container.style.alignContent = 'flex-start';
+            if (!bible || !bible.length) { empty.style.display = 'block'; return; }
+            empty.style.display = 'none';
+            bible.forEach(loc => {
+                const lid = loc.location_id || loc.id || '';
+                const assetInfo = (_assetStudioData.location_assets || {})[lid] || {};
+                const locked = assetInfo.locked || false;
+                const approved = assetInfo.approved || false;
+                const approvedImg = assetInfo.approved_image || '';
+                const hasImage = !!approvedImg;
+                const card = document.createElement('div');
+                card.style.cssText = 'width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;cursor:pointer;';
+                card.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${lid}</span>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);">${loc.location_name || loc.environment_type || ''}</span>
+                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${approved ? '#4caf50' : '#555'};color:#fff;">${approved ? 'Approved' : 'Pending'}</span>
+                    </div>
+                    <div class="loc-img-zone" data-lid="${lid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
+                        ${hasImage
+                            ? `<img src="${getAssetImageSrc(approvedImg, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">${loc.environment_type ? '🏠 ' + loc.environment_type : 'Drop image or click to import'}</span>`
+                        }
+                        ${hasImage ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${approvedImg.includes('_4k_') ? '#e74c3c' : '#222'};z-index:2;">${getResolutionLabel(approvedImg)}</span>` : ''}
+                    </div>
+                    <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
+                        ${loc.architecture_style ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🏛 ${loc.architecture_style.substring(0, 80)}${loc.architecture_style.length > 80 ? 'ΓǪ' : ''}</div>` : ''}
+                        ${loc.mood ? `<div style="color:var(--text-secondary);font-size:0.6rem;">🎭 ${loc.mood.substring(0, 80)}${loc.mood.length > 80 ? 'ΓǪ' : ''}</div>` : ''}
+                        ${loc.lighting_style ? `<div style="color:var(--text-secondary);font-size:0.6rem;">💡 ${loc.lighting_style.substring(0, 80)}${loc.lighting_style.length > 80 ? 'ΓǪ' : ''}</div>` : ''}
+                    </div>
+                    <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('loc','${lid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                        <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Generate with T2I">🎨 Gen</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetUpscaleImage('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Upscale to 4K">🔍 4K</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${lid}','loc')" style="padding:2px 4px;font-size:0.5rem;" title="Approve">✅</button>
+                    </div>
+                `;
+                card.onclick = () => expandAssetItem('loc', lid);
+                const imgZone = card.querySelector('.loc-img-zone');
+                imgZone.ondragover = function(e) { e.preventDefault(); this.style.borderColor = '#4ade80'; this.style.background = 'rgba(74,222,128,0.08)'; };
+                imgZone.ondragleave = function(e) { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; };
+                imgZone.ondrop = function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    this.style.borderColor = 'var(--border-color)';
+                    this.style.background = 'transparent';
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) uploadLocationImage(lid, file);
+                };
+                imgZone.onclick = function(e) {
+                    e.stopPropagation();
+                    const input = document.getElementById('loc-file-input') || (function() {
+                        const el = document.createElement('input');
+                        el.id = 'loc-file-input'; el.type = 'file'; el.accept = 'image/*';
+                        el.style.display = 'none'; document.body.appendChild(el);
+                        return el;
+                    })();
+                    input.onchange = () => {
+                        if (input.files[0]) uploadLocationImage(lid, input.files[0]);
+                        input.value = '';
+                    };
+                    input.click();
+                };
+                container.appendChild(card);
+            });
+        }
+
+        async function uploadPropImage(pid, file) {
+            const formData = new FormData();
+            formData.append('project_name', currentProject?.name || '');
+            formData.append('project_path', currentProject?.path || '');
+            formData.append('asset_type', 'prop');
+            formData.append('asset_id', pid);
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/assets/upload-image', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    if (!_assetStudioData.prop_assets) _assetStudioData.prop_assets = {};
+                    if (!_assetStudioData.prop_assets[pid]) _assetStudioData.prop_assets[pid] = {};
+                    if (!_assetStudioData.prop_assets[pid].generation_history) _assetStudioData.prop_assets[pid].generation_history = [];
+                    _assetStudioData.prop_assets[pid].generation_history.push(data.path);
+                    _assetStudioData.prop_assets[pid].approved_image = data.path;
+                    _assetStudioData.prop_assets[pid].approved = true;
+                    addAsset('prop', pid, data.path);
+                    renderPropAssets(_assetStudioData.prop_bible || []);
+                    notify('Imported', 'Prop image saved', '📷');
+                    scheduleSaveState();
+                    return true;
+                } else {
+                    notify('Upload Failed', data.error || 'Upload error', '❌');
+                    return false;
+                }
+            } catch(e) {
+                notify('Upload Error', e.message, '❌');
+                return false;
+            }
+        }
+
+        function renderPropAssets(bible) {
+            const container = document.getElementById('prop-asset-container');
+            const empty = document.getElementById('prop-asset-empty');
+            if (!container) return;
+            container.innerHTML = '';
+            container.style.display = 'flex';
+            container.style.flexWrap = 'wrap';
+            container.style.gap = '6px';
+            container.style.alignContent = 'flex-start';
+            if (!bible || !bible.length) { if (empty) empty.style.display = 'block'; return; }
+            if (empty) empty.style.display = 'none';
+            bible.forEach(pr => {
+                const pid = pr.prop_id || pr.id || '';
+                const assetInfo = (_assetStudioData.prop_assets || {})[pid] || {};
+                const locked = assetInfo.locked || false;
+                const approved = assetInfo.approved || false;
+                const approvedImg = assetInfo.approved_image || '';
+                const hasImage = !!approvedImg;
+                const card = document.createElement('div');
+                card.style.cssText = 'width:280px;background:var(--bg-tertiary);border-radius:6px;overflow:hidden;border:1px solid var(--border-color);display:flex;flex-direction:column;cursor:pointer;';
+                card.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 5px;background:var(--bg-primary);flex-shrink:0;">
+                        <span style="font-size:0.6rem;color:var(--accent-primary);font-weight:600;">${pid}</span>
+                        <span style="font-size:0.55rem;color:var(--text-secondary);">${pr.prop_name || ''}</span>
+                        <span style="font-size:0.5rem;padding:1px 4px;border-radius:2px;background:${approved ? '#4caf50' : '#555'};color:#fff;">${approved ? 'Approved' : 'Pending'}</span>
+                    </div>
+                    <div class="prop-img-zone" data-pid="${pid}" style="min-height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);padding:4px;border:2px dashed var(--border-color);border-radius:4px;margin:4px;cursor:pointer;transition:0.2s;position:relative;overflow:hidden;">
+                        ${hasImage
+                            ? `<img src="${getAssetImageSrc(approvedImg, true)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`
+                            : `<span style="color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:8px;">${pr.image_prompt ? '📦 ' + pr.image_prompt.substring(0, 100) + '...' : 'Drop image or click to import'}</span>`
+                        }
+                        ${hasImage ? `<span style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${approvedImg.includes('_4k_') ? '#e74c3c' : '#222'};z-index:2;">${getResolutionLabel(approvedImg)}</span>` : ''}
+                    </div>
+                    <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
+                        ${pr.description ? `<div style="color:var(--text-secondary);font-size:0.6rem;">📝 ${pr.description.substring(0, 80)}${pr.description.length > 80 ? '...' : ''}</div>` : ''}
+                        ${pr.owner ? `<div style="color:var(--text-secondary);font-size:0.6rem;">👥 Owner: ${pr.owner}</div>` : ''}
+                        ${pr.visual_identity ? `<div style="color:var(--text-secondary);font-size:0.6rem;">✨ Visual: ${pr.visual_identity.substring(0, 80)}${pr.visual_identity.length > 80 ? '...' : ''}</div>` : ''}
+                    </div>
+                    <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();expandAssetItem('prop','${pid}')" style="padding:2px 4px;font-size:0.5rem;" title="Inspect">⛶</button>
+                        <button class="btn btn-primary" onclick="event.stopPropagation();assetGenerateImage('${pid}','prop')" style="padding:2px 4px;font-size:0.5rem;" title="Generate with T2I">🎨 Gen</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();showAssetVariantInput('${pid}','prop')" style="padding:2px 4px;font-size:0.5rem;" title="Variants">✏️</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetUpscaleImage('${pid}','prop')" style="padding:2px 4px;font-size:0.5rem;" title="Upscale to 4K">🔍 4K</button>
+                        <button class="btn btn-secondary" onclick="event.stopPropagation();assetApprove('${pid}','prop')" style="padding:2px 4px;font-size:0.5rem;" title="Approve">✅</button>
+                    </div>
+                `;
+                card.onclick = () => expandAssetItem('prop', pid);
+                const imgZone = card.querySelector('.prop-img-zone');
+                imgZone.ondragover = function(e) { e.preventDefault(); this.style.borderColor = '#4ade80'; this.style.background = 'rgba(74,222,128,0.08)'; };
+                imgZone.ondragleave = function(e) { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; };
+                imgZone.ondrop = function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    this.style.borderColor = 'var(--border-color)';
+                    this.style.background = 'transparent';
+                    const file = e.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) uploadPropImage(pid, file);
+                };
+                imgZone.onclick = function(e) {
+                    e.stopPropagation();
+                    const input = document.getElementById('prop-file-input') || (function() {
+                        const el = document.createElement('input');
+                        el.id = 'prop-file-input'; el.type = 'file'; el.accept = 'image/*';
+                        el.style.display = 'none'; document.body.appendChild(el);
+                        return el;
+                    })();
+                    input.onchange = () => {
+                        if (input.files[0]) uploadPropImage(pid, input.files[0]);
+                        input.value = '';
+                    };
+                    input.click();
+                };
+                container.appendChild(card);
+            });
+        }
+
+        function switchAssetTab(tab) {
+            document.getElementById('asset-chars-tab').style.display = tab === 'characters' ? 'block' : 'none';
+            document.getElementById('asset-locs-tab').style.display = tab === 'locations' ? 'block' : 'none';
+            document.getElementById('asset-props-tab').style.display = tab === 'props' ? 'block' : 'none';
+            const charsBtn = document.getElementById('tab-chars-btn');
+            const locsBtn = document.getElementById('tab-locs-btn');
+            const propsBtn = document.getElementById('tab-props-btn');
+            charsBtn.className = tab === 'characters' ? 'btn btn-primary' : 'btn btn-secondary';
+            locsBtn.className = tab === 'locations' ? 'btn btn-primary' : 'btn btn-secondary';
+            propsBtn.className = tab === 'props' ? 'btn btn-primary' : 'btn btn-secondary';
+        }
+
+        // === 360° equirectangular panorama viewer (dependency-free) ===
+        let _panoViewer = {
+            active: false, img: null, zoom: 1, panX: 0, panY: 0,
+            dragging: false, lastX: 0, lastY: 0, canvas: null, ctx: null
+        };
+
+        function toggle360Viewer() {
+            if (_panoViewer.active) { exit360Viewer(); return; }
+            const imgArea = document.getElementById('asset-expand-image-area');
+            if (!imgArea) return;
+            const flatImg = imgArea.querySelector('img');
+            if (!flatImg || !flatImg.src) return;
+            const src = flatImg.src;
+            imgArea.innerHTML = '<canvas id="pano-canvas" style="width:100%;height:100%;display:block;"></canvas>';
+            const canvas = document.getElementById('pano-canvas');
+            _panoViewer.canvas = canvas;
+            _panoViewer.ctx = canvas.getContext('2d');
+            _panoViewer.zoom = 1; _panoViewer.panX = 0; _panoViewer.panY = 0;
+            _panoViewer.img = new Image();
+            _panoViewer.img.onload = () => { _panoViewer.active = true; resizePanoCanvas(); render360(); };
+            _panoViewer.img.src = src;
+            const hint = document.createElement('div');
+            hint.id = 'pano-hint';
+            hint.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;font-size:0.7rem;padding:3px 10px;border-radius:4px;pointer-events:none;z-index:3;transition:opacity 0.6s;';
+            hint.textContent = 'Drag to look around · Scroll to zoom';
+            imgArea.appendChild(hint);
+            setTimeout(() => { const h = document.getElementById('pano-hint'); if (h) h.style.opacity = '0.35'; }, 4000);
+            const btn = document.getElementById('asset-360-btn');
+            if (btn) btn.textContent = '⟲ Exit 360°';
+            bindPanoEvents(canvas);
+            window.addEventListener('resize', resizePanoCanvas);
+        }
+
+        function bindPanoEvents(canvas) {
+            canvas.style.cursor = 'grab';
+            canvas.addEventListener('pointerdown', (e) => {
+                _panoViewer.dragging = true;
+                _panoViewer.lastX = e.clientX;
+                _panoViewer.lastY = e.clientY;
+                canvas.style.cursor = 'grabbing';
+                try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+                e.preventDefault();
+            });
+            canvas.addEventListener('pointermove', (e) => {
+                if (!_panoViewer.dragging) return;
+                const dx = e.clientX - _panoViewer.lastX;
+                const dy = e.clientY - _panoViewer.lastY;
+                _panoViewer.lastX = e.clientX;
+                _panoViewer.lastY = e.clientY;
+                _panoViewer.panX -= dx * _panoViewer.zoom;
+                _panoViewer.panY -= dy * _panoViewer.zoom;
+                render360();
+            });
+            const stop = () => { _panoViewer.dragging = false; if (_panoViewer.canvas) _panoViewer.canvas.style.cursor = 'grab'; };
+            canvas.addEventListener('pointerup', stop);
+            canvas.addEventListener('pointercancel', stop);
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+                _panoViewer.zoom = Math.min(4, Math.max(1, _panoViewer.zoom * factor));
+                render360();
+            }, { passive: false });
+        }
+
+        function resizePanoCanvas() {
+            const canvas = _panoViewer.canvas;
+            if (!canvas || !canvas.parentElement) return;
+            canvas.width = canvas.parentElement.clientWidth || 600;
+            canvas.height = canvas.parentElement.clientHeight || 400;
+            if (_panoViewer.active) render360();
+        }
+
+        function render360() {
+            const { canvas, ctx, img } = _panoViewer;
+            if (!canvas || !ctx || !img || !img.width) return;
+            const W = canvas.width, H = canvas.height;
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, W, H);
+            const scale = (H / img.height) * _panoViewer.zoom;
+            const imgW = img.width * scale;
+            const imgH = img.height * scale;
+            _panoViewer.panX = ((_panoViewer.panX % imgW) + imgW) % imgW;
+            const maxPanY = Math.max(0, imgH - H);
+            _panoViewer.panY = Math.max(0, Math.min(_panoViewer.panY, maxPanY));
+            const startX = -_panoViewer.panX;
+            for (let i = -1; i <= 1; i++) {
+                const x = startX + i * imgW;
+                if (x + imgW <= 0 || x >= W) continue;
+                ctx.drawImage(img, x, -_panoViewer.panY, imgW, imgH);
+            }
+        }
+
+        function exit360Viewer() {
+            const btn = document.getElementById('asset-360-btn');
+            if (btn) btn.textContent = '🌀 360°';
+            _panoViewer.active = false;
+            _panoViewer.img = null;
+            window.removeEventListener('resize', resizePanoCanvas);
+            const type = window._currentAssetExpandType;
+            const id = window._currentAssetExpandId;
+            // skipAuto360=true: restoring the flat view must not re-trigger the
+            // auto-open (otherwise exiting a panorama would immediately re-open it).
+            if (type && id) expandAssetItem(type, id, true);
+        }
+
+        // Auto-open the 360° viewer when a location sheet turns out to be a
+        // 2:1 equirectangular panorama (e.g. the 360_image_v1 output at 2048x1024).
+        function autoOpen360IfPanorama(imgUrl, id) {
+            const probe = new Image();
+            probe.onload = () => {
+                if (!probe.naturalWidth) return;
+                const ratio = probe.naturalWidth / probe.naturalHeight;
+                if (Math.abs(ratio - 2) > 0.05) return; // not equirectangular
+                // Only auto-open if this sheet is still the one being inspected
+                // and the viewer is not already active.
+                if (window._currentAssetExpandType === 'loc_sheet'
+                        && window._currentAssetExpandId === id
+                        && !_panoViewer.active) {
+                    toggle360Viewer();
+                }
+            };
+            probe.src = imgUrl;
+        }
+
+        function expandAssetItem(type, id, skipAuto360) {
+            window._currentAssetExpandType = type;
+            window._currentAssetExpandId = id;
+            
+            // Reset variant input area visibility when loading a new asset
+            const area = document.getElementById('asset-variant-input-area');
+            if (area) area.style.display = 'none';
+            const mainPromptContainer = document.getElementById('asset-expand-prompt')?.parentElement;
+            if (mainPromptContainer) mainPromptContainer.style.display = 'block';
+            
+            const bible = (type === 'char' || type === 'char_sheet')
+                ? (_assetStudioData.character_bible || [])
+                : ((type === 'loc' || type === 'loc_sheet')
+                   ? (_assetStudioData.location_bible || [])
+                   : (_assetStudioData.prop_bible || []));
+            const asset = bible.find(x => (x.character_id || x.location_id || x.prop_id || x.id) === id);
+            if (!asset) return;
+            let title = '';
+            if (type === 'char') {
+                title = `${id} · ${asset.full_name || asset.character_name || ''}`;
+            } else if (type === 'char_sheet') {
+                title = `${id} · ${asset.full_name || asset.character_name || ''} (Turnaround Sheet)`;
+            } else if (type === 'loc') {
+                title = `${id} · ${asset.location_name || ''}`;
+            } else if (type === 'loc_sheet') {
+                title = `${id} · ${asset.location_name || ''} (Reference Board)`;
+            } else if (type === 'prop') {
+                title = `${id} · ${asset.prop_name || ''}`;
+            }
+            document.getElementById('asset-expand-title').textContent = title;
+            // Show/hide turnaround button
+            document.getElementById('asset-turnaround-btn').style.display = type === 'char' ? 'inline-block' : 'none';
+            // Metadata
+            const metaDiv = document.getElementById('asset-expand-metadata');
+            if (type === 'char' || type === 'char_sheet') {
+                metaDiv.innerHTML = `
+                    <b>Role:</b> ${asset.role || '—'}<br>
+                    <b>Age:</b> ${asset.age || '—'}<br>
+                    <b>Appearance:</b> ${asset.physical_appearance || '—'}<br>
+                    <b>Clothing:</b> ${asset.clothing || '—'}<br>
+                    <b>Personality:</b> ${asset.personality || '—'}<br>
+                    <b>Emotional Traits:</b> ${asset.emotional_traits || '—'}<br>
+                    <b>Visual Identity:</b> ${asset.visual_identity || '—'}<br>
+                    <b>Costume Continuity:</b> ${asset.costume_continuity || '—'}<br>
+                    <b>Signature Items:</b> ${asset.signature_items || '—'}<br>
+                    <b>Cinematic Presence:</b> ${asset.cinematic_presence || '—'}
+                `;
+            } else {
+                metaDiv.innerHTML = `
+                    <b>Environment:</b> ${asset.environment_type || '—'}<br>
+                    <b>Architecture:</b> ${asset.architecture_style || '—'}<br>
+                    <b>Mood:</b> ${asset.mood || '—'}<br>
+                    <b>Lighting:</b> ${asset.lighting_style || '—'}<br>
+                    <b>Features:</b> ${asset.cinematic_features || '—'}<br>
+                    <b>Storytelling:</b> ${asset.environmental_storytelling || '—'}
+                `;
+            }
+            // Image area
+            const imgArea = document.getElementById('asset-expand-image-area');
+            const assets = (type === 'char' || type === 'char_sheet')
+                ? (type === 'char' ? (_assetStudioData.character_assets || {}) : (_assetStudioData.character_sheets || {}))
+                : (type === 'loc' ? (_assetStudioData.location_assets || {}) : (_assetStudioData.location_sheets || {}));
+            const info = assets[id] || {};
+            const activeImg = (type === 'char' || type === 'loc') ? info.approved_image : info.sheet_image;
+            if (activeImg) {
+                imgArea.innerHTML = `<img src="${getAssetImageSrc(activeImg)}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
+            } else {
+                imgArea.innerHTML = '<span style="color:var(--text-secondary);">Generate an image to preview</span>';
+            }
+            // 360° viewer is only offered for location sheets with an image
+            const panoBtn = document.getElementById('asset-360-btn');
+            if (panoBtn) {
+                panoBtn.textContent = '🌀 360°';
+                panoBtn.style.display = (type === 'loc_sheet' && !!activeImg) ? 'inline-block' : 'none';
+            }
+            _panoViewer.active = false;
+            _panoViewer.img = null;
+            window.removeEventListener('resize', resizePanoCanvas);
+            // Auto-open the 360° viewer for equirectangular (2:1) location sheets
+            // unless the view is being restored after a manual exit.
+            if (type === 'loc_sheet' && activeImg && !skipAuto360) {
+                autoOpen360IfPanorama(getAssetImageSrc(activeImg), id);
+            }
+            // Generation history
+            const historyEl = document.getElementById('asset-expand-history');
+            const clearBtn = document.getElementById('clear-asset-history-btn');
+            const history = info.generation_history || [];
+            if (history.length) {
+                if (clearBtn) clearBtn.style.display = 'inline-block';
+                historyEl.innerHTML = history.map((h, i) => `
+                    <div style="position:relative;width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === activeImg ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="assetSetActiveFromHistory(${i})" title="Click to set as active">
+                        <img src="${getAssetImageSrc(h)}" style="width:100%;height:100%;object-fit:cover;">
+                        <div style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:bold;cursor:pointer;" onclick="event.stopPropagation(); deleteAssetHistoryItem(${i})" title="Delete this variant">✕</div>
+                    </div>
+                `).join('');
+            } else {
+                if (clearBtn) clearBtn.style.display = 'none';
+                historyEl.innerHTML = '<span style="color:var(--text-secondary);font-size:0.7rem;">Generation history will appear here</span>';
+            }
+            // Populate and bind modal prompt editor
+            const promptTextArea = document.getElementById('asset-expand-prompt');
+            const promptLabel = document.getElementById('asset-expand-prompt-label');
+            if (promptTextArea) {
+                if (type === 'char' || type === 'loc') {
+                    if (promptLabel) promptLabel.textContent = 'T2I Image Prompt:';
+                    promptTextArea.value = asset.image_prompt || '';
+                } else if (type === 'char_sheet') {
+                    if (promptLabel) promptLabel.textContent = 'Character Turnaround Sheet Layout Instructions:';
+                    promptTextArea.value = currentProject?.settings?.character_sheet_prompt || 'Preserve the character exactly as shown in the reference image: same face, same clothing, same accessories, same dark atmospheric background, same lighting, same color palette, same environment and mood. The character must look identical to the reference.';
+                } else if (type === 'loc_sheet') {
+                    if (promptLabel) promptLabel.textContent = 'Location Reference Board Layout Instructions:';
+                    promptTextArea.value = currentProject?.settings?.location_sheet_prompt || 'Professional location concept art featuring a single, ultra-wide cinematic establishing shot capturing the full scope and atmosphere of the environment. High-end studio quality, perfect composition, rich lighting, single image only, no borders, no grid.';
+                }
+                promptTextArea.oninput = function() {
+                    if (type === 'char' || type === 'loc') {
+                        asset.image_prompt = this.value;
+                    } else if (type === 'char_sheet') {
+                        if (!currentProject.settings) currentProject.settings = {};
+                        currentProject.settings.character_sheet_prompt = this.value;
+                    } else if (type === 'loc_sheet') {
+                        if (!currentProject.settings) currentProject.settings = {};
+                        currentProject.settings.location_sheet_prompt = this.value;
+                    }
+                    scheduleSaveState();
+                };
+            }
+            // Configure Approve button state in modal dynamically
+            const approveBtn = document.getElementById('asset-approve-btn');
+            if (approveBtn) {
+                const history = info.generation_history || [];
+                const approved = info.approved || false;
+                if (!activeImg) {
+                    approveBtn.disabled = true;
+                    approveBtn.textContent = '✅ Approve (No Image)';
+                    approveBtn.classList.remove('btn-primary', 'btn-success');
+                    approveBtn.classList.add('btn-secondary');
+                } else if (approved) {
+                    approveBtn.disabled = false;
+                    approveBtn.textContent = '✅ Approved';
+                    approveBtn.classList.remove('btn-secondary', 'btn-primary');
+                    approveBtn.classList.add('btn-success');
+                } else {
+                    approveBtn.disabled = false;
+                    approveBtn.textContent = '✅ Approve';
+                    approveBtn.classList.remove('btn-secondary', 'btn-success');
+                    approveBtn.classList.add('btn-primary');
+                }
+            }
+            
+            // Clear and render existing variants if present in the bible (but hide for sheets)
+            const gallery = document.getElementById('asset-expand-variant-gallery');
+            if (gallery) {
+                gallery.innerHTML = '';
+                if (type === 'char_sheet' || type === 'loc_sheet') {
+                    gallery.style.display = 'none';
+                } else {
+                    gallery.style.display = 'flex';
+                    gallery.style.flexDirection = 'column';
+                    gallery.style.gap = '8px';
+                    gallery.style.padding = '8px';
+                    gallery.style.background = 'var(--bg-secondary)';
+                    gallery.style.borderRadius = '8px';
+                    gallery.style.width = '100%';
+                    
+                    const variants = asset.variants || [];
+                    if (variants.length) {
+                        const header = document.createElement('div');
+                        header.style.cssText = 'font-size:0.75rem;font-weight:600;color:var(--accent-primary);margin-bottom:4px;';
+                        header.textContent = 'Select a variant option to generate the image:';
+                        gallery.appendChild(header);
+
+                    variants.forEach((v, i) => {
+                        const promptText = typeof v === 'string' ? v : v.prompt;
+                        const card = document.createElement('div');
+                        card.style.cssText = 'padding:10px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;gap:6px;';
+                        card.innerHTML = `
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span style="font-size:0.7rem;font-weight:700;color:var(--accent-success);">OPTION ${i+1}</span>
+                                <span style="font-size:0.6rem;color:var(--text-secondary);">Click to generate</span>
+                            </div>
+                            <div style="font-size:0.75rem;color:var(--text-primary);line-height:1.4;font-style:italic;">"${promptText}"</div>
+                        `;
+                        card.onmouseover = function() { this.style.borderColor = 'var(--accent-primary)'; this.style.transform = 'translateY(-1px)'; };
+                        card.onmouseout = function() { this.style.borderColor = 'var(--border-color)'; this.style.transform = 'none'; };
+                        card.onclick = async () => {
+                            const promptTextArea = document.getElementById('asset-expand-prompt');
+                            if (promptTextArea) {
+                                promptTextArea.value = promptText;
+                                promptTextArea.dispatchEvent(new Event('input'));
+                            }
+                            document.getElementById('asset-variant-input-area').style.display = 'none';
+                            const mainPromptContainer = document.getElementById('asset-expand-prompt').parentElement;
+                            if (mainPromptContainer) mainPromptContainer.style.display = 'block';
+                            await assetGenerateImage(id, type);
+                        };
+                        gallery.appendChild(card);
+                    });
+                    } else {
+                        gallery.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem;">Variants will appear here</span>';
+                    }
+                }
+            }
+            
+            // Hide Variant button for sheets
+            const variantBtn = document.getElementById('asset-variant-btn');
+            if (variantBtn) {
+                variantBtn.style.display = (type === 'char_sheet' || type === 'loc_sheet') ? 'none' : 'inline-block';
+            }
+            
+            document.getElementById('asset-expand-modal').style.display = 'flex';
+        }
+
+        function closeAssetExpand() {
+            document.getElementById('asset-expand-modal').style.display = 'none';
+            window._currentAssetExpandId = null;
+            window._currentAssetExpandType = null;
+        }
+
+        function toggleAssetFullscreen() {
+            const inner = document.getElementById('asset-expand-modal-inner');
+            const btn = document.getElementById('asset-fullscreen-btn');
+            if (inner.style.maxWidth === 'none') {
+                inner.style.maxWidth = '90vw';
+                inner.style.width = '1200px';
+                inner.style.height = '85vh';
+                btn.textContent = '⛶ Fullscreen';
+            } else {
+                inner.style.maxWidth = 'none';
+                inner.style.width = '100vw';
+                inner.style.height = '100vh';
+                btn.textContent = '⛶ Exit Fullscreen';
+            }
+            // The 360° canvas fills its container — re-measure after the modal
+            // grows/shrinks so the panorama stays sharp and correctly scaled.
+            if (_panoViewer.active) {
+                resizePanoCanvas();
+                render360();
+            }
+        }
+
+        // ── Storyboard Expand / Inspect ──────────────────────────────
+        function expandStoryboardShot(sceneIdx, shotIdx) {
+            window._currentSbSceneIdx = sceneIdx;
+            window._currentSbShotIdx = shotIdx;
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            if (!sh) return;
+
+            document.getElementById('storyboard-expand-title').textContent =
+                `${s.scene_id || 'Scene ' + (sceneIdx+1)} — ${sh.shot_id || 'Shot ' + (shotIdx+1)}`;
+
+            // Metadata — show both image and video status
+            const metaDiv = document.getElementById('storyboard-expand-metadata');
+            const chars = (sh.characters_present || s.characters_present || []).join(', ') || '—';
+            metaDiv.innerHTML = `
+                <b>Shot ID:</b> ${sh.shot_id || '—'}<br>
+                <b>Shot Type:</b> ${sh.shot_type || '—'}<br>
+                <b>Scene:</b> ${s.scene_title || s.scene_id || ''}<br>
+                <b>Location:</b> ${s.location_id || '—'}<br>
+                <b>Characters:</b> ${chars}<br>
+                <b>Time:</b> ${s.time_of_day || 'Day'}<br>
+                <b>Tone:</b> ${s.emotional_tone || '—'}<br>
+                <b>Image Status:</b> ${sh.storyboard_status || 'pending'}<br>
+                <b>Video Status:</b> ${sh.video_status || 'pending'}<br>
+                ${sh.scene_bg_image ? `<b>Extracted BG:</b> ${sh.scene_bg_image}<br>` : ''}
+                ${sh.storyboard_image ? `<b>Saved Image:</b> ${sh.storyboard_image}<br>` : ''}
+                ${sh.video_clip ? `<b>Saved Video:</b> ${sh.video_clip}` : ''}
+            `;
+            
+            // Populate pan angle
+            const panEl = document.getElementById('storyboard-expand-pan-slider');
+            const panValEl = document.getElementById('storyboard-expand-pan-val');
+            const savedPan = sh.pan_angle || 0;
+            if (panEl) panEl.value = savedPan;
+            if (panValEl) panValEl.innerText = savedPan + '°';
+
+            // Image + Video preview area (stacked)
+            const imgArea = document.getElementById('storyboard-expand-image-area');
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+
+            const savedImg = sh.storyboard_image;
+            const tempImg = sh._temp_storyboard_image;
+            const savedVid = sh.video_clip;
+            const tempVid = sh._temp_video_clip;
+            const tempSub = sh._temp_video_subfolder;
+
+            const imageUrl = savedImg
+                ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
+                : tempImg
+                    ? tempImg.includes('/')
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}`
+                        : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
+                    : null;
+            const videoUrl = savedVid
+                ? `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(savedVid)}${projectPathQuery}`
+                : tempVid
+                    ? `/api/comfyui/view?filename=${encodeURIComponent(tempVid)}${tempSub ? '&subfolder=' + encodeURIComponent(tempSub) : ''}`
+                    : null;
+
+            let previewHtml = '';
+            if (videoUrl && imageUrl) {
+                previewHtml = `
+                    <div style="position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                        <div id="storyboard-expand-toggle-bar" style="position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:10;display:flex;gap:5px;background:rgba(0,0,0,0.8);padding:4px 8px;border-radius:20px;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.15);">
+                            <button class="btn btn-secondary btn-sm" id="btn-toggle-view-image" onclick="document.getElementById('sb-expand-video').style.display='none';document.getElementById('sb-expand-image').style.display='block';this.classList.remove('btn-secondary');this.classList.add('btn-primary');const vb=document.getElementById('btn-toggle-view-video');vb.classList.remove('btn-primary');vb.classList.add('btn-secondary');" style="padding:2px 10px;font-size:0.65rem;border-radius:12px;">🖼️ Image</button>
+                            <button class="btn btn-primary btn-sm" id="btn-toggle-view-video" onclick="document.getElementById('sb-expand-image').style.display='none';document.getElementById('sb-expand-video').style.display='block';this.classList.remove('btn-secondary');this.classList.add('btn-primary');const ib=document.getElementById('btn-toggle-view-image');ib.classList.remove('btn-primary');ib.classList.add('btn-secondary');" style="padding:2px 10px;font-size:0.65rem;border-radius:12px;">🎥 Video</button>
+                        </div>
+                        <img id="sb-expand-image" src="${imageUrl}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;display:none;">
+                        <video id="sb-expand-video" src="${videoUrl}" controls autoplay loop muted style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;"></video>
+                    </div>
+                `;
+            } else if (videoUrl) {
+                previewHtml = `<video src="${videoUrl}" controls autoplay loop muted style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;"></video>`;
+            } else if (imageUrl) {
+                previewHtml = `<img src="${imageUrl}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
+            } else {
+                previewHtml = '<span style="color:var(--text-secondary);">No image generated yet</span>';
+            }
+            imgArea.innerHTML = previewHtml;
+
+            // Prompt textarea — image prompt
+            const promptTA = document.getElementById('storyboard-expand-prompt');
+            promptTA.value = sh.storyboard_prompt || sh.image_prompt || '';
+            promptTA.oninput = function() {
+                sh.storyboard_prompt = this.value;
+                scheduleSaveState();
+            };
+
+            // Video prompt textarea
+            const videoPromptTA = document.getElementById('storyboard-expand-video-prompt');
+            if (videoPromptTA) {
+                videoPromptTA.value = sh.video_prompt || '';
+                videoPromptTA.oninput = function() {
+                    sh.video_prompt = this.value;
+                    scheduleSaveState();
+                };
+            }
+
+            // Populate cfg/seed/steps from shot data
+            document.getElementById('storyboard-expand-cfg').value = sh._genCfg || 1.0;
+            document.getElementById('storyboard-expand-seed').value = sh._genSeed || '';
+            document.getElementById('storyboard-expand-steps').value = sh._genSteps || 10;
+
+            // Variant gallery
+            const gallery = document.getElementById('storyboard-expand-variant-gallery');
+            gallery.innerHTML = '<span style="color:var(--text-secondary);font-size:0.8rem;">Variants will appear here</span>';
+
+            // Generation history with thumbnails
+            const historyEl = document.getElementById('storyboard-expand-history');
+            const clearBtn = document.getElementById('clear-storyboard-history-btn');
+            const storyHistory = sh.storyboard_history || [];
+            const activeImg = sh.storyboard_image || sh._temp_storyboard_image || '';
+            if (storyHistory.length) {
+                if (clearBtn) clearBtn.style.display = 'inline-block';
+                historyEl.innerHTML = storyHistory.map((h, i) => `
+                    <div style="position:relative;width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === activeImg ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="storyboardSetActiveFromHistory(${sceneIdx}, ${shotIdx}, ${i})" title="Click to set as active">
+                        <img src="${getHistoryImageSrc(h)}" style="width:100%;height:100%;object-fit:cover;">
+                        <div style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:bold;cursor:pointer;" onclick="event.stopPropagation(); storyboardDeleteHistoryItem(${sceneIdx}, ${shotIdx}, ${i})" title="Delete this variant">✕</div>
+                    </div>
+                `).join('');
+            } else {
+                if (clearBtn) clearBtn.style.display = 'none';
+                historyEl.innerHTML = '<span style="color:var(--text-secondary);font-size:0.7rem;">Generation history will appear here</span>';
+            }
+
+            // Reset variant input
+            document.getElementById('storyboard-variant-input-area').style.display = 'none';
+            const mainPromptContainer = document.getElementById('storyboard-expand-prompt')?.parentElement;
+            if (mainPromptContainer) mainPromptContainer.style.display = 'block';
+
+            // Update button states to match current shot status
+            const genBtn = document.getElementById('storyboard-expand-gen-btn');
+            const approveBtn = document.getElementById('storyboard-expand-approve-btn');
+            const upscaleBtn = document.getElementById('storyboard-expand-upscale-btn');
+            if (upscaleBtn) {
+                upscaleBtn.disabled = !(savedImg || tempImg);
+                upscaleBtn.style.opacity = (savedImg || tempImg) ? '1' : '0.4';
+            }
+            if (genBtn) {
+                if (sh.storyboard_status === 'approved') {
+                    genBtn.textContent = '🎥 Generate Video';
+                } else {
+                    genBtn.textContent = '🎨 Generate';
+                }
+            }
+            if (approveBtn) {
+                if (sh.storyboard_status === 'approved') {
+                    approveBtn.textContent = '✅ Approved';
+                    approveBtn.disabled = true;
+                    approveBtn.className = 'btn btn-success';
+                } else if (sh._temp_storyboard_image || sh._temp_video_clip) {
+                    approveBtn.textContent = '✅ Approve';
+                    approveBtn.disabled = false;
+                    approveBtn.className = 'btn btn-success';
+                } else {
+                    approveBtn.textContent = '✅ Approve';
+                    approveBtn.disabled = true;
+                    approveBtn.className = 'btn btn-secondary';
+                }
+            }
+
+            document.getElementById('storyboard-expand-modal').style.display = 'flex';
+        }
+
+        function closeStoryboardExpand() {
+            document.getElementById('storyboard-expand-modal').style.display = 'none';
+            window._currentSbSceneIdx = null;
+            window._currentSbShotIdx = null;
+        }
+
+        function toggleStoryboardFullscreen() {
+            const inner = document.getElementById('storyboard-expand-modal-inner');
+            const btn = document.getElementById('storyboard-fullscreen-btn');
+            if (inner.style.maxWidth === 'none') {
+                inner.style.maxWidth = '90vw';
+                inner.style.width = '1200px';
+                inner.style.height = '85vh';
+                btn.textContent = '⛶ Fullscreen';
+            } else {
+                inner.style.maxWidth = 'none';
+                inner.style.width = '100vw';
+                inner.style.height = '100vh';
+                btn.textContent = '⛶ Exit Fullscreen';
+            }
+        }
+
+        async function storyboardExpandGenerate() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            // Read cfg/seed/steps from modal inputs
+            const cfgVal = document.getElementById('storyboard-expand-cfg')?.value;
+            const seedVal = document.getElementById('storyboard-expand-seed')?.value;
+            const stepsVal = document.getElementById('storyboard-expand-steps')?.value;
+            if (cfgVal) sh._genCfg = parseFloat(cfgVal);
+            else delete sh._genCfg;
+            if (seedVal) sh._genSeed = parseInt(seedVal);
+            else delete sh._genSeed;
+            if (stepsVal) sh._genSteps = parseInt(stepsVal);
+            else delete sh._genSteps;
+            if (sh.storyboard_status === 'approved') {
+                await generateShotVideo(sceneIdx, shotIdx);
+            } else {
+                await generateShotImage(sceneIdx, shotIdx);
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+        }
+
+        function storyboardApplyAllSettings() {
+            const cfg = parseFloat(document.getElementById('sb-global-cfg')?.value);
+            const steps = parseInt(document.getElementById('sb-global-steps')?.value);
+            const seed = parseInt(document.getElementById('sb-global-seed')?.value);
+            if (!screenplayData || !screenplayData.scenes) return;
+            let count = 0;
+            screenplayData.scenes.forEach((s, si) => {
+                if (!s.shots) return;
+                s.shots.forEach((sh, shi) => {
+                    if (!isNaN(cfg)) sh._genCfg = cfg;
+                    if (!isNaN(steps)) sh._genSteps = steps;
+                    if (!isNaN(seed)) sh._genSeed = seed;
+                    count++;
+                });
+            });
+            // Sync scene-level fields and shot count
+            screenplayData.scenes.forEach((s, si) => {
+                const c = document.getElementById(`scene-cfg-${si}`);
+                const st = document.getElementById(`scene-steps-${si}`);
+                const sd = document.getElementById(`scene-seed-${si}`);
+                if (c && !isNaN(cfg)) c.value = cfg;
+                if (st && !isNaN(steps)) st.value = steps;
+                if (sd && !isNaN(seed)) sd.value = seed;
+                else if (sd && isNaN(seed)) sd.value = '';
+            });
+            notify('Settings Applied', `Applied to ${count} shots across all scenes`, '⚙️');
+            scheduleSaveState();
+        }
+
+        function sceneApplySettings(sceneIdx) {
+            const cfg = parseFloat(document.getElementById(`scene-cfg-${sceneIdx}`)?.value);
+            const steps = parseInt(document.getElementById(`scene-steps-${sceneIdx}`)?.value);
+            const seed = parseInt(document.getElementById(`scene-seed-${sceneIdx}`)?.value);
+            const s = screenplayData?.scenes?.[sceneIdx];
+            if (!s || !s.shots) return;
+            s.shots.forEach((sh, shi) => {
+                if (!isNaN(cfg)) sh._genCfg = cfg;
+                if (!isNaN(steps)) sh._genSteps = steps;
+                if (!isNaN(seed)) sh._genSeed = seed;
+            });
+            notify('Scene Settings', `Applied to ${s.shots.length} shots`, '⚙️');
+            scheduleSaveState();
+        }
+
+        async function storyboardExpandUpscale() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const ok = await storyboardUpscaleImage(sceneIdx, shotIdx);
+            if (ok) expandStoryboardShot(sceneIdx, shotIdx);
+        }
+
+        async function storyboardExpandApprove() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            if (sh._temp_storyboard_image && !sh.storyboard_image) {
+                await approveShotImage(sceneIdx, shotIdx);
+            } else if (sh._temp_video_clip && !sh.video_clip) {
+                await approveShotVideo(sceneIdx, shotIdx);
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+        }
+
+        async function storyboardExpandRegenPrompt() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const btn = document.getElementById('storyboard-expand-regen-prompt-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+            await regenerateShotPrompt(sceneIdx, shotIdx);
+            expandStoryboardShot(sceneIdx, shotIdx);
+            if (btn) { btn.disabled = false; btn.textContent = '🔄 Regen Prompt'; }
+        }
+
+        function showStoryboardVariantInput(sceneIdx, shotIdx) {
+            // If called without args, try to get from current expand context
+            if (sceneIdx === undefined) sceneIdx = window._currentSbSceneIdx;
+            if (shotIdx === undefined) shotIdx = window._currentSbShotIdx;
+            // Open the expand modal first if it is not open
+            const modal = document.getElementById('storyboard-expand-modal');
+            if (modal.style.display !== 'flex' && sceneIdx != null && shotIdx != null) {
+                expandStoryboardShot(sceneIdx, shotIdx);
+            }
+            const area = document.getElementById('storyboard-variant-input-area');
+            const mainPromptContainer = document.getElementById('storyboard-expand-prompt')?.parentElement;
+            if (area.style.display === 'block') {
+                area.style.display = 'none';
+                if (mainPromptContainer) mainPromptContainer.style.display = 'block';
+            } else {
+                area.style.display = 'block';
+                if (mainPromptContainer) mainPromptContainer.style.display = 'none';
+                const textarea = document.getElementById('storyboard-variant-instruction');
+                if (textarea) {
+                    textarea.value = '';
+                    textarea.focus();
+                }
+                area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        async function storyboardSubmitVariant() {
+            const instruction = document.getElementById('storyboard-variant-instruction').value.trim();
+            if (!instruction) {
+                notify('Instruction Required', 'Please describe the variant changes you want.', '⚠️');
+                return;
+            }
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+
+            const submitBtn = document.querySelector('#storyboard-variant-input-area button');
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ Generating variant prompts...'; }
+
+            try {
+                const res = await fetch('/api/orchestrator/generate-variant', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        type: 'storyboard_shot',
+                        asset: {
+                            shot_id: sh.shot_id,
+                            shot_type: sh.shot_type,
+                            storyboard_prompt: sh.storyboard_prompt || sh.image_prompt || '',
+                            action: sh.action,
+                            camera_language: sh.camera_language,
+                            lighting_language: sh.lighting_language,
+                            emotion: sh.emotion,
+                            scene_synopsis: s.synopsis,
+                        },
+                        current_image: sh.storyboard_image || '',
+                        instruction: instruction
+                    }),
+                });
+                const data = await res.json();
+                if (data.success && data.variants && data.variants.length) {
+                    notify('Variants Generated', 'Prompts generated successfully', '✅');
+                    const gallery = document.getElementById('storyboard-expand-variant-gallery');
+                    gallery.innerHTML = '';
+                    gallery.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:8px;width:100%;';
+                    const header = document.createElement('div');
+                    header.style.cssText = 'font-size:0.75rem;font-weight:600;color:var(--accent-primary);margin-bottom:4px;';
+                    header.textContent = 'Select a variant option to generate:';
+                    gallery.appendChild(header);
+                    data.variants.forEach((promptText, i) => {
+                        const card = document.createElement('div');
+                        card.style.cssText = 'padding:10px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;gap:6px;';
+                        card.innerHTML = `
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span style="font-size:0.7rem;font-weight:700;color:var(--accent-success);">OPTION ${i+1}</span>
+                                <span style="font-size:0.6rem;color:var(--text-secondary);">Click to generate</span>
+                            </div>
+                            <div style="font-size:0.75rem;color:var(--text-primary);line-height:1.4;font-style:italic;">"${promptText}"</div>
+                        `;
+                        card.onmouseover = function() { this.style.borderColor = 'var(--accent-primary)'; this.style.transform = 'translateY(-1px)'; };
+                        card.onmouseout = function() { this.style.borderColor = 'var(--border-color)'; this.style.transform = 'none'; };
+                        card.onclick = async () => {
+                            const promptTA = document.getElementById('storyboard-expand-prompt');
+                            if (promptTA) {
+                                promptTA.value = promptText;
+                                promptTA.dispatchEvent(new Event('input'));
+                            }
+                            document.getElementById('storyboard-variant-input-area').style.display = 'none';
+                            const mainContainer = document.getElementById('storyboard-expand-prompt')?.parentElement;
+                            if (mainContainer) mainContainer.style.display = 'block';
+                            if (sh.storyboard_status === 'approved') {
+                                sh.video_prompt = promptText;
+                                await generateShotVideo(sceneIdx, shotIdx);
+                            } else {
+                                sh.storyboard_prompt = promptText;
+                                await generateShotImage(sceneIdx, shotIdx);
+                            }
+                            expandStoryboardShot(sceneIdx, shotIdx);
+                        };
+                        gallery.appendChild(card);
+                    });
+                } else {
+                    notify('Failed', data.error || 'Variant generation failed', '❌');
+                }
+            } catch (e) {
+                notify('Error', e.message, '❌');
+            }
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '✏️ Generate Variant Prompts'; }
+            document.getElementById('storyboard-variant-instruction').value = '';
+        }
+        // ── Storyboard History Management ─────────────────────────────
+        function getHistoryImageSrc(filename) {
+            if (!filename) return '';
+            if (filename.startsWith('http')) return filename;
+            if (filename.startsWith('/api/')) return filename;
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? (`?path=${encodeURIComponent(currentProject.path)}`) : '';
+            // Saved images have paths like "scenes/filename.png"
+            if (filename.includes('/')) {
+                return `/api/projects/${encodeURIComponent(projName)}/saved-image/${filename}${projectPathQuery}&t=${Date.now()}`;
+            }
+            return `/api/comfyui/view?filename=${encodeURIComponent(filename)}&t=${Date.now()}`;
+        }
+
+        function storyboardSetActiveFromHistory(sceneIdx, shotIdx, index) {
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            const history = sh.storyboard_history || [];
+            if (!history[index]) return;
+            const filename = history[index];
+            // If it's a saved image (contains path separator), restore as approved
+            if (filename.includes('/')) {
+                sh.storyboard_image = filename.split('/').pop();
+                sh.storyboard_status = 'approved';
+            } else {
+                sh._temp_storyboard_image = filename;
+                sh.storyboard_status = 'generated';
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+            renderStoryboard();
+            scheduleSaveState();
+            notify('Set Active', 'Image ' + (index + 1) + ' set as active', '📷');
+        }
+
+        function storyboardDeleteHistoryItem(sceneIdx, shotIdx, index) {
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            const history = sh.storyboard_history || [];
+            if (!history[index]) return;
+            const filename = history[index];
+            sh.storyboard_history.splice(index, 1);
+            if (sh._temp_storyboard_image === filename) {
+                sh._temp_storyboard_image = sh.storyboard_history.length > 0
+                    ? sh.storyboard_history[sh.storyboard_history.length - 1]
+                    : null;
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        async function storyboardClearHistory() {
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            if (sceneIdx == null || shotIdx == null) return;
+            const sh = screenplayData.scenes[sceneIdx]?.shots[shotIdx];
+            if (!sh) return;
+            const confirmed = await showConfirm('Clear History', 'Are you sure you want to clear all generated images from the history? This only removes them from the list.');
+            if (!confirmed) return;
+            sh.storyboard_history = [];
+            sh._temp_storyboard_image = null;
+            if (sh.storyboard_status !== 'approved') {
+                sh.storyboard_image = null;
+                sh.storyboard_status = 'pending';
+            }
+            expandStoryboardShot(sceneIdx, shotIdx);
+            renderStoryboard();
+            scheduleSaveState();
+            notify('Cleared', 'All variants for this shot removed', '🗑');
+        }
+        // ── End Storyboard Expand ────────────────────────────────────
+
+        function assetSetActiveFromHistory(index) {
+            const id = window._currentAssetExpandId;
+            const type = window._currentAssetExpandType;
+            if (!id) return;
+            const assets = (type === 'char' || type === 'char_sheet')
+                ? (type === 'char' ? (_assetStudioData.character_assets || {}) : (_assetStudioData.character_sheets || {}))
+                : (type === 'loc' ? (_assetStudioData.location_assets || {}) : (_assetStudioData.location_sheets || {}));
+            const info = assets[id] || {};
+            const history = info.generation_history || [];
+            if (history[index]) {
+                if (type === 'char_sheet' || type === 'loc_sheet') {
+                    info.sheet_image = history[index];
+                } else {
+                    info.approved_image = history[index];
+                }
+                expandAssetItem(type, id);
+                scheduleSaveState();
+                notify('Set Active', 'Image ' + (index + 1) + ' set as active', '📷');
+            }
+        }
+
+        async function deleteAssetHistoryItem(index) {
+            const id = window._currentAssetExpandId;
+            const type = window._currentAssetExpandType;
+            if (!id || !type) return;
+
+            const confirmed = await showConfirm('Delete Variant', 'Are you sure you want to delete this variant? This will permanently delete the file.');
+            if (!confirmed) return;
+
+            let assets, isSheet = false;
+            if (type === 'char') {
+                assets = _assetStudioData.character_assets || {};
+            } else if (type === 'loc') {
+                assets = _assetStudioData.location_assets || {};
+            } else if (type === 'char_sheet') {
+                assets = _assetStudioData.character_sheets || {};
+                isSheet = true;
+            } else if (type === 'loc_sheet') {
+                assets = _assetStudioData.location_sheets || {};
+                isSheet = true;
+            }
+
+            const info = assets[id] || {};
+            const history = info.generation_history || [];
+            if (index < 0 || index >= history.length) return;
+
+            const filenameToDelete = history[index];
+
+            try {
+                // Delete file from disk via backend api
+                const res = await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/file`, {
+                    method: 'DELETE',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_path: currentProject?.path || '',
+                        stage: '',
+                        filename: filenameToDelete
+                    })
+                });
+                const data = await res.json();
+                if (!data.success && data.error !== 'File not found') {
+                    notify('Delete Failed', data.error || 'Failed to delete file', '❌');
+                    return;
+                }
+
+                // Remove from history array
+                history.splice(index, 1);
+
+                // Handle active/approved asset mapping
+                const currentActive = isSheet ? info.sheet_image : info.approved_image;
+                if (currentActive === filenameToDelete) {
+                    // If it was approved, also delete the approved file from disk and clear its registration
+                    if (info.approved) {
+                        const approvedPath = isSheet 
+                            ? (type === 'char_sheet' ? `character_sheets/approved/${id}.png` : `location_sheets/approved/${id}.png`)
+                            : (type === 'char' ? `characters/approved/${id}.png` : `locations/approved/${id}.png`);
+                            
+                        await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/file`, {
+                            method: 'DELETE',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                project_path: currentProject?.path || '',
+                                stage: '',
+                                filename: approvedPath
+                            })
+                        });
+                        
+                        // Remove from savedAssets (sidebar)
+                        const aid = isSheet ? `${id}_sheet` : id;
+                        const savedAssetType = (type === 'char' ? 'character' : type === 'loc' ? 'location' : 'sheet');
+                        const savedAssetIndex = savedAssets.findIndex(sa => sa.name === aid && sa.type === savedAssetType);
+                        if (savedAssetIndex >= 0) {
+                            savedAssets.splice(savedAssetIndex, 1);
+                        }
+                    }
+
+                    info.approved = false;
+                    if (isSheet) {
+                        info.sheet_image = history.length ? history[history.length - 1] : '';
+                    } else {
+                        info.approved_image = history.length ? history[history.length - 1] : '';
+                        
+                        // Sync with charData / locationData to ensure savedImage is updated
+                        const targetList = type === 'char' ? charData : locationData;
+                        const match = targetList.find(x => (x.character_id || x.location_id) === id);
+                        if (match) {
+                            match.savedImage = info.approved_image;
+                        }
+                    }
+                }
+
+                // Sync with backend graph
+                try {
+                    await fetch('/api/assets/update-graph-entry', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            id: id,
+                            type: type,
+                            generation_history: history,
+                            approved_image: isSheet ? info.sheet_image : info.approved_image,
+                            approved: info.approved
+                        })
+                    });
+                } catch(e) {}
+
+                expandAssetItem(type, id);
+                
+                // Refresh grid cards
+                if (type === 'char') {
+                    renderCharacterAssets(_assetStudioData.character_bible || []);
+                } else if (type === 'char_sheet') {
+                    renderCharacterSheets();
+                } else if (type === 'loc') {
+                    renderLocationAssets(_assetStudioData.location_bible || []);
+                } else if (type === 'loc_sheet') {
+                    renderLocationSheets();
+                }
+                
+                _updateApprovalUI();
+                if (isSheet) _updateSheetUI();
+                
+                await saveProjectState();
+                notify('Deleted', 'Variant deleted successfully', '🗑');
+            } catch(e) {
+                notify('Delete Error', e.message, '❌');
+            }
+        }
+
+        async function clearAssetHistory() {
+            const id = window._currentAssetExpandId;
+            const type = window._currentAssetExpandType;
+            if (!id || !type) return;
+
+            const confirmed = await showConfirm('Clear Asset History', 'Are you sure you want to delete ALL variants in the history? This will permanently delete the files.');
+            if (!confirmed) return;
+
+            let assets, isSheet = false;
+            if (type === 'char') {
+                assets = _assetStudioData.character_assets || {};
+            } else if (type === 'loc') {
+                assets = _assetStudioData.location_assets || {};
+            } else if (type === 'char_sheet') {
+                assets = _assetStudioData.character_sheets || {};
+                isSheet = true;
+            } else if (type === 'loc_sheet') {
+                assets = _assetStudioData.location_sheets || {};
+                isSheet = true;
+            }
+
+            const info = assets[id] || {};
+            const history = (info.generation_history || []).slice(); // copy it
+
+            // Delete all files in history from disk
+            for (const h of history) {
+                try {
+                    await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/file`, {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_path: currentProject?.path || '',
+                            stage: '',
+                            filename: h
+                        })
+                    });
+                } catch(e) {}
+            }
+
+            // Also delete approved file if it was approved
+            if (info.approved) {
+                const approvedPath = isSheet 
+                    ? (type === 'char_sheet' ? `character_sheets/approved/${id}.png` : `location_sheets/approved/${id}.png`)
+                    : (type === 'char' ? `characters/approved/${id}.png` : `locations/approved/${id}.png`);
+                    
+                try {
+                    await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/file`, {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_path: currentProject?.path || '',
+                            stage: '',
+                            filename: approvedPath
+                        })
+                    });
+                } catch(e) {}
+
+                // Remove from savedAssets (sidebar)
+                const aid = isSheet ? `${id}_sheet` : id;
+                const savedAssetType = (type === 'char' ? 'character' : type === 'loc' ? 'location' : 'sheet');
+                const savedAssetIndex = savedAssets.findIndex(sa => sa.name === aid && sa.type === savedAssetType);
+                if (savedAssetIndex >= 0) {
+                    savedAssets.splice(savedAssetIndex, 1);
+                }
+            }
+
+            info.generation_history = [];
+            info.approved = false;
+            if (isSheet) {
+                info.sheet_image = '';
+            } else {
+                info.approved_image = '';
+                // Sync with charData / locationData to ensure savedImage is updated
+                const targetList = type === 'char' ? charData : locationData;
+                const match = targetList.find(x => (x.character_id || x.location_id) === id);
+                if (match) {
+                    match.savedImage = '';
+                }
+            }
+
+            // Sync with backend graph
+            try {
+                await fetch('/api/assets/update-graph-entry', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        id: id,
+                        type: type,
+                        generation_history: [],
+                        approved_image: '',
+                        approved: false
+                    })
+                });
+            } catch(e) {}
+
+            expandAssetItem(type, id);
+            
+            // Refresh grid cards
+            if (type === 'char') {
+                renderCharacterAssets(_assetStudioData.character_bible || []);
+            } else if (type === 'char_sheet') {
+                renderCharacterSheets();
+            } else if (type === 'loc') {
+                renderLocationAssets(_assetStudioData.location_bible || []);
+            } else if (type === 'loc_sheet') {
+                renderLocationSheets();
+            }
+            
+            _updateApprovalUI();
+            if (isSheet) _updateSheetUI();
+            
+            await saveProjectState();
+            notify('Cleared', 'Generation history wiped', '🗑');
+        }
+
+        function assetUploadFromModal() {
+            const id = window._currentAssetExpandId;
+            const type = window._currentAssetExpandType;
+            if (!id) return;
+            const input = document.getElementById('modal-file-input') || (function() {
+                const el = document.createElement('input');
+                el.id = 'modal-file-input'; el.type = 'file'; el.accept = 'image/*';
+                el.style.display = 'none'; document.body.appendChild(el);
+                return el;
+            })();
+            input.onchange = () => {
+                if (input.files[0]) {
+                    let fn;
+                    if (type === 'char') fn = uploadCharacterImage;
+                    else if (type === 'char_sheet') fn = uploadCharacterSheetImage;
+                    else if (type === 'loc') fn = uploadLocationImage;
+                    else if (type === 'loc_sheet') fn = uploadLocationSheetImage;
+                    else fn = uploadLocationImage;
+                    
+                    fn(id, input.files[0]).then(() => {
+                        setTimeout(() => expandAssetItem(type, id), 300);
+                    });
+                }
+                input.value = '';
+            };
+            input.click();
+        }
+
+        function buildCharacterMasterPrompt(ch) {
+            const g = (selectedGenres || []).join(', ') || '—';
+            const vs = selectedVisualStyle || '—';
+            const fa = selectedFilmAesthetic || '—';
+            const projVL = `Genre: ${g}; Visual Style: ${vs}; Film Aesthetic: ${fa}`;
+            return `Create a cinematic full-body character reference image of ${ch.full_name || ch.character_name || ''}, a ${ch.role || '—'} from a ${g} film world.
+
+The character should visually embody:
+${ch.personality || '—'},
+while subtly reflecting emotional undertones of:
+${ch.emotional_traits || ch.emotional_wounds || '—'}.
+
+The visual identity should feel:
+${ch.visual_identity || '—'}.
+
+Wardrobe and costume design must maintain:
+${ch.clothing_continuity || ch.clothing || '—'}.
+
+The character should display subtle behavioral personality traits inspired by:
+${ch.signature_items || ch.signature_behavior || '—'}.
+
+The image must feel grounded within:
+${ch.age || ch.era || '—'},
+while matching the cinematic language of:
+${fa}.
+
+Visual rendering style:
+${vs}.
+
+Maintain strong continuity-safe identity consistency including:
+- facial structure
+- hairstyle
+- silhouette
+- body proportions
+- costume details
+- accessories
+- texture realism
+
+The composition should present the character as:
+A PROFESSIONAL CINEMATIC REFERENCE ASSET
+
+Show:
+- full body framing
+- neutral but cinematic stance
+- readable costume details
+- visible facial features
+- clear silhouette
+- production-ready presentation
+
+Lighting should feel:
+- cinematic
+- realistic
+- emotionally atmospheric
+- continuity-safe
+
+Use:
+- subtle cinematic depth
+- realistic material textures
+- grounded proportions
+- believable anatomy
+- film-grade visual realism
+
+The image should feel suitable for:
+- virtual production
+- casting reference
+- storyboard continuity
+- AI filmmaking pipelines
+
+Avoid:
+- exaggerated anime anatomy
+- chaotic composition
+- cropped body framing
+- inconsistent costume details
+- unstable facial features
+- random accessories
+- over-stylized posing
+- extreme perspective distortion
+
+Output style:
+ultra cinematic character reference, production-ready film character sheet, highly detailed realism, continuity-safe design, cinematic lighting, clean silhouette readability, virtual production quality, premium film concept art
+
+Project visual language: ${projVL}`;
+        }
+
+        function setAssetProgress(pct, title) {
+            const bar = document.getElementById('asset-progress');
+            const barInner = document.getElementById('asset-progress-bar');
+            const pctEl = document.getElementById('asset-progress-pct');
+            const titleEl = document.getElementById('asset-progress-title');
+            if (!bar) return;
+            bar.style.display = 'block';
+            if (barInner) barInner.style.width = Math.min(pct, 100) + '%';
+            if (pctEl) pctEl.textContent = Math.min(pct, 100) + '%';
+            if (titleEl && title) titleEl.textContent = title;
+        }
+        function hideAssetProgress() {
+            const bar = document.getElementById('asset-progress');
+            if (bar) bar.style.display = 'none';
+        }
+
+        function setSheetProgress(pct, title, stepLabel, nodeLabel) {
+            const bar = document.getElementById('sheet-progress');
+            const barInner = document.getElementById('sheet-progress-bar');
+            const pctEl = document.getElementById('sheet-progress-pct');
+            const titleEl = document.getElementById('sheet-progress-title');
+            const detailEl = document.getElementById('sheet-progress-detail');
+            if (!bar) return;
+            bar.style.display = 'block';
+            if (barInner) barInner.style.width = Math.min(pct, 100) + '%';
+            if (pctEl) pctEl.textContent = Math.min(pct, 100) + '%';
+            if (titleEl && title) titleEl.textContent = title;
+            if (detailEl) {
+                const parts = [];
+                if (stepLabel) parts.push(stepLabel);
+                if (nodeLabel) parts.push(nodeLabel);
+                detailEl.textContent = parts.join('') || '';
+            }
+        }
+        function hideSheetProgress() {
+            const bar = document.getElementById('sheet-progress');
+            if (bar) bar.style.display = 'none';
+            const barInner = document.getElementById('sheet-progress-bar');
+            if (barInner) barInner.style.width = '0%';
+            const pctEl = document.getElementById('sheet-progress-pct');
+            if (pctEl) pctEl.textContent = '0%';
+        }
+        function getAssetSelector(id, type) {
+            if (type === 'char') return `.char-img-zone[data-cid="${id}"]`;
+            if (type === 'char_sheet') return `.cs-img-zone[data-cid="${id}"]`;
+            if (type === 'loc') return `.loc-img-zone[data-lid="${id}"]`;
+            if (type === 'loc_sheet') return `.ls-img-zone[data-lid="${id}"]`;
+            return '';
+        }
+        function setAssetCardSpinner(id, type, on) {
+            const sel = getAssetSelector(id, type);
+            const zone = document.querySelector(sel);
+            if (!zone) return;
+            if (on) {
+                zone.style.position = 'relative';
+                let sp = zone.querySelector('.asset-card-spinner');
+                if (!sp) {
+                    sp = document.createElement('div');
+                    sp.className = 'asset-card-spinner';
+                    sp.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);border-radius:4px;z-index:5;';
+                    sp.innerHTML = '<div class="spinner" style="width:24px;height:24px;border:3px solid rgba(255,255,255,0.3);border-top:3px solid #fff;border-radius:50%;animation:spin 0.8s linear infinite;"></div>';
+                    zone.appendChild(sp);
+                }
+                sp.style.display = 'flex';
+            } else {
+                const sp = zone.querySelector('.asset-card-spinner');
+                if (sp) sp.style.display = 'none';
+            }
+        }
+
+        function setCardProgress(id, type, pct, stepLabel, nodeLabel) {
+            const sel = getAssetSelector(id, type);
+            const zone = document.querySelector(sel);
+            if (!zone) return;
+            // Show spinner with progress text
+            zone.style.position = 'relative';
+            let overlay = zone.querySelector('.asset-card-spinner');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.className = 'asset-card-spinner';
+                overlay.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;background:rgba(0,0,0,0.5);border-radius:4px;z-index:5;';
+                overlay.innerHTML = '<div class="spinner" style="width:20px;height:20px;border:2px solid rgba(255,255,255,0.3);border-top:2px solid #fff;border-radius:50%;animation:spin 0.8s linear infinite;"></div><span class="card-progress-pct" style="color:#fff;font-size:0.7rem;font-weight:600;"></span><span class="card-progress-detail" style="color:#aaa;font-size:0.6rem;font-weight:400;"></span>';
+                zone.appendChild(overlay);
+            }
+            overlay.style.display = 'flex';
+            const pctEl = overlay.querySelector('.card-progress-pct');
+            if (pctEl) pctEl.textContent = pct > 0 ? `${pct}%` : '⏳';
+            const detailEl = overlay.querySelector('.card-progress-detail');
+            if (detailEl) {
+                const parts = [];
+                if (stepLabel) parts.push(stepLabel);
+                if (nodeLabel) parts.push(nodeLabel);
+                detailEl.textContent = parts.join('') || '';
+            }
+        }
+
+        function updateAssetCardImage(id, type, imageUrl) {
+            const sel = getAssetSelector(id, type);
+            const zone = document.querySelector(sel);
+            if (!zone) return;
+            zone.innerHTML = `<img src="${getAssetImageSrc(imageUrl)}" style="max-width:100%;max-height:120px;border-radius:4px;object-fit:contain;">`;
+        }
+
+        function cancelAssetBatch() {
+            if (window._assetBatchAbortController) {
+                window._assetBatchAbortController.abort();
+                window._assetBatchAbortController = null;
+            }
+            // Immediately interrupt ComfyUI execution on the backend
+            fetch('/api/image/interrupt', { method: 'POST' }).catch(err => console.error(err));
+        }
+
+        function cancelSheetBatch() {
+            if (window._sheetBatchAbortController) {
+                window._sheetBatchAbortController.abort();
+                window._sheetBatchAbortController = null;
+            }
+            // Immediately interrupt ComfyUI execution on the backend
+            fetch('/api/image/interrupt', { method: 'POST' }).catch(err => console.error(err));
+            hideSheetProgress();
+        }
+
+
+
+        async function _generateBulkImages(type, btnId, label) {
+            cancelAssetBatch();
+            const ac = new AbortController();
+            window._assetBatchAbortController = ac;
+            const bibleName = type === 'char' ? 'character_bible' : 'location_bible';
+            const items = (_assetStudioData[bibleName] || []).map(x => ({
+                id: x.character_id || x.id || x.location_id || '',
+                type: type,
+                name: x.full_name || x.character_name || x.name || x.location_name || x.id
+            })).filter(x => x.id);
+            if (!items.length) { notify('Nothing', `No ${label} found`, '⚠️'); return; }
+            const btn = document.getElementById(btnId);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            let done = 0, successCount = 0, failCount = 0;
+            for (const item of items) {
+                if (ac.signal.aborted) break;
+                done++;
+                setAssetProgress(Math.round(done/items.length*100), `Generating ${label} image ${done}/${items.length}: ${item.name}`);
+                const assetStore = type === 'char' ? (_assetStudioData.character_assets || {}) : (_assetStudioData.location_assets || {});
+                const oldImg = (assetStore[item.id] || {}).approved_image;
+                try {
+                    await assetGenerateImage(item.id, item.type);
+                } catch(e) {
+                    if (e.name !== 'AbortError') console.warn('Image gen error', e.message);
+                }
+                if (!ac.signal.aborted) {
+                    const newImg = (assetStore[item.id] || {}).approved_image;
+                    if (newImg && newImg !== oldImg) {
+                        updateAssetCardImage(item.id, item.type, newImg);
+                        // Wait for image to load in browser before next gen
+                        const sel = getAssetSelector(item.id, item.type);
+                        const zone = document.querySelector(sel);
+                        const imgEl = zone ? zone.querySelector('img') : null;
+                        if (imgEl && !imgEl.complete) {
+                            await new Promise(resolve => { imgEl.onload = resolve; imgEl.onerror = resolve; });
+                        }
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                }
+            }
+            window._assetBatchAbortController = null;
+            if (btn) { btn.disabled = false; btn.textContent = label === 'character' ? '🎬 Char Images' : '🎬 Loc Images'; }
+            if (!ac.signal.aborted) {
+                const activeTab = document.querySelector('.asset-tab[style*="display: block"]') || document.getElementById('asset-chars-tab');
+                if (activeTab) {
+                    if (activeTab.id === 'asset-chars-tab') renderCharacterAssets(_assetStudioData.character_bible || []);
+                    else renderLocationAssets(_assetStudioData.location_bible || []);
+                }
+                if (failCount === 0) {
+                    setAssetProgress(100, `All ${label} images generated!`);
+                    notify('Done', `All ${label} images generated`, '✅');
+                } else if (successCount === 0) {
+                    setAssetProgress(0, `All ${label} images failed`);
+                    notify('Failed', `All ${label} images failed`, '❌');
+                } else {
+                    setAssetProgress(100, `${successCount}/${done} ${label} images generated, ${failCount} failed`);
+                    notify('Partial', `${successCount} images OK, ${failCount} failed`, '⚠️');
+                }
+                setTimeout(hideAssetProgress, 5000);
+            } else {
+                hideAssetProgress();
+            }
+        }
+
+        async function generateAllCharacterImages() {
+            if (!requireProject()) return;
+
+            return _generateBulkImages('char', 'gen-char-img-btn', 'character');
+        }
+
+        async function generateAllLocationImages() {
+            if (!requireProject()) return;
+
+            return _generateBulkImages('loc', 'gen-loc-img-btn', 'location');
+        }
+
+        async function assetGenerateImage(id, type) {
+            id = id || window._currentAssetExpandId;
+            type = type || window._currentAssetExpandType;
+            if (!id) return;
+            if (type === 'char_sheet') {
+                return generateCharacterSheet(id);
+            }
+            if (type === 'loc_sheet') {
+                return generateLocationSheet(id);
+            }
+            const bible = type === 'char'
+                ? (_assetStudioData.character_bible || [])
+                : (_assetStudioData.location_bible || []);
+            const asset = bible.find(x => (x.character_id || x.id || x.location_id) === id);
+            if (!asset) { setAssetCardSpinner(id, type, false); return; }
+
+            const expandBtn = document.getElementById('asset-gen-btn');
+            // Append visual style and film aesthetic to the prompt
+            const expandSpinner = document.getElementById('expand-spinner');
+            if (expandSpinner && id === (window._currentAssetExpandId || '')) {
+                expandSpinner.style.display = 'flex';
+            }
+            if (!asset.image_prompt) {
+                setAssetCardSpinner(id, type, true);
+                if (expandBtn && id === (window._currentAssetExpandId || '')) {
+                    expandBtn.disabled = true;
+                    expandBtn.textContent = '⏳ Generating Prompt...';
+                }
+                notify('Generating Prompt', `Generating LLM prompt for ${id}...`, '📝');
+                try {
+                    const res = await fetch('/api/orchestrator/generate-asset-prompt', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ type, asset, id })
+                    });
+                    const data = await res.json();
+                    if (data.success && data.prompt) {
+                        asset.image_prompt = data.prompt;
+                        scheduleSaveState();
+                        // Update expand modal prompt area if open
+                        const modalPromptArea = document.getElementById('asset-expand-prompt');
+                        if (modalPromptArea && id === (window._currentAssetExpandId || '')) {
+                            modalPromptArea.value = data.prompt;
+                        }
+                    } else {
+                        setAssetCardSpinner(id, type, false);
+                        if (expandBtn && id === (window._currentAssetExpandId || '')) {
+                            expandBtn.disabled = false;
+                            expandBtn.textContent = '🎨 Generate';
+                        }
+                        notify('Prompt Failed', data.error || 'No prompt returned', '⚠️');
+                        return;
+                    }
+                } catch (e) {
+                    setAssetCardSpinner(id, type, false);
+                    if (expandBtn && id === (window._currentAssetExpandId || '')) {
+                        expandBtn.disabled = false;
+                        expandBtn.textContent = '🎨 Generate';
+                    }
+                    notify('Prompt Error', e.message, '⚠️');
+                    return;
+                }
+            }
+
+            // Append visual style and film aesthetic to the prompt
+            let basePrompt = '';
+            const modalPromptArea = document.getElementById('asset-expand-prompt');
+            if (modalPromptArea && id === (window._currentAssetExpandId || '')) {
+                basePrompt = modalPromptArea.value;
+                asset.image_prompt = basePrompt;
+            } else {
+                basePrompt = asset.image_prompt || '';
+            }
+
+            let finalPrompt = basePrompt;
+            const styleSuffix = [];
+            if (selectedVisualStyle) styleSuffix.push(selectedVisualStyle);
+            if (selectedFilmAesthetic) styleSuffix.push(selectedFilmAesthetic);
+            if (styleSuffix.length) {
+                finalPrompt = basePrompt + ", " + styleSuffix.join(", ");
+            }
+
+            if (!basePrompt) { setAssetCardSpinner(id, type, false); notify('No Prompt', 'No image prompt available for this asset', '⚠️'); return; }
+            // Disable the expand-modal btn if it exists for this asset
+            if (expandBtn && id === (window._currentAssetExpandId || '')) { expandBtn.disabled = true; expandBtn.textContent = '⏳ Generating...'; }
+            // Show card spinner
+            setAssetCardSpinner(id, type, true);
+            const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
+            const imgSettings = settings.image_gen || {};
+            const provider = imgSettings.provider || 'comfyui';
+            const model = imgSettings.model || '';
+            const host = imgSettings.host || '';
+            const apiKey = imgSettings.apiKey || '';
+            const workflowName = settings.workflows?.t2i || 'image_z_image_turbo';
+            notify('Generating', `Sending to ${provider}...`, '🎨');
+            // Start progress polling — only stop on 'done' or 'error', never on 'idle'
+            // Start progress polling — only stop on 'done' or 'error', never on 'idle'
+            let pollingActive = true;
+            async function pollProgress() {
+                if (!pollingActive) return;
+                try {
+                    const pRes = await fetch('/api/image/progress');
+                    const p = await pRes.json();
+                    if (p && p.pct !== undefined && p.status === 'running') {
+                        setCardProgress(id, type, p.pct, p.step_label, p.node_label);
+                    } else if (p && (p.status === 'done' || p.status === 'error')) {
+                        pollingActive = false;
+                        return;
+                    }
+                } catch(e) {}
+                if (pollingActive) {
+                    setTimeout(pollProgress, 1500);
+                }
+            }
+            pollProgress();
+            try {
+                const seedOverride = document.getElementById('gen-seed')?.value;
+                const seed = seedOverride ? parseInt(seedOverride) : Math.floor(Math.random() * 999999999) + 1;
+                const cfgVal = parseFloat(document.getElementById('gen-cfg')?.value) || 1.0;
+                const stepsVal = parseInt(document.getElementById('gen-steps')?.value) || 10;
+                const imgResEl = document.getElementById('sel-img-resolution');
+                const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+                const res = await fetch('/api/image/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey, seed: seed, steps: stepsVal, cfg: cfgVal, resolution: imgResolution }),
+                });
+                const data = await res.json();
+                pollingActive = false;
+                setAssetCardSpinner(id, type, false);
+                if (data.success && (data.image_url || data.filename)) {
+                    const tempFilename = data.filename || data.image_url;
+                    const timestamp = Date.now();
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: type === 'char' ? 'characters' : 'locations',
+                            filename: tempFilename,
+                            subfolder: data.subfolder || '',
+                            card_name: id + '_' + timestamp
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const imgUrl = (type === 'char' ? 'characters/' : 'locations/') + id + '_' + timestamp + '.png';
+                        
+                        // Register generation in orchestrator backend
+                        try {
+                            await fetch('/api/assets/register-generation', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ id, type, image_path: imgUrl })
+                            });
+                        } catch (e) {
+                            console.error('Failed to register generation on backend:', e);
+                        }
+                        
+                        // Update expand modal image area if open for this asset
+                        if (expandBtn && id === (window._currentAssetExpandId || '')) {
+                            const imgArea = document.getElementById('asset-expand-image-area');
+                            if (imgArea) imgArea.innerHTML = `<img src="${getAssetImageSrc(imgUrl)}" style="max-width:100%;max-height:100%;border-radius:4px;object-fit:contain;">`;
+                        }
+                        // Save to asset
+                        const assets = type === 'char'
+                            ? (_assetStudioData.character_assets || {})
+                            : (_assetStudioData.location_assets || {});
+                        if (!assets[id]) assets[id] = {};
+                        if (!assets[id].generation_history) assets[id].generation_history = [];
+                        if (!assets[id].generation_history.includes(imgUrl)) {
+                            assets[id].generation_history.push(imgUrl);
+                        }
+                        assets[id].approved_image = imgUrl;
+                        
+                        // Sync with charData / locationData to ensure savedImage is updated
+                        const targetList = type === 'char' ? charData : locationData;
+                        const match = targetList.find(x => (x.character_id || x.location_id) === id);
+                        if (match) {
+                            match.savedImage = imgUrl;
+                        }
+                        
+                        await saveProjectState();
+                        
+                        // Refresh grid cards
+                        if (type === 'char') {
+                            renderCharacterAssets(_assetStudioData.character_bible || []);
+                        } else if (type === 'char_sheet') {
+                            renderCharacterSheets();
+                        } else if (type === 'loc') {
+                            renderLocationAssets(_assetStudioData.location_bible || []);
+                        } else if (type === 'loc_sheet') {
+                            renderLocationSheets();
+                        }
+                        
+                        // Refresh history in modal
+                        const historyEl = document.getElementById('asset-expand-history');
+                        const clearBtn = document.getElementById('clear-asset-history-btn');
+                        if (historyEl) {
+                            const history = assets[id].generation_history;
+                            if (clearBtn) clearBtn.style.display = history.length ? 'inline-block' : 'none';
+                            historyEl.innerHTML = history.map((h, i) => `
+                                <div style="position:relative;width:50px;height:50px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid ${h === imgUrl ? 'var(--accent-primary)' : 'var(--border-color)'};cursor:pointer;" onclick="assetSetActiveFromHistory(${i})" title="Click to set as active">
+<img src="${getAssetImageSrc(h, true)}" style="width:100%;height:100%;object-fit:cover;">
+                                    <div style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:bold;cursor:pointer;" onclick="event.stopPropagation(); deleteAssetHistoryItem(${i})" title="Delete this variant">✕</div>
+                                </div>
+                            `).join('');
+                        }
+                        notify('Generated', 'Image ready for approval', '✅');
+                    } else {
+                        notify('Save Failed', saveData.error || 'Failed to save generated image to project', '❌');
+                    }
+                } else {
+                    notify('Failed', data.error || 'Generation failed', '❌');
+                }
+            } catch (e) {
+                pollingActive = false;
+                setAssetCardSpinner(id, type, false);
+                notify('Error', e.message, '❌');
+            }
+            if (expandSpinner && id === (window._currentAssetExpandId || '')) {
+                expandSpinner.style.display = 'none';
+            }
+            if (expandBtn && id === (window._currentAssetExpandId || '')) { expandBtn.disabled = false; expandBtn.textContent = '🎨 Generate Image'; }
+        }
+
+        function isImageUpscaled(id, type) {
+            const isSheet = type === 'char_sheet' || type === 'loc_sheet';
+            let imgPath = '';
+            if (isSheet) {
+                const sheets = type === 'char_sheet'
+                    ? (_assetStudioData.character_sheets || {})
+                    : (_assetStudioData.location_sheets || {});
+                imgPath = (sheets[id] || {}).sheet_image || '';
+            } else {
+                const assets = type === 'char'
+                    ? (_assetStudioData.character_assets || {})
+                    : (_assetStudioData.location_assets || {});
+                const history = (assets[id] || {}).generation_history || [];
+                if (history.length) {
+                    imgPath = history[history.length - 1];
+                } else {
+                    imgPath = (assets[id] || {}).approved_image || '';
+                }
+            }
+            return imgPath.includes('_4k_');
+        }
+
+        async function assetUpscaleImage(id, type) {
+            id = id || window._currentAssetExpandId;
+            type = type || window._currentAssetExpandType;
+            if (!id) return false;
+            const isSheet = type === 'char_sheet' || type === 'loc_sheet';
+            let targetImg = '';
+            if (isSheet) {
+                const sheets = type === 'char_sheet'
+                    ? (_assetStudioData.character_sheets || {})
+                    : (_assetStudioData.location_sheets || {});
+                targetImg = (sheets[id] || {}).sheet_image || '';
+            } else {
+                const assets = type === 'char'
+                    ? (_assetStudioData.character_assets || {})
+                    : (_assetStudioData.location_assets || {});
+                const history = (assets[id] || {}).generation_history || [];
+                if (history.length) {
+                    targetImg = history[history.length - 1];
+                } else {
+                    targetImg = (assets[id] || {}).approved_image || '';
+                }
+            }
+            if (!targetImg) {
+                notify('Upscale Failed', 'No image to upscale. Generate an image first.', '⚠️');
+                return false;
+            }
+            const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
+            const wf = settings.workflows?.upscale;
+            if (!wf) {
+                notify('Upscale Failed', 'No upscale workflow selected. Set it in Settings > Workflows.', '⚠️');
+                return false;
+            }
+            const imgSettings = settings.image_gen || {};
+            const provider = imgSettings.provider || 'comfyui';
+            const host = imgSettings.host || '';
+            const apiKey = imgSettings.apiKey || '';
+            notify('Upscaling', 'Sending to 4K upscaler...', '🔍');
+            setAssetCardSpinner(id, type, true);
+            let pollingActive = true;
+            async function pollProgress() {
+                if (!pollingActive) return;
+                try {
+                    const pRes = await fetch('/api/image/progress');
+                    const p = await pRes.json();
+                    if (p && p.pct !== undefined && p.status === 'running') {
+                        setCardProgress(id, type, p.pct, p.step_label, p.node_label);
+                    } else if (p && (p.status === 'done' || p.status === 'error')) {
+                        pollingActive = false;
+                        return;
+                    }
+                } catch(e) {}
+                if (pollingActive) setTimeout(pollProgress, 1500);
+            }
+            pollProgress();
+            try {
+                const res = await fetch('/api/image/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider, host, api_key: apiKey, workflow_name: wf,
+                        prompt: 'upscale', width: 1024, height: 1024,
+                        project_path: currentProject?.path || '',
+                        input_images: [targetImg]
+                    })
+                });
+                const data = await res.json();
+                pollingActive = false;
+                setAssetCardSpinner(id, type, false);
+                if (data.success && (data.image_url || data.filename)) {
+                    const tempFilename = data.filename || data.image_url;
+                    const timestamp = Date.now();
+                    const stage = isSheet ? 'character_sheets' : (type === 'char' ? 'characters' : 'locations');
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage,
+                            filename: tempFilename,
+                            subfolder: data.subfolder || '',
+                            card_name: id + '_4k_' + timestamp
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const imgUrl = stage + '/' + id + '_4k_' + timestamp + '.png';
+                        if (isSheet) {
+                            const sheets = type === 'char_sheet'
+                                ? (_assetStudioData.character_sheets || {})
+                                : (_assetStudioData.location_sheets || {});
+                            if (!sheets[id]) sheets[id] = {};
+                            sheets[id].sheet_image = imgUrl;
+                        } else {
+                            const assets = type === 'char'
+                                ? (_assetStudioData.character_assets || {})
+                                : (_assetStudioData.location_assets || {});
+                            if (!assets[id]) assets[id] = {};
+                            if (!assets[id].generation_history) assets[id].generation_history = [];
+                            if (!assets[id].generation_history.includes(imgUrl)) assets[id].generation_history.push(imgUrl);
+                            assets[id].approved_image = imgUrl;
+                        }
+                        notify('Upscaled', '4K upscale complete', '🔍');
+                        if (window._currentAssetExpandId === id) expandAssetItem(type, id);
+                        renderCharacterSheets();
+                        renderLocationSheets();
+                        renderAssetStudio();
+                        return true;
+                    } else {
+                        notify('Upscale Failed', saveData.error || 'Save failed', '❌');
+                        return false;
+                    }
+                } else {
+                    notify('Upscale Failed', data.error || 'Generation failed', '❌');
+                    return false;
+                }
+            } catch (e) {
+                pollingActive = false;
+                setAssetCardSpinner(id, type, false);
+                notify('Upscale Error', e.message, '❌');
+                return false;
+            }
+        }
+
+        function showAssetVariantInput(id, type) {
+            const idProvided = !!id;
+            id = id || window._currentAssetExpandId;
+            type = type || window._currentAssetExpandType;
+            if (!id) return;
+            // Open the expand modal first if it is not open
+            const modal = document.getElementById('asset-expand-modal');
+            if (modal.style.display !== 'flex') {
+                expandAssetItem(type, id);
+            }
+            
+            const area = document.getElementById('asset-variant-input-area');
+            const mainPromptContainer = document.getElementById('asset-expand-prompt')?.parentElement;
+            
+            // If the user clicked the variant button on the card, we always force show the input area
+            if (idProvided || area.style.display !== 'block') {
+                area.style.display = 'block';
+                if (mainPromptContainer) mainPromptContainer.style.display = 'none';
+                const textarea = document.getElementById('asset-variant-instruction');
+                if (textarea) {
+                    textarea.value = '';
+                    textarea.focus();
+                }
+                // Scroll the sidebar container to show the variant area
+                area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } else {
+                area.style.display = 'none';
+                if (mainPromptContainer) mainPromptContainer.style.display = 'block';
+            }
+        }
+
+        async function assetSubmitVariant() {
+            const instruction = document.getElementById('asset-variant-instruction').value.trim();
+            if (!instruction) {
+                notify('Instruction Required', 'Please describe the variant changes you want.', '⚠️');
+                return;
+            }
+            const id = window._currentAssetExpandId;
+            const type = window._currentAssetExpandType;
+            if (!id) return;
+
+            const submitBtn = document.querySelector('#asset-variant-input-area button');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = '⏳ Generating variant prompts...';
+            }
+
+            // Find the asset metadata from the appropriate bible list
+            const bibleType = (type === 'char' || type === 'char_sheet') ? 'char' : 'loc';
+            const bible = bibleType === 'char'
+                ? (_assetStudioData.character_bible || [])
+                : (_assetStudioData.location_bible || []);
+            const asset = bible.find(x => (x.character_id || x.id || x.location_id) === id) || {};
+
+            // Clone asset and inject sheet-specific prompt if generating for turnaround/reference boards
+            const clonedAsset = Object.assign({}, asset);
+            if (type === 'char_sheet') {
+                clonedAsset.image_prompt = currentProject?.settings?.character_sheet_prompt || '';
+            } else if (type === 'loc_sheet') {
+                clonedAsset.image_prompt = currentProject?.settings?.location_sheet_prompt || '';
+            }
+
+            // Retrieve the active image to pass as context
+            const assetsStore = (type === 'char' || type === 'char_sheet')
+                ? (type === 'char' ? (_assetStudioData.character_assets || {}) : (_assetStudioData.character_sheets || {}))
+                : (type === 'loc' ? (_assetStudioData.location_assets || {}) : (_assetStudioData.location_sheets || {}));
+            const info = assetsStore[id] || {};
+            const currentImage = (type === 'char' || type === 'loc') ? (info.approved_image || '') : (info.sheet_image || '');
+
+            try {
+                const res = await fetch('/api/orchestrator/generate-variant', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        type: type,
+                        asset: clonedAsset,
+                        current_image: currentImage,
+                        instruction: instruction
+                    }),
+                });
+                const data = await res.json();
+                if (data.success && data.variants && data.variants.length) {
+                    notify('Variants Generated', '3 prompts generated successfully', '✅');
+                    await loadAssetStudioData();
+                    
+                    const gallery = document.getElementById('asset-expand-variant-gallery');
+                    gallery.innerHTML = '';
+                    gallery.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:8px;width:100%;';
+                    
+                    const header = document.createElement('div');
+                    header.style.cssText = 'font-size:0.75rem;font-weight:600;color:var(--accent-primary);margin-bottom:4px;';
+                    header.textContent = 'Select a variant option to generate the image:';
+                    gallery.appendChild(header);
+
+                    data.variants.forEach((promptText, i) => {
+                        const card = document.createElement('div');
+                        card.style.cssText = 'padding:10px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;gap:6px;';
+                        card.innerHTML = `
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span style="font-size:0.7rem;font-weight:700;color:var(--accent-success);">OPTION ${i+1}</span>
+                                <span style="font-size:0.6rem;color:var(--text-secondary);">Click to generate</span>
+                            </div>
+                            <div style="font-size:0.75rem;color:var(--text-primary);line-height:1.4;font-style:italic;">"${promptText}"</div>
+                        `;
+                        card.onmouseover = function() { this.style.borderColor = 'var(--accent-primary)'; this.style.transform = 'translateY(-1px)'; };
+                        card.onmouseout = function() { this.style.borderColor = 'var(--border-color)'; this.style.transform = 'none'; };
+                        card.onclick = async () => {
+                            // Update the main modal text area and trigger changes
+                            const promptTextArea = document.getElementById('asset-expand-prompt');
+                            if (promptTextArea) {
+                                promptTextArea.value = promptText;
+                                promptTextArea.dispatchEvent(new Event('input'));
+                            }
+                            // Hide variant controls
+                            document.getElementById('asset-variant-input-area').style.display = 'none';
+                            // Restore main prompt container display
+                            const mainPromptContainer = document.getElementById('asset-expand-prompt')?.parentElement;
+                            if (mainPromptContainer) mainPromptContainer.style.display = 'block';
+                            // Immediately call generate!
+                            await assetGenerateImage(id, type);
+                        };
+                        gallery.appendChild(card);
+                    });
+                } else {
+                    notify('Failed', data.error || 'Variant generation failed', '❌');
+                }
+            } catch (e) {
+                notify('Error', e.message, '❌');
+            }
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '✏️ Generate Variant Prompts';
+            }
+            document.getElementById('asset-variant-instruction').value = '';
+        }
+
+        async function assetApprove(id, type) {
+            id = id || window._currentAssetExpandId;
+            type = type || window._currentAssetExpandType;
+            if (!id) return;
+            if (type === 'char_sheet') {
+                return approveCharacterSheet(id);
+            }
+            if (type === 'loc_sheet') {
+                return approveLocationSheet(id);
+            }
+
+            // Upscale warning
+            if (currentProject?.settings?.upscaleWarning !== false && !isImageUpscaled(id, type)) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await assetUpscaleImage(id, type);
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        return;
+                    }
+                }
+            }
+            
+            const assets = type === 'char'
+                ? (_assetStudioData.character_assets || {})
+                : (_assetStudioData.location_assets || {});
+            if (!assets[id]) assets[id] = {};
+            
+            // Set the approved image to the most recent generation
+            const history = assets[id].generation_history || [];
+            let imageToApprove = '';
+            if (history.length) {
+                imageToApprove = history[history.length - 1];
+            } else {
+                imageToApprove = assets[id].approved_image || '';
+            }
+            if (!imageToApprove) {
+                notify('Approval Failed', 'No image found to approve', '❌');
+                return;
+            }
+            
+            try {
+                // Call backend to copy approved image to clean path and update orchestrator graph
+                const res = await fetch('/api/assets/approve-single', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        id: id,
+                        type: type,
+                        image_path: imageToApprove,
+                        project_path: currentProject?.path || ''
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    assets[id].approved = true;
+                    assets[id].approved_image = data.path; // Clean path: e.g. "characters/CHAR_001.png"
+                    
+                    // Sync with charData / locationData to ensure savedImage is updated
+                    const targetList = type === 'char' ? charData : locationData;
+                    const match = targetList.find(x => (x.character_id || x.location_id) === id);
+                    if (match) {
+                        match.savedImage = data.path;
+                    }
+                    
+                    // Add it as a saved asset so it shows up in the left sidebar panel!
+                    addAsset(type === 'char' ? 'character' : 'location', id, data.path);
+                    
+                    notify('Approved', `${id} approved and saved as clean asset`, '✅');
+                    // Post-approval guidance
+                    setTimeout(() => {
+                        const bible = type === 'char' ? (_assetStudioData.character_bible || []) : type === 'loc' ? (_assetStudioData.location_bible || []) : (_assetStudioData.prop_bible || []);
+                        const assets = type === 'char' ? (_assetStudioData.character_assets || {}) : type === 'loc' ? (_assetStudioData.location_assets || {}) : (_assetStudioData.prop_assets || {});
+                        const allDone = bible.every(b => {
+                            const bid = b.character_id || b.location_id || b.prop_id || b.id;
+                            return assets[bid] && assets[bid].approved;
+                        });
+                        if (allDone) {
+                            notify('🎯 Next Step', 'All assets approved! Continue to Storyboard & Video to generate scene images.', 'ℹ️');
+                        } else {
+                            notify('🎯 Next Step', 'Continue approving remaining assets, or generate new variants with ✏️ Variant.', 'ℹ️');
+                        }
+                    }, 600);
+                    
+                    // Refresh UI components locally
+                    renderAssetStudio();
+                    renderCharacterSheets();
+                    renderLocationSheets();
+                    _updateApprovalUI();
+                    
+                    // If the expand modal is open for this asset, refresh it
+                    if (window._currentAssetExpandId === id) {
+                        expandAssetItem(type, id);
+                    }
+                    
+                    // Save state immediately
+                    await saveProjectState();
+                } else {
+                    notify('Approval Failed', data.error || 'Server error', '❌');
+                }
+            } catch(e) {
+                notify('Error', e.message, '❌');
+            }
+        }
+
+        async function approveAllCharacters() {
+            const btn = document.getElementById('approve-chars-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Approving...'; }
+            await fetch('/api/orchestrator/approve-characters', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            });
+            window._assetStudioApprovals.characters = true;
+
+            const bible = _assetStudioData.character_bible || [];
+            const assets = _assetStudioData.character_assets || {};
+            for (const ch of bible) {
+                const cid = ch.character_id || ch.id || '';
+                if (cid && assets[cid]) {
+                    const history = assets[cid].generation_history || [];
+                    const approved = assets[cid].approved || false;
+                    if (history.length && !approved) {
+                        const imageToApprove = history[history.length - 1];
+                        try {
+                            const res = await fetch('/api/assets/approve-single', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    id: cid,
+                                    type: 'char',
+                                    image_path: imageToApprove,
+                                    project_path: currentProject?.path || ''
+                                })
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                                assets[cid].approved = true;
+                                assets[cid].approved_image = data.path;
+                                const match = charData.find(x => (x.character_id || x.id) === cid);
+                                if (match) match.savedImage = data.path;
+                                addAsset('character', cid, data.path);
+                            }
+                        } catch(e) {
+                            console.error(`Failed to approve ${cid}:`, e);
+                        }
+                    }
+                }
+            }
+
+            _updateApprovalUI();
+            renderAssetStudio();
+            renderCharacterSheets();
+            notify('Characters Approved', 'All character images approved and synced', '✅');
+            await saveProjectState();
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve Chars'; }
+        }
+
+        async function approveAllLocations() {
+            const btn = document.getElementById('approve-locs-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Approving...'; }
+            await fetch('/api/orchestrator/approve-locations', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            });
+            window._assetStudioApprovals.locations = true;
+
+            const bible = _assetStudioData.location_bible || [];
+            const assets = _assetStudioData.location_assets || {};
+            for (const loc of bible) {
+                const lid = loc.location_id || loc.id || '';
+                if (lid && assets[lid]) {
+                    const history = assets[lid].generation_history || [];
+                    const approved = assets[lid].approved || false;
+                    if (history.length && !approved) {
+                        const imageToApprove = history[history.length - 1];
+                        try {
+                            const res = await fetch('/api/assets/approve-single', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    id: lid,
+                                    type: 'loc',
+                                    image_path: imageToApprove,
+                                    project_path: currentProject?.path || ''
+                                })
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                                assets[lid].approved = true;
+                                assets[lid].approved_image = data.path;
+                                const match = locationData.find(x => (x.location_id || x.id) === lid);
+                                if (match) match.savedImage = data.path;
+                                addAsset('location', lid, data.path);
+                            }
+                        } catch(e) {
+                            console.error(`Failed to approve ${lid}:`, e);
+                        }
+                    }
+                }
+            }
+
+            _updateApprovalUI();
+            renderAssetStudio();
+            renderLocationSheets();
+            notify('Locations Approved', 'All location images approved and synced', '✅');
+            await saveProjectState();
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve Locs'; }
+        }
+
+        async function deleteAllCharacterImagesHistory() {
+            const confirmed = await showConfirm('Clear Character Images', 'Are you sure you want to delete ALL character images and variants? This will permanently wipe all character files on disk to start fresh.');
+            if (!confirmed) return;
+            const btn = document.getElementById('delete-all-chars-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Clearing...'; }
+
+            try {
+                // 1. Wipe disk files and clear orchestrator memory graph
+                const res = await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/clear-stage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ project_path: currentProject?.path || '', stage: 'characters' })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    notify('Clear Failed', data.error || 'Failed to clear files', '❌');
+                    if (btn) { btn.disabled = false; btn.textContent = '🗑 Clear Chars'; }
+                    return;
+                }
+
+                // 2. Reset frontend local lists
+                if (charData) {
+                    charData.forEach(ch => ch.savedImage = '');
+                }
+                const bible = _assetStudioData?.character_bible || [];
+                for (const ch of bible) {
+                    const cid = ch.character_id || ch.id || '';
+                    const savedAssetIndex = savedAssets.findIndex(sa => sa.name === cid && sa.type === 'character');
+                    if (savedAssetIndex >= 0) {
+                        savedAssets.splice(savedAssetIndex, 1);
+                    }
+                }
+
+                // 3. Reload data from backend memory
+                await loadAssetStudioData();
+                
+                if (window._currentAssetExpandId && window._currentAssetExpandType === 'char') {
+                    expandAssetItem('char', window._currentAssetExpandId);
+                }
+                
+                await saveProjectState();
+                notify('Cleared', 'All character images wiped successfully', '🗑');
+            } catch(e) {
+                console.error("Failed to clear stage characters:", e);
+                notify('Clear Error', e.message, '❌');
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🗑 Clear Chars'; }
+        }
+
+        async function deleteAllLocationImagesHistory() {
+            const confirmed = await showConfirm('Clear Location Images', 'Are you sure you want to delete ALL location images and variants? This will permanently wipe all location files on disk to start fresh.');
+            if (!confirmed) return;
+            const btn = document.getElementById('delete-all-locs-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Clearing...'; }
+
+            try {
+                // 1. Wipe disk files and clear orchestrator memory graph
+                const res = await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/clear-stage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ project_path: currentProject?.path || '', stage: 'locations' })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    notify('Clear Failed', data.error || 'Failed to clear files', '❌');
+                    if (btn) { btn.disabled = false; btn.textContent = '🗑 Clear Locs'; }
+                    return;
+                }
+
+                // 2. Reset frontend local lists
+                if (locationData) {
+                    locationData.forEach(loc => loc.savedImage = '');
+                }
+                const bible = _assetStudioData?.location_bible || [];
+                for (const loc of bible) {
+                    const lid = loc.location_id || loc.id || '';
+                    const savedAssetIndex = savedAssets.findIndex(sa => sa.name === lid && sa.type === 'location');
+                    if (savedAssetIndex >= 0) {
+                        savedAssets.splice(savedAssetIndex, 1);
+                    }
+                }
+
+                // 3. Reload data from backend memory
+                await loadAssetStudioData();
+                
+                if (window._currentAssetExpandId && window._currentAssetExpandType === 'loc') {
+                    expandAssetItem('loc', window._currentAssetExpandId);
+                }
+                
+                await saveProjectState();
+                notify('Cleared', 'All location images wiped successfully', '🗑');
+            } catch(e) {
+                console.error("Failed to clear stage locations:", e);
+                notify('Clear Error', e.message, '❌');
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🗑 Clear Locs'; }
+        }
+
+        async function approveAllCharacterSheets() {
+            const btn = document.getElementById('approve-all-cs-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Approving...'; }
+
+            const bible = _assetStudioData.character_bible || [];
+            const sheets = _assetStudioData.character_sheets || {};
+            for (const ch of bible) {
+                const cid = ch.character_id || ch.id || '';
+                if (cid && sheets[cid]) {
+                    const sheetImage = sheets[cid].sheet_image || '';
+                    const approved = sheets[cid].approved || false;
+                    if (sheetImage && !approved) {
+                        try {
+                            await fetch('/api/orchestrator/save-character-sheet', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ character_id: cid, sheet_image: sheetImage, approved: true })
+                            });
+                            addAsset('sheet', cid + '_sheet', 'character_sheets/approved/' + cid + '.png');
+                        } catch(e) {
+                            console.error(`Failed to approve sheet for ${cid}:`, e);
+                        }
+                    }
+                }
+            }
+
+            await loadAssetStudioData();
+            _updateApprovalUI();
+            renderCharacterSheets();
+            notify('Sheets Approved', 'All character turnaround sheets approved', '✅');
+            await saveProjectState();
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve Chars'; }
+        }
+
+        async function approveAllLocationSheets() {
+            const btn = document.getElementById('approve-all-ls-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Approving...'; }
+
+            const bible = _assetStudioData.location_bible || [];
+            const sheets = _assetStudioData.location_sheets || {};
+            for (const loc of bible) {
+                const lid = loc.location_id || loc.id || '';
+                if (lid && sheets[lid]) {
+                    const sheetImage = sheets[lid].sheet_image || '';
+                    const approved = sheets[lid].approved || false;
+                    if (sheetImage && !approved) {
+                        try {
+                            await fetch('/api/orchestrator/save-location-sheet', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ location_id: lid, sheet_image: sheetImage, approved: true })
+                            });
+                            addAsset('sheet', lid + '_sheet', 'location_sheets/approved/' + lid + '.png');
+                        } catch(e) {
+                            console.error(`Failed to approve reference board for ${lid}:`, e);
+                        }
+                    }
+                }
+            }
+
+            await loadAssetStudioData();
+            _updateApprovalUI();
+            renderLocationSheets();
+            notify('Reference Boards Approved', 'All location reference boards approved', '✅');
+            await saveProjectState();
+            if (btn) { btn.disabled = false; btn.textContent = '✅ Approve Locs'; }
+        }
+
+        async function deleteAllCharacterSheetsHistory() {
+            const confirmed = await showConfirm('Clear Character Sheets', 'Are you sure you want to delete ALL character turnaround sheets and variants? This will permanently wipe all character turnaround sheet files on disk to start fresh.');
+            if (!confirmed) return;
+            const btn = document.getElementById('delete-all-cs-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Clearing...'; }
+
+            try {
+                // 1. Wipe disk files and clear orchestrator memory graph
+                const res = await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/clear-stage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ project_path: currentProject?.path || '', stage: 'character_sheets' })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    notify('Clear Failed', data.error || 'Failed to clear files', '❌');
+                    if (btn) { btn.disabled = false; btn.textContent = '🗑 Clear Chars'; }
+                    return;
+                }
+
+                // 2. Reset frontend local lists
+                const bible = _assetStudioData?.character_bible || [];
+                for (const ch of bible) {
+                    const cid = ch.character_id || ch.id || '';
+                    const savedAssetIndex = savedAssets.findIndex(sa => sa.name === cid + '_sheet' && sa.type === 'sheet');
+                    if (savedAssetIndex >= 0) {
+                        savedAssets.splice(savedAssetIndex, 1);
+                    }
+                }
+
+                // 3. Reload data from backend memory
+                await loadAssetStudioData();
+                
+                if (window._currentAssetExpandId && window._currentAssetExpandType === 'char_sheet') {
+                    expandAssetItem('char_sheet', window._currentAssetExpandId);
+                }
+
+                await saveProjectState();
+                notify('Cleared', 'All character turnaround sheets wiped successfully', '🗑');
+            } catch(e) {
+                console.error("Failed to clear stage character_sheets:", e);
+                notify('Clear Error', e.message, '❌');
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🗑 Clear Chars'; }
+        }
+
+        async function deleteAllLocationSheetsHistory() {
+            const confirmed = await showConfirm('Clear Location Boards', 'Are you sure you want to delete ALL location reference boards and variants? This will permanently wipe all location reference board files on disk to start fresh.');
+            if (!confirmed) return;
+            const btn = document.getElementById('delete-all-ls-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Clearing...'; }
+
+            try {
+                // 1. Wipe disk files and clear orchestrator memory graph
+                const res = await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/clear-stage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ project_path: currentProject?.path || '', stage: 'location_sheets' })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    notify('Clear Failed', data.error || 'Failed to clear files', '❌');
+                    if (btn) { btn.disabled = false; btn.textContent = '🗑 Clear Locs'; }
+                    return;
+                }
+
+                // 2. Reset frontend local lists
+                const bible = _assetStudioData?.location_bible || [];
+                for (const loc of bible) {
+                    const lid = loc.location_id || loc.id || '';
+                    const savedAssetIndex = savedAssets.findIndex(sa => sa.name === lid + '_sheet' && sa.type === 'sheet');
+                    if (savedAssetIndex >= 0) {
+                        savedAssets.splice(savedAssetIndex, 1);
+                    }
+                }
+
+                // 3. Reload data from backend memory
+                await loadAssetStudioData();
+                
+                if (window._currentAssetExpandId && window._currentAssetExpandType === 'loc_sheet') {
+                    expandAssetItem('loc_sheet', window._currentAssetExpandId);
+                }
+
+                await saveProjectState();
+                notify('Cleared', 'All location reference boards wiped successfully', '🗑');
+            } catch(e) {
+                console.error("Failed to clear stage location_sheets:", e);
+                notify('Clear Error', e.message, '❌');
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🗑 Clear Locs'; }
+        }
+
+        async function assetGenerateTurnaround() {
+            const id = window._currentAssetExpandId;
+            if (!id) return;
+            const btn = document.getElementById('asset-turnaround-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
+            try {
+                const res = await fetch('/api/orchestrator/generate-turnaround', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ character_id: id }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('Turnaround', data.turnaround_request.prompt.substring(0, 60) + '...', '📋');
+                } else {
+                    notify('Failed', data.error || 'Turnaround generation failed', '❌');
+                }
+            } catch (e) {
+                notify('Error', e.message, '❌');
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '📋 Turnaround'; }
+        }
+
+        function _updateApprovalUI() {
+            const ap = window._assetStudioApprovals || {};
+            // Compute per-type counts
+            const charBible = _assetStudioData?.character_bible || [];
+            const locBible = _assetStudioData?.location_bible || [];
+            const charAssets = _assetStudioData?.character_assets || {};
+            const locAssets = _assetStudioData?.location_assets || {};
+            let charPending = 0, charApproved = 0;
+            charBible.forEach(ch => {
+                const id = ch.character_id || ch.id || '';
+                const info = charAssets[id] || {};
+                if (info.approved) charApproved++;
+                else charPending++;
+            });
+            let locPending = 0, locApproved = 0;
+            locBible.forEach(loc => {
+                const id = loc.location_id || loc.id || '';
+                const info = locAssets[id] || {};
+                if (info.approved) locApproved++;
+                else locPending++;
+            });
+            document.getElementById('asset-char-pending-badge').textContent = `⏳ Pending(${charPending})`;
+            document.getElementById('asset-char-approved-badge').textContent = `✅ Approved(${charApproved})`;
+            document.getElementById('asset-loc-pending-badge').textContent = `⏳ Pending(${locPending})`;
+            document.getElementById('asset-loc-approved-badge').textContent = `✅ Approved(${locApproved})`;
+            const allCharsApproved = charBible.length > 0 && charBible.every(ch => {
+                const id = ch.character_id || ch.id || '';
+                return !!(charAssets[id]?.approved);
+            });
+            const allLocsApproved = locBible.length > 0 && locBible.every(loc => {
+                const id = loc.location_id || loc.id || '';
+                return !!(locAssets[id]?.approved);
+            });
+            const proceedBtn = document.getElementById('proceed-to-storyboard-btn');
+            if (allCharsApproved && allLocsApproved) {
+                proceedBtn.disabled = false;
+                proceedBtn.style.opacity = '1';
+            } else {
+                proceedBtn.disabled = true;
+                proceedBtn.style.opacity = '0.5';
+            }
+        }
+        function proceedToStoryboard() {
+            const charBible = _assetStudioData?.character_bible || [];
+            const locBible = _assetStudioData?.location_bible || [];
+            const charAssets = _assetStudioData?.character_assets || {};
+            const locAssets = _assetStudioData?.location_assets || {};
+            const allCharsApproved = charBible.length > 0 && charBible.every(ch => {
+                const id = ch.character_id || ch.id || '';
+                return !!(charAssets[id]?.approved);
+            });
+            const allLocsApproved = locBible.length > 0 && locBible.every(loc => {
+                const id = loc.location_id || loc.id || '';
+                return !!(locAssets[id]?.approved);
+            });
+            if (!allCharsApproved || !allLocsApproved) {
+                alert('Please approve characters and locations first.');
+                return;
+            }
+            navigateToWorkflow('storyboard');
+            if (!imagePromptData.length) setTimeout(() => generateStoryboardPromptsPhase(), 300);
+        }
+
+        function proceedToVideoPrompts() {
+            navigateToWorkflow('video-prompts');
+            if (!videoPromptData.length) setTimeout(() => generateVideoPrompts(), 300);
+        }
+
+        function cleanAssetPath(savedImage, defaultFolder) {
+            if (!savedImage) return '';
+            let p = savedImage;
+            if (p.startsWith('characters/') || p.startsWith('locations/') || p.startsWith('character_sheets/') || p.startsWith('location_sheets/')) {
+                p = p.split('/').slice(1).join('/');
+            }
+            if (p.endsWith('.png')) {
+                p = p.slice(0, -4);
+            }
+            if (p.startsWith('approved/')) {
+                return defaultFolder + '/' + p + '.png';
+            }
+            let basename = p;
+            const lastUnderscore = p.lastIndexOf('_');
+            if (lastUnderscore !== -1) {
+                basename = p.substring(0, lastUnderscore);
+            }
+            return defaultFolder + '/approved/' + basename + '.png';
+        }
+
+        // Match an asset by its ID field (character_id/location_id), falling back
+        // to other id-ish fields or the ID embedded in the savedImage path.
+        function assetMatches(asset, id, idKey) {
+            if (!id) return true;
+            return asset[idKey] === id
+                || asset.id === id
+                || asset.name === id
+                || (asset.savedImage && asset.savedImage.includes('/' + id + '.'));
+        }
+
+        function getSavedInputImages(targetChars = null, targetLocation = null) {
+            const paths = [];
+            const push = (p) => { if (p && !paths.includes(p)) paths.push(p); };
+            // Approved portraits first — they anchor identity (character) and
+            // environment (location) far better than multi-panel sheets.
+            charData.filter(c => c.savedImage && (!targetChars || targetChars.some(id => assetMatches(c, id, 'character_id')))).forEach(c => {
+                push(cleanAssetPath(c.savedImage, 'characters'));
+            });
+            locationData.filter(l => l.savedImage && assetMatches(l, targetLocation, 'location_id')).forEach(l => {
+                push(cleanAssetPath(l.savedImage, 'locations'));
+            });
+            // Add approved character/location sheet images for I2I reference
+            if (_assetStudioData && _assetStudioData.character_sheets) {
+                Object.entries(_assetStudioData.character_sheets).forEach(([id, s]) => {
+                    if (s.approved && s.sheet_image && (!targetChars || targetChars.some(cid => s.character_id === cid || s.name === cid || id === cid))) {
+                        push(s.sheet_image);
+                    }
+                });
+            }
+            if (_assetStudioData && _assetStudioData.location_sheets) {
+                Object.entries(_assetStudioData.location_sheets).forEach(([id, s]) => {
+                    if (s.approved && s.sheet_image && assetMatches(s, targetLocation, 'location_id')) {
+                        push(s.sheet_image);
+                    }
+                });
+            }
+            return paths;
+        }
+
+        async function generateAllStoryboard() {
+            if (!requireProject()) return;
+            for (let i = 0; i < imagePromptData.length; i++) {
+                const btn = document.getElementById(`scene-t2i-btn-${i}`);
+                if (!btn || btn.disabled || btn.style.display === 'none') continue;
+                await generateSceneI2I(i);
+            }
+        }
+
+        async function generateSceneI2I(index) {
+            const btn = document.getElementById(`scene-t2i-btn-${index}`);
+            if (!btn) return;
+            const scenePrompt = sceneImageData[index]?.prompt || imagePromptData[index];
+            if (!scenePrompt || !scenePrompt.trim()) {
+                notify('No Prompt', 'Write an image prompt first'); return;
+            }
+            // Build an enriched prompt with character & location context
+            const savedChars = charData.filter(c => c.savedImage).map(c => {
+                let clean = c.savedImage;
+                if (clean.includes('/')) clean = clean.split('/').pop();
+                if (clean.endsWith('.png')) clean = clean.slice(0, -4);
+                return {
+                    name: c.name || 'Unknown',
+                    description: c.description || '',
+                    savedImage: clean
+                };
+            });
+            const savedLocs = locationData.filter(l => l.savedImage).map(l => {
+                let clean = l.savedImage;
+                if (clean.includes('/')) clean = clean.split('/').pop();
+                if (clean.endsWith('.png')) clean = clean.slice(0, -4);
+                return {
+                    name: l.name || 'Unknown',
+                    type: l.type || '',
+                    details: l.details || '',
+                    savedImage: clean
+                };
+            });
+            let enrichedPrompt = scenePrompt;
+            if (savedLocs.length) {
+                enrichedPrompt += `\n\nThe environment image provided is: "${savedLocs[0].savedImage}.png". Environment description: ${savedLocs[0].type ? 'Type: ' + savedLocs[0].type + '. ' : ''}${savedLocs[0].details || ''}.`;
+            }
+            if (savedChars.length) {
+                enrichedPrompt += `\n\nCharacter reference images provided: ${savedChars.map(c => `"${c.savedImage}.png" (${c.name}: ${c.description})`).join(', ')}. The character should match the appearance shown in these reference images.`;
+            }
+            btn.disabled = true;
+            btn.textContent = '⏳...';
+            showSceneT2ISpinner(index);
+            const seed = Math.floor(Math.random() * 999999999) + 1;
+            const inputImages = getSavedInputImages();
+            const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
+            const imgResEl = document.getElementById('sel-img-resolution');
+            const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+            const stepsVal = parseInt(document.getElementById('storyboard-expand-steps')?.value) || currentProject?.settings?.steps || 10;
+            const cfgVal = parseFloat(document.getElementById('storyboard-expand-cfg')?.value) || currentProject?.settings?.cfg || 1.0;
+            try {
+                const res = await fetch('/api/comfyui/generate/i2i', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: enrichedPrompt,
+                        seed: seed,
+                        steps: stepsVal,
+                        cfg: cfgVal,
+                        project_path: currentProject?.path || '',
+                        input_images: inputImages,
+                        aspect_ratio: aspectRatio,
+                        resolution: imgResolution
+                    })
+                });
+                const data = await res.json();
+                hideSceneT2ISpinner(index);
+                if (data.success) {
+                    showSceneT2IPreview(index, data.filename);
+                } else {
+                    notify('I2I Failed', data.error || 'Generation failed');
+                    btn.disabled = false;
+                    btn.textContent = '🎨 Generate';
+                }
+            } catch(e) {
+                notify('Error', e.message);
+                btn.disabled = false;
+                btn.textContent = '🎨 Generate';
+                hideSceneT2ISpinner(index);
+            }
+        }
+
+
+        /* ── Reference Viewer Helper Functions ─────────── */
+        function renderRefThumbnail(image, label, type, onClick) {
+            if (image) {
+                return `<div class="ref-thumb ${type}" onclick="event.stopPropagation();${onClick}" title="${escapeHtml(label)}">
+                    <img src="${image}" alt="${escapeHtml(label)}" loading="lazy" onerror="this.style.display='none'">
+                    <div class="ref-thumb-label">${escapeHtml(label)}</div>
+                </div>`;
+            }
+            return `<div class="ref-thumb-missing ${type}">
+                <span style="font-size:1.1rem;">⚠️</span>
+                <span>${type === 'character' ? 'No Character Ref' : 'No Location Ref'}</span>
+            </div>`;
+        }
+
+        function renderCharacterRefStrip(charNames, projName, projectPathQuery) {
+            const chars = (charNames || [])
+                .map(name => charData.find(c => c.name === name))
+                .filter(Boolean);
+            if (!chars.length) return '';
+            let html = '<div class="ref-section"><div class="ref-section-header"><span>👤 Character References</span></div><div class="ref-strip">';
+            chars.forEach(c => {
+                let imgSrc = null;
+                if (c.savedImage) {
+                    let clean = c.savedImage;
+                    if (clean.includes('/')) clean = clean.split('/').pop();
+                    else clean = clean.replace(/\s+/g, '_') + '.png';
+                    imgSrc = `/api/projects/${encodeURIComponent(projName)}/saved-image/characters/${encodeURIComponent(clean)}${projectPathQuery}`;
+                }
+                html += renderRefThumbnail(imgSrc, c.name, 'character', `openFullscreenImage('${imgSrc}')`);
+            });
+            html += '</div></div>';
+            return html;
+        }
+
+        function renderLocationRefStrip(locationName, projName, projectPathQuery) {
+            if (!locationName) return '';
+            const loc = locationData.find(l => l.name === locationName);
+            if (!loc) return '';
+            let imgSrc = null;
+            if (loc.savedImage) {
+                let clean = loc.savedImage;
+                if (clean.includes('/')) clean = clean.split('/').pop();
+                else clean = clean.replace(/\s+/g, '_') + '.png';
+                imgSrc = `/api/projects/${encodeURIComponent(projName)}/saved-image/locations/${encodeURIComponent(clean)}${projectPathQuery}`;
+            }
+            let html = '<div class="ref-section"><div class="ref-section-header"><span>📍 Location Reference</span></div><div class="ref-strip">';
+            html += renderRefThumbnail(imgSrc, loc.name, 'location', `openFullscreenImage('${imgSrc}')`);
+            html += '</div></div>';
+            return html;
+        }
+
+        function renderStoryboard() {
+            const container = document.getElementById('storyboard-container');
+            if (!container) return;
+            initPrevFrameRefToggle();
+
+            if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.length) {
+                container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
+                return;
+            }
+
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+            const totalShots = screenplayData.scenes.reduce((sum, s) => sum + (s.shots ? s.shots.length : 0), 0);
+            
+            const countLabel = document.getElementById('storyboard-count-label');
+            if (countLabel) countLabel.textContent = totalShots;
+
+            if (totalShots === 0) {
+                container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Shots have not been generated yet. Please generate shots in the Screenplay page first.</div>';
+                return;
+            }
+
+            let html = '<div style="display:flex;flex-direction:column;gap:12px;">';
+
+            screenplayData.scenes.forEach((s, sceneIdx) => {
+                const chars = (s.characters_present || []).join(', ') || '';
+                const timeOfDay = s.time_of_day || 'Day';
+                const sceneId = s.scene_id || '#' + (s.scene_number || (sceneIdx + 1));
+
+                // Row matching Screenplay layout
+                html += `<div data-scene-idx="${sceneIdx}" style="display:flex;gap:12px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color);padding:12px;">`;
+
+                // === LEFT: Scene Info Column (~280px) ===
+                html += `
+                    <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;">
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <strong style="color:var(--accent-primary);font-size:0.85rem;">${sceneId}</strong>
+                            <span style="font-size:0.8rem;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.scene_title || '')}</span>
+                        </div>
+                        <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.6;display:flex;flex-direction:column;gap:6px;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);">
+                            <div>📍 <strong>Location:</strong> ${escapeHtml(s.location_id || '—')}</div>
+                            <div>👥 <strong>Characters:</strong> ${escapeHtml(chars || '—')}</div>
+                            <div>🌅 <strong>Time:</strong> ${escapeHtml(timeOfDay)}</div>
+                            <div>🎭 <strong>Tone:</strong> ${escapeHtml(s.emotional_tone || '—')}</div>
+                        </div>
+                        <div style="font-size:0.75rem;color:var(--text-secondary);font-style:italic;line-height:1.4;background:var(--bg-tertiary);padding:8px;border-radius:6px;border:1px solid var(--border-color);flex:1;min-height:50px;overflow-y:auto;">
+                            ${escapeHtml(s.synopsis || 'No synopsis.')}
+                        </div>
+
+                        ${s.shots && s.shots.length > 0 ? `<div style="display:flex;gap:3px;flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" id="scene-gen-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;" title="Generate images">🎨 Gen Img</button>
+                            ${(() => {
+                                const hasTemp = s.shots.some(sh => sh._temp_storyboard_image);
+                                return `<button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" id="scene-app-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;${hasTemp ? '' : 'opacity:0.4;pointer-events:none;'}" title="Approve images">✅ App Img</button>`;
+                            })()}
+                            ${(() => {
+                                const hasGenerated = s.shots.some(sh => sh._temp_storyboard_image || sh.storyboard_image);
+                                return `<button class="btn btn-primary" onclick="event.stopPropagation();verifySceneConsistency(${sceneIdx})" id="scene-verify-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;${hasGenerated ? '' : 'opacity:0.4;pointer-events:none;'}" title="Verify scene visual consistency">👁️ Vrfy Scene</button>`;
+                            })()}
+                            ${s.shots.some(sh => sh.storyboard_image || sh._temp_storyboard_image) ? `<button class="btn btn-secondary" onclick="event.stopPropagation();storyboardUpscaleScene(${sceneIdx})" style="padding:3px 6px;font-size:0.6rem;" title="Upscale all scene images to 4K">🔍 4K</button>` : ''}
+                            ${(() => {
+                                const allApproved = s.shots.every(sh => sh.storyboard_status === 'approved');
+                                const hasTempVideos = s.shots.some(sh => sh._temp_video_clip);
+                                return `
+                                    <button class="btn btn-primary" onclick="event.stopPropagation();generateSceneVideos(${sceneIdx})" id="scene-vid-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;${allApproved ? '' : 'opacity:0.4;pointer-events:none;'}" title="Generate videos">🎥 Gen Vid</button>
+                                    <button class="btn btn-success" onclick="event.stopPropagation();approveSceneVideos(${sceneIdx})" id="scene-vapp-btn-${sceneIdx}" style="padding:3px 6px;font-size:0.6rem;${allApproved && hasTempVideos ? '' : 'opacity:0.4;pointer-events:none;'}" title="Approve videos">✔️ App Vid</button>
+                                `;
+                            })()}
+                        </div>` : ''}
+                        <!-- Scene-level CFG / Steps / Seed -->
+                        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:5px 0 0 0;font-size:0.65rem;">
+                            <span style="color:var(--text-secondary);font-weight:600;">CFG:</span>
+                            <input type="number" id="scene-cfg-${sceneIdx}" style="width:40px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.65rem;" value="1.0" min="0.5" max="15.0" step="0.5">
+                            <span style="color:var(--text-secondary);">St:</span>
+                            <input type="number" id="scene-steps-${sceneIdx}" style="width:35px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.65rem;" value="8" min="1" max="150" step="1">
+                            <span style="color:var(--text-secondary);">Seed:</span>
+                            <input type="number" id="scene-seed-${sceneIdx}" style="width:60px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.65rem;" placeholder="rnd" min="0" step="1">
+                            <button class="btn btn-secondary" onclick="sceneApplySettings(${sceneIdx})" style="padding:2px 6px;font-size:0.6rem;" title="Apply to all shots in this scene">📥 Apply</button>
+                            <button class="btn btn-secondary" onclick="document.getElementById('scene-cfg-${sceneIdx}').value='1.0';document.getElementById('scene-steps-${sceneIdx}').value='8';document.getElementById('scene-seed-${sceneIdx}').value='';sceneApplySettings(${sceneIdx})" style="padding:2px 6px;font-size:0.6rem;" title="Reset scene">↺ Rst</button>
+                        </div>
+                    </div>`;
+
+                // === RIGHT: Shot Cards Grid (CSS Grid matching asset studio) ===
+                html += `<div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">`;
+
+                if (s.shots && s.shots.length > 0) {
+                    s.shots.forEach((sh, shotIdx) => {
+                        const shotKey = `${sceneIdx}_${shotIdx}`;
+                        
+                        // Status
+                        const imgStatus = sh.storyboard_status || 'pending';
+                        const vidStatus = sh.video_status || 'pending';
+                        const imgStatusColor = imgStatus === 'approved' ? '#4caf50' : (imgStatus === 'generated' ? '#ff9800' : '#555');
+                        const vidStatusColor = vidStatus === 'approved' ? '#4caf50' : (vidStatus === 'generated' ? '#ff9800' : '#555');
+                        
+                        // Character + Location names for reference strips
+                        const shotCharNames = sh.characters_present || s.characters_present || [];
+
+                        // Image URLs
+                        const savedImg = sh.storyboard_image;
+                        const tempImg = sh._temp_storyboard_image;
+                        const imageUrl = savedImg 
+                            ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
+                            : tempImg 
+                                ? tempImg.includes('/')
+                                    ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}`
+                                    : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
+                                : null;
+                        const thumbUrl = savedImg 
+                            ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}${projectPathQuery ? '&' : '?'}thumbnail=true`
+                            : tempImg 
+                                ? tempImg.includes('/')
+                                    ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}&thumbnail=true`
+                                    : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}&thumbnail=true`
+                                : null;
+
+                        // Video URLs
+                        const savedVid = sh.video_clip;
+                        const tempVid = sh._temp_video_clip;
+                        const tempSub = sh._temp_video_subfolder;
+                        const videoUrl = savedVid 
+                            ? `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(savedVid)}${projectPathQuery}`
+                            : tempVid 
+                                ? `/api/comfyui/view?filename=${encodeURIComponent(tempVid)}${tempSub ? '&subfolder=' + encodeURIComponent(tempSub) : ''}`
+                                : null;
+
+                        // Single preview: video replaces image when generated
+                        let previewContent = '';
+                        const hasVideo = !!(savedVid || tempVid);
+                        const hasImage = !!(savedImg || tempImg);
+                        if (hasVideo) {
+                            previewContent = `<video id="shot-preview-video-${sceneIdx}-${shotIdx}" src="${videoUrl}" poster="${thumbUrl || ''}" preload="metadata" loop muted style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="event.stopPropagation(); expandStoryboardShot(${sceneIdx}, ${shotIdx})"></video>`;
+                        } else if (hasImage) {
+                            previewContent = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${thumbUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage('${imageUrl}')" data-filename="${tempImg || ''}" loading="lazy">`;
+                        } else {
+                            previewContent = `<span style="color:var(--text-secondary);font-size:0.7rem;">No Image Generated</span>`;
+                        }
+
+                        html += `
+                        <div id="shot-card-${shotKey}" style="background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border-color);display:flex;flex-direction:column;padding:8px;position:relative;cursor:pointer;" onclick="expandStoryboardShot(${sceneIdx}, ${shotIdx})">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                                <span style="font-size:0.65rem;color:var(--accent-primary);font-weight:600;">${sh.shot_id || 'SHOT_?'}</span>
+                                <span style="font-size:0.6rem;color:var(--text-secondary);">${sh.shot_type || ''}</span>
+                                <div style="display:flex;gap:4px;align-items:center;">
+                                    <span style="font-size:0.55rem;padding:1px 5px;border-radius:3px;background:${imgStatusColor};color:#fff;font-weight:600;" title="Image status">🖼 ${imgStatus}</span>
+                                    <span style="font-size:0.55rem;padding:1px 5px;border-radius:3px;background:${vidStatusColor};color:#fff;font-weight:600;" title="Video status">🎬 ${vidStatus}</span>
+                                </div>
+                            </div>
+                            <!-- Shared preview area: image first, video replaces when generated -->
+                            <div id="shot-preview-${sceneIdx}-${shotIdx}" onmouseover="const v=this.querySelector('video'); if(v) v.play().catch(()=>{});" onmouseout="const v=this.querySelector('video'); if(v) { v.pause(); v.currentTime=0; }" style="height:150px;background:var(--bg-primary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;margin-bottom:6px;">
+                                ${previewContent}
+                                ${hasVideo ? `<span style="position:absolute;top:4px;left:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:var(--accent-primary);z-index:2;">🎬 VIDEO</span>` : (hasImage ? `<span style="position:absolute;top:4px;left:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:#34495e;z-index:2;">🖼️ IMAGE</span>` : '')}
+                                <span id="shot-res-badge-${sceneIdx}-${shotIdx}" style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${hasImage ? ((sh._temp_upscaled_file||savedImg||tempImg||'').includes('_4k_') ? '#e74c3c' : '#222') : 'transparent'};z-index:2;">${hasImage ? getResolutionLabel(sh._temp_upscaled_file||savedImg||tempImg) : ''}</span>
+                                ${sh.consistency_eval ? `<div class="consistency-badge" style="position:absolute;bottom:5px;right:5px;padding:3px 7px;border-radius:4px;font-size:0.65rem;font-weight:bold;z-index:10;background:${sh.consistency_eval.passed ? 'rgba(0,180,0,0.85)' : 'rgba(220,0,0,0.85)'};color:white;cursor:help;" title="${escapeHtml(sh.consistency_eval.feedback || '')}${sh.consistency_eval.retried ? ` (retried ${Math.max(0, (sh.consistency_eval.attempts || 1) - 1)}×)` : ''}">${sh.consistency_eval.score}/10 ${sh.consistency_eval.passed ? '✅' : '❌'}${sh.consistency_eval.retried ? ' ⟳' : ''}</div>` : ''}
+                            </div>
+                            <!-- Compact button row -->
+                            <div style="display:flex;gap:2px;padding:3px 0;flex-wrap:wrap;">
+                                <button class="btn btn-secondary" onclick="event.stopPropagation();expandStoryboardShot(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Inspect">⛶ Open</button>
+                                ${!savedImg && !tempImg ? `
+                                    <button class="btn btn-primary" onclick="event.stopPropagation();generateShotImage(${sceneIdx}, ${shotIdx})" id="shot-t2i-btn-${sceneIdx}-${shotIdx}" style="padding:3px 5px;font-size:0.55rem;" title="Generate Image">🎨 Gen</button>
+                                    <button class="btn btn-danger" onclick="event.stopPropagation();cancelSceneBatch()" id="shot-abort-btn-${sceneIdx}-${shotIdx}" style="padding:3px 5px;font-size:0.55rem;display:none;background:#d32f2f;color:#fff;border:none;" title="Abort Active Queue">✕ Cancel</button>
+                                ` : ''}
+                                ${hasImage ? `<button class="btn btn-secondary" onclick="event.stopPropagation();regenerateShotImage(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Regenerate with a new random seed">🔄 Redo</button>` : ''}
+                                <button class="btn btn-secondary" onclick="event.stopPropagation();showStoryboardVariantInput(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Variants">✏️ Var</button>
+                                ${hasImage ? `<button class="btn btn-secondary" onclick="event.stopPropagation();storyboardUpscaleImage(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Upscale to 4K">🔍 4K</button>` : ''}
+                                <button class="btn btn-success" onclick="event.stopPropagation();approveShotImage(${sceneIdx}, ${shotIdx})" style="padding:3px 5px;font-size:0.55rem;" title="Approve" ${tempImg ? '' : 'disabled'}>✅ App</button>
+                                ${savedImg ? `<button class="btn btn-primary" onclick="event.stopPropagation();generateShotVideo(${sceneIdx}, ${shotIdx})" id="shot-i2v-btn-${sceneIdx}-${shotIdx}" style="padding:3px 5px;font-size:0.55rem;" title="Generate Video">🎥 Vid</button>` : ''}
+                            </div>
+                            <!-- Dialogue preview area to fill empty space -->
+                            <div style="margin:4px 0;padding:5px;background:var(--bg-secondary);border-radius:4px;border-left:2px solid var(--accent-primary);min-height:38px;max-height:60px;overflow-y:auto;display:flex;flex-direction:column;justify-content:center;">
+                                ${sh.dialogue && sh.dialogue.length > 0 
+                                    ? sh.dialogue.map(d => `<div style="font-size:0.65rem;line-height:1.3;color:var(--text-primary);"><strong style="color:var(--accent-primary);">${escapeHtml(d.speaker || '')}:</strong> "${escapeHtml(d.text || '')}"</div>`).join('')
+                                    : `<div style="font-size:0.6rem;color:var(--text-secondary);font-style:italic;text-align:center;">🎬 Visual transition / No dialogue</div>`
+                                }
+                            </div>
+                            ${renderLocationRefStrip(s.location_id, projName, projectPathQuery)}
+                            ${renderCharacterRefStrip(shotCharNames, projName, projectPathQuery)}
+                        </div>`;
+                    });
+                } else {
+                    html += `<div style="color:var(--text-secondary);font-size:0.8rem;padding:20px;">No shots in this scene.</div>`;
+                }
+
+                html += `</div>`; // end right
+                html += `</div>`; // end scene row
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+
+            // Update Generate All Videos button state
+            const allImagesApproved = screenplayData.scenes.every(s =>
+                !s.shots || s.shots.every(sh => sh.storyboard_status === 'approved')
+            );
+            const vidBtn = document.getElementById('sb-generate-all-videos-btn');
+            const vappBtn = document.getElementById('sb-approve-all-videos-btn');
+            if (vidBtn) {
+                if (allImagesApproved && totalShots > 0) {
+                    vidBtn.style.opacity = '1';
+                    vidBtn.style.pointerEvents = 'auto';
+                } else {
+                    vidBtn.style.opacity = '0.4';
+                    vidBtn.style.pointerEvents = 'none';
+                }
+            }
+            if (vappBtn) {
+                if (allImagesApproved && totalShots > 0) {
+                    vappBtn.style.opacity = '1';
+                    vappBtn.style.pointerEvents = 'auto';
+                } else {
+                    vappBtn.style.opacity = '0.4';
+                    vappBtn.style.pointerEvents = 'none';
+                }
+            }
+        }
+
+        async function regenerateShotImage(sceneIdx, shotIdx) {
+            const sh = screenplayData.scenes[sceneIdx].shots[shotIdx];
+            sh.storyboard_image = null;
+            sh._temp_storyboard_image = null;
+            sh._temp_upscaled_file = null;
+            sh.storyboard_status = 'pending';
+            
+            // Set a fresh random seed for this shot to ensure it generates a different image
+            const newSeed = Math.floor(Math.random() * 999999999) + 1;
+            sh._genSeed = newSeed;
+            
+            renderStoryboard();
+            scheduleSaveState();
+            
+            // Automatically launch the image generator immediately with the new seed settings
+            await generateShotImage(sceneIdx, shotIdx);
+        }
+
+        function regenerateShotVideo(sceneIdx, shotIdx) {
+            const sh = screenplayData.scenes[sceneIdx].shots[shotIdx];
+            sh.video_clip = null;
+            sh.video_status = 'pending';
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        function showShotSpinner(sceneIdx, shotIdx, label) {
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
+            if (!preview) return;
+            const badge = preview.querySelector('.consistency-badge');
+            preview.innerHTML = `<div class="t2i-spinner"><div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">${label || 'Generating...'}</div></div>`;
+            if (badge) preview.appendChild(badge);
+        }
+
+        function hideShotSpinner(sceneIdx, shotIdx) {
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
+            if (!preview) return;
+            const spinner = preview.querySelector('.t2i-spinner');
+            if (spinner) spinner.remove();
+        }
+
+        function getResolutionLabel(filename) {
+            if (filename && filename.includes('_4k_')) return '4K';
+            const res = document.getElementById('sel-img-resolution')?.value || currentProject?.settings?.imgResolution || '1024x576';
+            const labels = { '3840x2160': '4K', '1920x1080': '1080p', '1280x720': '720p' };
+            return labels[res] || res;
+        }
+
+        function updateConsistencyBadge(sceneIdx, shotIdx) {
+            const sh = screenplayData?.scenes?.[sceneIdx]?.shots?.[shotIdx];
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
+            if (!preview) return;
+            preview.querySelectorAll('.consistency-badge').forEach(b => b.remove());
+            if (!sh || !sh.consistency_eval) return;
+            const ev = sh.consistency_eval;
+            const badge = document.createElement('div');
+            badge.className = 'consistency-badge';
+            badge.style.cssText = `position:absolute;bottom:5px;right:5px;padding:3px 7px;border-radius:4px;font-size:0.65rem;font-weight:bold;z-index:10;background:${ev.passed ? 'rgba(0,180,0,0.85)' : 'rgba(220,0,0,0.85)'};color:white;cursor:help;`;
+            badge.textContent = `${ev.score}/10 ${ev.passed ? '✅' : '❌'}${ev.retried ? ' ⟳' : ''}`;
+            badge.title = (ev.feedback || '') + (ev.retried ? ` (retried ${Math.max(0, (ev.attempts || 1) - 1)}×)` : '');
+            preview.appendChild(badge);
+        }
+
+        function updateShotPreview(sceneIdx, shotIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s?.shots[shotIdx];
+            if (!sh) return;
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
+            if (!preview) return;
+            const savedImg = sh.storyboard_image;
+            const tempImg = sh._temp_storyboard_image;
+            const hasImage = !!(savedImg || tempImg);
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+            if (hasImage) {
+                const thumbUrl = tempImg
+                    ? tempImg.includes('/')
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}&thumbnail=true`
+                        : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}&thumbnail=true`
+                    : savedImg
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}${projectPathQuery ? '&' : '?'}thumbnail=true`
+                        : '';
+                const imageUrl = tempImg
+                    ? tempImg.includes('/')
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/${tempImg}${projectPathQuery}`
+                        : `/api/comfyui/view?filename=${encodeURIComponent(tempImg)}`
+                    : savedImg
+                        ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
+                        : '';
+                preview.innerHTML = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${thumbUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage('${imageUrl}')" data-filename="${tempImg || ''}" loading="lazy">`;
+            } else {
+                preview.innerHTML = '';
+            }
+            // Update resolution badge
+            let badge = document.getElementById(`shot-res-badge-${sceneIdx}-${shotIdx}`);
+            const label = getResolutionLabel(sh._temp_upscaled_file || savedImg || tempImg);
+            const is4k = label === '4K';
+            if (!badge && hasImage) {
+                badge = document.createElement('span');
+                badge.id = `shot-res-badge-${sceneIdx}-${shotIdx}`;
+                badge.style.cssText = `position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;z-index:2;`;
+                preview.appendChild(badge);
+            }
+            if (badge) {
+                badge.textContent = label;
+                badge.style.background = is4k ? '#e74c3c' : '#222';
+            }
+            // Update button states
+            const genBtn = document.getElementById(`shot-t2i-btn-${sceneIdx}-${shotIdx}`);
+            if (genBtn) { genBtn.style.display = 'none'; }
+            const shotCard = document.getElementById(`shot-card-${sceneIdx}_${shotIdx}`);
+            if (shotCard) {
+                const approveBtn = shotCard.querySelector('.btn-success');
+                if (approveBtn) approveBtn.disabled = false;
+                const upscaleBtn = shotCard.querySelector('[title="Upscale to 4K"]');
+                if (upscaleBtn) { upscaleBtn.disabled = false; upscaleBtn.style.opacity = '1'; }
+            }
+        }
+
+        async function regenerateShotPrompt(sceneIdx, shotIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            const btn = document.getElementById(`reg-sp-btn-${sceneIdx}-${shotIdx}`);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+
+            const context = buildModuleContext();
+            const charsText = charData.filter(c => c.name).map(c => `${c.name}: ${c.description}`).join('\n');
+            const locsText = locationData.filter(l => l.name && l.details).map(l => `${l.name}: ${l.details}`).join('\n');
+
+            const prompt = `Convert this shot description into a highly detailed cinematic text-to-image prompt for Flux.
+            
+Shot ID: ${sh.shot_id || 'Shot'}
+Shot Type: ${sh.shot_type || ''}
+Scene Synopsis: ${s.synopsis || ''}
+Action/Subject: ${Array.isArray(sh.action) ? sh.action.join(', ') : (sh.action || '')}
+Camera Movement/Framing: ${Array.isArray(sh.camera_language) ? sh.camera_language.join(', ') : (sh.camera_language || '')}
+Lighting: ${Array.isArray(sh.lighting_language) ? sh.lighting_language.join(', ') : (sh.lighting_language || '')}
+Emotion/Mood: ${Array.isArray(sh.emotion) ? sh.emotion.join(', ') : (sh.emotion || '')}
+Characters Present: ${(sh.characters_present || []).join(', ')}
+
+Style Context: ${context}
+${charsText ? 'Character Bible:\n' + charsText : ''}
+${locsText ? 'Location Bible:\n' + locsText : ''}
+
+Output format:
+Image Prompt: [cinematic details, framing, environment, lighting, character details, textures. ${selectedVisualStyle ? 'Style: ' + selectedVisualStyle : ''} ${selectedFilmAesthetic ? 'Aesthetic: ' + selectedFilmAesthetic : ''}]`;
+
+            try {
+                const data = await generateFromLLM(prompt);
+                if (data.success) {
+                    const m = data.response.match(/Image Prompt:\s*([\s\S]+?)$/i);
+                    if (m) {
+                        sh.storyboard_prompt = m[1].trim();
+                    } else {
+                        sh.storyboard_prompt = data.response.trim();
+                    }
+                    renderStoryboard();
+                    scheduleSaveState();
+                } else {
+                    notify('LLM Error', data.error || 'Failed to regenerate prompt');
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🔄 Regenerate Prompt'; }
+        }
+
+        async function regenerateShotVideoPrompt(sceneIdx, shotIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            const btn = document.getElementById(`reg-vp-btn-${sceneIdx}-${shotIdx}`);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+
+            const context = buildModuleContext();
+            const charsText = charData.filter(c => c.name).map(c => `${c.name}: ${c.description}`).join('\n');
+            const locsText = locationData.filter(l => l.name && l.details).map(l => `${l.name}: ${l.details}`).join('\n');
+
+            const prompt = `Convert this shot description into a highly detailed text-to-video prompt for ComfyUI LTX 2.3.
+The storyboard image serves as KEYFRAME ZERO. Describe ONLY the motion, camera movement, and environmental dynamics. Do NOT redescribe static appearances.
+
+Shot ID: ${sh.shot_id || 'Shot'}
+Shot Type: ${sh.shot_type || ''}
+Action/Subject: ${Array.isArray(sh.action) ? sh.action.join(', ') : (sh.action || '')}
+Camera Movement/Framing: ${Array.isArray(sh.camera_language) ? sh.camera_language.join(', ') : (sh.camera_language || '')}
+Lighting: ${Array.isArray(sh.lighting_language) ? sh.lighting_language.join(', ') : (sh.lighting_language || '')}
+Emotion/Mood: ${Array.isArray(sh.emotion) ? sh.emotion.join(', ') : (sh.emotion || '')}
+
+Style Context: ${context}
+${charsText ? 'Character Bible:\n' + charsText : ''}
+${locsText ? 'Location Bible:\n' + locsText : ''}
+
+Output format:
+Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle ? 'Style: ' + selectedVisualStyle : ''}]`;
+
+            let images = null;
+            const savedImg = sh.storyboard_image;
+            if (savedImg) {
+                try {
+                    const projName = currentProject?.name || '';
+                    const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+                    const imgUrl = `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`;
+                    const imgResp = await fetch(imgUrl);
+                    if (imgResp.ok) {
+                        const blob = await imgResp.blob();
+                        const base64 = await new Promise(resolve => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                            reader.readAsDataURL(blob);
+                        });
+                        images = [base64];
+                    }
+                } catch(e) { console.error('Failed to load storyboard image for LLM reference:', e); }
+            }
+
+            try {
+                let data = await generateFromLLM(prompt, images);
+                if (!data.success && images && data.error && /image|vision|multimodal/i.test(data.error)) {
+                    data = await generateFromLLM(prompt, null);
+                }
+                if (data.success) {
+                    const m = data.response.match(/Video Prompt:\s*([\s\S]+?)$/i);
+                    if (m) {
+                        sh.video_prompt = m[1].trim();
+                    } else {
+                        sh.video_prompt = data.response.trim();
+                    }
+                    renderStoryboard();
+                    scheduleSaveState();
+                } else {
+                    notify('LLM Error', data.error || 'Failed to regenerate video prompt');
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🔄 Regenerate Prompt'; }
+        }
+
+        function updateStoryboardProgressUI() {
+            const pb = document.getElementById('storyboard-progress');
+            if (!pb) return;
+            pb.style.display = 'block';
+            
+            const total = window._sbBatchTotal || 1;
+            const completed = window._sbBatchCompleted || 0;
+            const overallPct = Math.round(completed / total * 100);
+            
+            const bar = document.getElementById('sb-progress-bar');
+            if (bar) bar.style.width = overallPct + '%';
+            
+            const pctText = document.getElementById('sb-progress-pct');
+            if (pctText) pctText.textContent = overallPct + '%';
+            
+            const titleEl = document.getElementById('sb-progress-title');
+            if (titleEl) {
+                if (total > 1) {
+                    titleEl.textContent = `Generating shot ${completed + 1} of ${total}...`;
+                } else {
+                    titleEl.textContent = `Generating shot image...`;
+                }
+            }
+        }
+
+        async function generateShotImage(sceneIdx, shotIdx, abortSignal) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            const btn = document.getElementById(`shot-t2i-btn-${sceneIdx}-${shotIdx}`);
+
+            let enrichedPrompt = sh.storyboard_prompt || sh.image_prompt || '';
+            if (!enrichedPrompt) {
+                // Fallback prompt construction from shot metadata
+                const action = Array.isArray(sh.action) ? sh.action.join(', ') : (sh.action || '');
+                const shotType = sh.shot_type || '';
+                const camera = Array.isArray(sh.camera_language) ? sh.camera_language.join(', ') : (sh.camera_language || '');
+                const lighting = Array.isArray(sh.lighting_language) ? sh.lighting_language.join(', ') : (sh.lighting_language || '');
+                const emotion = sh.emotion || '';
+                const motifs = Array.isArray(sh.visual_motifs) ? sh.visual_motifs.join(', ') : (sh.visual_motifs || '');
+                
+                enrichedPrompt = `${shotType} shot. ${action}. Mood: ${emotion}. Camera: ${camera}. Lighting: ${lighting}. ${motifs ? 'Motifs: ' + motifs + '.' : ''} Detailed cinematic frame.`;
+            }
+            
+            const shotChars = sh.characters_present || s.characters_present || [];
+            const savedChars = charData.filter(c => c.savedImage && shotChars.includes(c.name)).map(c => {
+                let clean = c.savedImage;
+                if (clean.includes('/')) clean = clean.split('/').pop();
+                else clean = clean.replace(/\s+/g, '_') + '.png';
+                return { name: c.name, description: c.description || '', savedImage: clean.replace('.png', '') };
+            });
+
+            const savedLocs = locationData.filter(l => l.name === s.location_id && l.savedImage).map(l => {
+                let clean = l.savedImage;
+                if (clean.includes('/')) clean = clean.split('/').pop();
+                else clean = clean.replace(/\s+/g, '_') + '.png';
+                return { name: l.name, details: l.details || '', type: l.type || '', savedImage: clean.replace('.png', '') };
+            });
+
+            if (savedLocs.length) {
+                enrichedPrompt += `\n\nThe environment image provided is: "${savedLocs[0].savedImage}.png". Environment description: ${savedLocs[0].type ? 'Type: ' + savedLocs[0].type + '. ' : ''}${savedLocs[0].details || ''}.`;
+            }
+            if (savedChars.length) {
+                enrichedPrompt += `\n\nCharacter reference images provided: ${savedChars.map(c => `"${c.savedImage}.png" (${c.name}: ${c.description})`).join(', ')}. The character should match the appearance shown in these reference images.`;
+            }
+
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳...';
+                const abortBtn = document.getElementById(`shot-abort-btn-${sceneIdx}-${shotIdx}`);
+                if (abortBtn) {
+                    btn.style.display = 'none';
+                    abortBtn.style.display = 'inline-block';
+                }
+            }
+            showShotSpinner(sceneIdx, shotIdx);
+            
+            if (!window._sbBatchTotal) {
+                window._sbBatchTotal = 1;
+                window._sbBatchCompleted = 0;
+            }
+
+            updateStoryboardProgressUI();
+
+            const seed = Math.floor(Math.random() * 999999999) + 1;
+            let inputImages = getSavedInputImages(shotChars, s.location_id);
+            
+            const extractedBg = sh.scene_bg_image || s.scene_bg_image;
+            if (extractedBg) {
+                // Filter out any location sheets since we have a specific background
+                inputImages = inputImages.filter(img => !img.includes('location_sheets'));
+                inputImages.unshift(extractedBg);
+            }
+            
+            // Add golden reference from vision evaluation if present
+            if (sh.golden_reference) {
+                // Golden reference takes top priority for composition
+                inputImages.unshift(sh.golden_reference);
+            }
+            
+            // Optional continuity: use the previous shot's approved frame as the
+            // character reference (Krea 2 char+bg workflow only, via the backend
+            // hint) so the character stays consistent across consecutive shots.
+            const prevFramePath = prevFrameRefEnabled() ? getPrevShotFramePath(sceneIdx, shotIdx) : '';
+            const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
+            const imgResEl = document.getElementById('sel-img-resolution');
+            const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+            const cfgOverride = sh._genCfg || parseFloat(document.getElementById('storyboard-expand-cfg')?.value) || currentProject?.settings?.cfg || 1.0;
+            const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps || 10;
+            const seedOverride = sh._genSeed || seed;
+
+            try {
+                const res = await fetch('/api/orchestrator/generate-consistent-shot', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    signal: abortSignal,
+                    body: JSON.stringify({
+                        prompt: enrichedPrompt,
+                        seed: seedOverride,
+                        steps: stepsOverride,
+                        cfg: cfgOverride,
+                        project_path: currentProject?.path || '',
+                        input_images: inputImages,
+                        character_image: prevFramePath,
+                        aspect_ratio: aspectRatio,
+                        resolution: imgResolution
+                    })
+                });
+                const data = await res.json();
+                hideShotSpinner(sceneIdx, shotIdx);
+                if (data.success) {
+                    const tempFilename = data.filename;
+                    // Save to project scenes/ immediately so images persist across restarts
+                    const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+                    try {
+                        const saveRes = await fetch('/api/projects/save-image', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            signal: abortSignal,
+                            body: JSON.stringify({
+                                project_name: currentProject?.name || '',
+                                project_path: currentProject?.path || '',
+                                stage: 'scenes',
+                                filename: tempFilename,
+                                card_name: cardName
+                            })
+                        });
+                        const saveData = await saveRes.json();
+                        if (saveData.success) {
+                            const savedFilename = saveData.path.split(/[\\/]/).pop();
+                            sh._temp_storyboard_image = 'scenes/' + savedFilename;
+                        } else {
+                            sh._temp_storyboard_image = tempFilename;
+                        }
+                    } catch(e) {
+                        sh._temp_storyboard_image = tempFilename;
+                    }
+                    sh.storyboard_status = 'generated';
+                    sh.storyboard_history = sh.storyboard_history || [];
+                    if (!sh.storyboard_history.includes(tempFilename)) {
+                        sh.storyboard_history.push(tempFilename);
+                    }
+                    // Store the automatic vision-LLM identity check result (if any)
+                    sh.consistency_eval = data.consistency_eval || null;
+                    
+                    updateShotPreview(sceneIdx, shotIdx);
+                    updateConsistencyBadge(sceneIdx, shotIdx);
+                    scheduleSaveState();
+                    const imgEl = document.getElementById(`shot-preview-img-${sceneIdx}-${shotIdx}`);
+                    if (imgEl && !imgEl.complete) {
+                        await new Promise(resolve => { imgEl.onload = resolve; imgEl.onerror = resolve; });
+                    }
+                } else {
+                    notify('I2I Failed', data.error || 'Generation failed');
+                    btn.disabled = false;
+                    btn.textContent = '🎨 Generate Image';
+                }
+                
+                if (!window._sbBatchTotal || window._sbBatchCompleted + 1 >= window._sbBatchTotal) {
+                    const pb = document.getElementById('storyboard-progress');
+                    if (pb) {
+                        document.getElementById('sb-progress-bar').style.width = '100%';
+                        document.getElementById('sb-progress-pct').textContent = '100%';
+                        document.getElementById('sb-progress-title').textContent = data.success ? '✅ Complete!' : '❌ Failed';
+                        setTimeout(() => { pb.style.display = 'none'; }, 1500);
+                    }
+                    window._sbBatchTotal = 0;
+                    window._sbBatchCompleted = 0;
+                }
+            } catch(e) {
+                hideShotSpinner(sceneIdx, shotIdx);
+                if (!window._sbBatchTotal || window._sbBatchCompleted + 1 >= window._sbBatchTotal) {
+                    const pb = document.getElementById('storyboard-progress');
+                    if (pb) {
+                        document.getElementById('sb-progress-title').textContent = '❌ Errored';
+                        setTimeout(() => { pb.style.display = 'none'; }, 1500);
+                    }
+                    window._sbBatchTotal = 0;
+                    window._sbBatchCompleted = 0;
+                }
+            } finally {
+                const abortBtn = document.getElementById(`shot-abort-btn-${sceneIdx}-${shotIdx}`);
+                if (abortBtn) {
+                    abortBtn.style.display = 'none';
+                }
+                // The Gen button is only rendered for shots without an image, so
+                // it can be absent on regeneration — guard before touching it.
+                if (btn) btn.style.display = 'inline-block';
+            }
+        }
+
+        async function storyboardUpscaleImage(sceneIdx, shotIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            const activeImage = sh.storyboard_image || sh._temp_storyboard_image;
+            if (!activeImage) {
+                notify('Upscale Failed', 'No image to upscale.', '⚠️');
+                return false;
+            }
+            const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
+            const wf = settings.workflows?.upscale;
+            if (!wf) {
+                notify('Upscale Failed', 'No upscale workflow selected. Set it in Settings > Workflows.', '⚠️');
+                return false;
+            }
+            const imgSettings = settings.image_gen || {};
+            const provider = imgSettings.provider || 'comfyui';
+            const host = imgSettings.host || '';
+            const apiKey = imgSettings.apiKey || '';
+            const inputPath = sh.storyboard_image
+                ? 'scenes/' + sh.storyboard_image
+                : activeImage;
+            notify('Upscaling', 'Sending to 4K upscaler...', '🔍');
+            try {
+                const res = await fetch('/api/image/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        provider, host, api_key: apiKey, workflow_name: wf,
+                        prompt: 'upscale', width: 1024, height: 1024,
+                        project_path: currentProject?.path || '',
+                        input_images: [inputPath]
+                    })
+                });
+                const data = await res.json();
+                if (data.success && (data.image_url || data.filename)) {
+                    const tempFilename = data.filename || data.image_url;
+                    // Save upscaled result to project scenes/
+                    const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}_4k_${Date.now()}`;
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: 'scenes',
+                            filename: tempFilename,
+                            subfolder: data.subfolder || '',
+                            card_name: cardName
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const savedFile = saveData.path.split(/[\\/]/).pop();
+                        sh._temp_storyboard_image = tempFilename;
+                        sh._temp_upscaled_file = savedFile;
+                        sh.storyboard_status = 'generated';
+                        sh.storyboard_history = sh.storyboard_history || [];
+                        if (!sh.storyboard_history.includes(tempFilename)) sh.storyboard_history.push(tempFilename);
+                        notify('Upscaled', '4K upscale complete', '🔍');
+                        renderStoryboard();
+                        scheduleSaveState();
+                        return true;
+                    } else {
+                        notify('Upscale Failed', saveData.error || 'Save failed', '❌');
+                        return false;
+                    }
+                } else {
+                    notify('Upscale Failed', data.error || 'Generation failed', '❌');
+                    return false;
+                }
+            } catch (e) {
+                notify('Upscale Error', e.message, '❌');
+                return false;
+            }
+        }
+
+        async function storyboardUpscaleScene(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            for (let i = 0; i < s.shots.length; i++) {
+                const sh = s.shots[i];
+                if (sh.storyboard_image || sh._temp_storyboard_image) {
+                    await storyboardUpscaleImage(sceneIdx, i);
+                }
+            }
+            notify('Scene Upscale', 'All scene images upscaled to 4K', '🔍');
+        }
+
+        async function upscaleAllAssets() {
+            let count = 0;
+            // Characters bible
+            const charBible = _assetStudioData.character_bible || [];
+            for (const c of charBible) {
+                const id = c.character_id || c.id;
+                const assets = _assetStudioData.character_assets || {};
+                const asset = assets[id];
+                if (asset && asset.approved_image && !asset.approved_image.includes('_4k_')) {
+                    try {
+                        await assetUpscaleImage(id, 'char');
+                        count++;
+                    } catch(e) { console.error(e); }
+                }
+            }
+            // Locations bible
+            const locBible = _assetStudioData.location_bible || [];
+            for (const l of locBible) {
+                const id = l.location_id || l.id;
+                const assets = _assetStudioData.location_assets || {};
+                const asset = assets[id];
+                if (asset && asset.approved_image && !asset.approved_image.includes('_4k_')) {
+                    try {
+                        await assetUpscaleImage(id, 'loc');
+                        count++;
+                    } catch(e) { console.error(e); }
+                }
+            }
+            notify('🔍 4K All Complete', `Upscaled ${count} asset image(s) to 4K.`, '✅');
+        }
+
+        async function storyboardUpscaleAll() {
+            if (!screenplayData || !screenplayData.scenes) return;
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            const pb = document.getElementById('storyboard-progress');
+            if (pb) {
+                pb.style.display = 'block';
+                document.getElementById('sb-progress-title').textContent = 'Upscaling to 4K...';
+                document.getElementById('sb-progress-bar').style.width = '0%';
+                document.getElementById('sb-progress-pct').textContent = '0%';
+            }
+
+            let totalShots = 0;
+            // Count total upscalable shots
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    const activeImage = sh.storyboard_image || sh._temp_storyboard_image;
+                    if (activeImage && !activeImage.includes('_4k_')) {
+                        totalShots++;
+                    }
+                }
+            }
+
+            if (totalShots === 0) {
+                if (pb) pb.style.display = 'none';
+                notify('Upscale All', 'No images found to upscale (all are already 4K).', '⚠️');
+                return;
+            }
+
+            let count = 0;
+            let completed = 0;
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                if (signal.aborted) break;
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    if (signal.aborted) break;
+                    const sh = s.shots[shIdx];
+                    const activeImage = sh.storyboard_image || sh._temp_storyboard_image;
+                    if (activeImage && !activeImage.includes('_4k_')) {
+                        const pct = Math.round((completed / totalShots) * 100);
+                        if (pb) {
+                            document.getElementById('sb-progress-bar').style.width = pct + '%';
+                            document.getElementById('sb-progress-pct').textContent = pct + '%';
+                        }
+                        const ok = await storyboardUpscaleImage(sIdx, shIdx);
+                        if (ok) count++;
+                        completed++;
+                    }
+                }
+            }
+            if (!signal.aborted) {
+                if (pb) {
+                    document.getElementById('sb-progress-bar').style.width = '100%';
+                    document.getElementById('sb-progress-pct').textContent = '100%';
+                    document.getElementById('sb-progress-title').textContent = '✅ Complete!';
+                }
+                notify('Upscale All', `Upscaled ${count} image(s) to 4K`, '🔍');
+            }
+            setTimeout(() => { if (pb) pb.style.display = 'none'; }, 1500);
+            renderStoryboard();
+        }
+
+        async function extractShotBackground() {
+            if (window._currentSbSceneIdx === undefined || window._currentSbShotIdx === undefined) return notify('Error', 'No shot selected.', '❌');
+            const sceneIdx = window._currentSbSceneIdx;
+            const shotIdx = window._currentSbShotIdx;
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            if (!s || !s.location_id) return notify('Error', 'No location_id found for scene.', '❌');
+            const btn = document.getElementById('btn-extract-bg-modal');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Extracting...'; }
+            
+            const panEl = document.getElementById('storyboard-expand-pan-slider');
+            const panAngle = panEl ? parseInt(panEl.value) : 0;
+            sh.pan_angle = panAngle; // save to shot
+            
+            try {
+                notify('Extracting BG', `Cropping 360 panorama at ${panAngle}°...`, '📸');
+                const res = await fetch('/api/orchestrator/crop-360', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_path: currentProject?.path || '',
+                        location_id: s.location_id,
+                        pan_angle: panAngle,
+                        scene_id: s.scene_id || s.scene_number,
+                        previous_file: sh.scene_bg_image || sh._temp_bg_image || ''
+                    })
+                });
+                const data = await res.json();
+                if (data.success && (data.filename || data.image_url)) {
+                    notify('Extracted', 'Background successfully extracted!', '✅');
+                    sh._temp_bg_image = data.filename || data.image_url;
+                    sh.scene_bg_image = data.filename || data.image_url;
+                    await fetch('/api/projects/save-graph', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            project_name: currentProject.name,
+                            project_path: currentProject.path,
+                            project_graph: screenplayData
+                        })
+                    });
+                    
+                    // re-render metadata to show extracted bg
+                    expandStoryboardShot(sceneIdx, shotIdx);
+                    renderStoryboard();
+                } else {
+                    notify('Error', data.error || 'Failed to extract background', '❌');
+                }
+            } catch (e) {
+                notify('Error', 'Failed to extract background: ' + e, '❌');
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '📸 Extract BG for Shot'; }
+        }
+
+        async function generateSceneImages(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-gen-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            const pendingShots = s.shots.map((sh, i) => ({ sh, i })).filter(({ sh }) => !sh.storyboard_image && !sh._temp_storyboard_image);
+            if (!pendingShots.length) { btn.style.display = 'none'; return; }
+
+            // Create abort controller
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${pendingShots.length}`;
+            
+            window._sbBatchTotal = pendingShots.length;
+            window._sbBatchCompleted = 0;
+            const pb = document.getElementById('storyboard-progress');
+            if (pb) pb.style.display = 'block';
+
+            let imagesGeneratedInThisBatch = 0;
+            for (const { sh, i } of pendingShots) {
+                if (signal.aborted) break;
+                await generateShotImage(sceneIdx, i, signal);
+                window._sbBatchCompleted++;
+                btn.textContent = `⏳ ${window._sbBatchCompleted}/${pendingShots.length}`;
+                
+                imagesGeneratedInThisBatch++;
+                if (imagesGeneratedInThisBatch >= 6) {
+                    console.log("[VRAM Flush] Automatic batch threshold reached. Flushing system caches...");
+                    try {
+                        await fetch('/api/system/clear-cache', { method: 'POST' });
+                    } catch (e) {
+                        console.error("VRAM Flush failed", e);
+                    }
+                    imagesGeneratedInThisBatch = 0;
+                }
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🎨';
+            
+            // Perform automated scene consistency check after the scene finishes
+            if (!signal.aborted) {
+                if (pb) document.getElementById('sb-progress-title').textContent = `Verifying Scene Consistency...`;
+                await verifySceneConsistency(sceneIdx);
+            }
+            
+            if (pb) {
+                document.getElementById('sb-progress-bar').style.width = '100%';
+                document.getElementById('sb-progress-pct').textContent = '100%';
+                document.getElementById('sb-progress-title').textContent = '✅ Scene images generated!';
+                setTimeout(() => { pb.style.display = 'none'; }, 1500);
+            }
+            
+            window._sceneAbortController = null;
+            hideAbortButton();
+            renderStoryboard();
+        }
+
+        async function approveSceneImages(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-app-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            const pending = s.shots.filter(sh => sh._temp_storyboard_image);
+            if (!pending.length) { btn.style.display = 'none'; return; }
+
+            // Upscale warning — check if any pending image is not upscaled
+            if (currentProject?.settings?.upscaleWarning !== false) {
+                const anyNotUpscaled = pending.some(sh => {
+                    return !(sh._temp_upscaled_file && sh._temp_upscaled_file.includes('_4k_'))
+                        && !(sh.storyboard_image && sh.storyboard_image.includes('_4k_'))
+                        && !(sh._temp_storyboard_image && sh._temp_storyboard_image.includes('_4k_'));
+                });
+                if (anyNotUpscaled) {
+                    const doUpscale = await showConfirm(
+                        'Upscale to 4K?',
+                        `${pending.length} image(s) have not been upscaled to 4K. Would you like to upscale all before approving?`
+                    );
+                    if (doUpscale) {
+                        for (const sh of pending) {
+                            const shotIdx = s.shots.indexOf(sh);
+                            const ok = await storyboardUpscaleImage(sceneIdx, shotIdx);
+                            if (!ok) {
+                                notify('Upscale Failed', `Shot ${sh.shot_id} upscale failed.`, '❌');
+                            }
+                        }
+                        // Re-filter pending after upscale
+                        const stillPending = s.shots.filter(sh => sh._temp_storyboard_image || sh._temp_upscaled_file);
+                        if (!stillPending.length) { btn.style.display = 'none'; return; }
+                    }
+                }
+            }
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${pending.length}`;
+            let completed = 0;
+
+            for (const sh of pending) {
+                if (signal.aborted) break;
+                const shotIdx = s.shots.indexOf(sh);
+                showShotSpinner(sceneIdx, shotIdx);
+
+                // If upscaled, use the already-saved 4K file
+                if (sh._temp_upscaled_file) {
+                    sh.storyboard_image = sh._temp_upscaled_file;
+                    sh.storyboard_status = 'approved';
+                    sh._temp_storyboard_image = null;
+                    sh._temp_upscaled_file = null;
+                    const relativePath = 'scenes/' + sh.storyboard_image;
+                    addAsset('scene', `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`, relativePath);
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    notify('✅ Saved', `Upscaled image saved as ${sh.storyboard_image}`);
+                    completed++;
+                    btn.textContent = `⏳ ${completed}/${pending.length}`;
+                    continue;
+                }
+
+                const tempFilename = sh._temp_storyboard_image;
+                const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+
+                // If image is already saved to project (contains /), just approve it
+                if (tempFilename && tempFilename.includes('/')) {
+                    const savedFilename = tempFilename.split('/').pop();
+                    sh.storyboard_image = savedFilename;
+                    sh.storyboard_status = 'approved';
+                    sh._temp_storyboard_image = null;
+                    const relativePath = 'scenes/' + savedFilename;
+                    addAsset('scene', cardName, relativePath);
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    completed++;
+                    btn.textContent = `⏳ ${completed}/${pending.length}`;
+                    continue;
+                }
+
+                try {
+                    const res = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal,
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: 'scenes',
+                            filename: tempFilename,
+                            card_name: cardName,
+                            previous_file: sh.storyboard_image ? sh.storyboard_image : null
+                        })
+                    });
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    const data = await res.json();
+                    if (data.success) {
+                        const savedFilename = data.path.split(/[\\/]/).pop();
+                        const relativePath = 'scenes/' + savedFilename;
+                        addAsset('scene', cardName, relativePath);
+                        sh.storyboard_image = savedFilename;
+                        sh.storyboard_status = 'approved';
+                        sh._temp_storyboard_image = null;
+                        sh.storyboard_history = sh.storyboard_history || [];
+                        if (!sh.storyboard_history.includes(tempFilename)) {
+                            sh.storyboard_history.push(tempFilename);
+                        }
+                    } else {
+                        notify('Save Failed', `Shot ${sh.shot_id}: ${data.error}`);
+                    }
+                } catch(e) {
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    if (e.name === 'AbortError') break;
+                    notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
+                }
+                completed++;
+                btn.textContent = `⏳ ${completed}/${pending.length}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '✅';
+            window._sceneAbortController = null;
+            hideAbortButton();
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        async function cancelSceneBatch() {
+            if (window._sceneAbortController) {
+                window._sceneAbortController.abort();
+                window._sceneAbortController = null;
+            }
+            try {
+                await fetch('/api/image/interrupt', { method: 'POST' });
+            } catch(e) {}
+            hideAbortButton();
+            const pb = document.getElementById('storyboard-progress');
+            if (pb) pb.style.display = 'none';
+            window._sbBatchTotal = 0;
+            window._sbBatchCompleted = 0;
+            notify('Cancelled', 'Generation cancelled', '✕');
+        }
+
+        function showAbortButton() {
+            const btn = document.getElementById('scene-abort-btn');
+            if (btn) btn.style.display = 'inline-block';
+        }
+
+        function hideAbortButton() {
+            const btn = document.getElementById('scene-abort-btn');
+            if (btn) btn.style.display = 'none';
+        }
+
+        async function regenerateScenePrompts(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-pr-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${s.shots.length}`;
+            let completed = 0;
+
+            const context = buildModuleContext();
+            const charsText = charData.filter(c => c.name).map(c => `${c.name}: ${c.description}`).join('\n');
+            const locsText = locationData.filter(l => l.name && l.details).map(l => `${l.name}: ${l.details}`).join('\n');
+
+            for (const sh of s.shots) {
+                const prompt = `Convert this shot description into a highly detailed cinematic text-to-image prompt for Flux.
+
+Shot ID: ${sh.shot_id || 'Shot'}
+Shot Type: ${sh.shot_type || ''}
+Scene Synopsis: ${s.synopsis || ''}
+Action/Subject: ${Array.isArray(sh.action) ? sh.action.join(', ') : (sh.action || '')}
+Camera Movement/Framing: ${Array.isArray(sh.camera_language) ? sh.camera_language.join(', ') : (sh.camera_language || '')}
+Lighting: ${Array.isArray(sh.lighting_language) ? sh.lighting_language.join(', ') : (sh.lighting_language || '')}
+Emotion/Mood: ${Array.isArray(sh.emotion) ? sh.emotion.join(', ') : (sh.emotion || '')}
+Characters Present: ${(sh.characters_present || []).join(', ')}
+
+Style Context: ${context}
+${charsText ? 'Character Bible:\n' + charsText : ''}
+${locsText ? 'Location Bible:\n' + locsText : ''}
+
+Output format:
+Image Prompt: [cinematic details, framing, environment, lighting, character details, textures. ${selectedVisualStyle ? 'Style: ' + selectedVisualStyle : ''} ${selectedFilmAesthetic ? 'Aesthetic: ' + selectedFilmAesthetic : ''}]`;
+
+                if (signal.aborted) break;
+                try {
+                    const data = await generateFromLLM(prompt, signal);
+                    if (data.success) {
+                        const m = data.response.match(/Image Prompt:\s*([\s\S]+?)$/i);
+                        if (m) {
+                            sh.storyboard_prompt = m[1].trim();
+                        } else {
+                            sh.storyboard_prompt = data.response.trim();
+                        }
+                    } else {
+                        notify('LLM Error', `Shot ${sh.shot_id}: ${data.error || 'Failed'}`);
+                    }
+                } catch(e) {
+                    if (e.name === 'AbortError') break;
+                    notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
+                }
+                completed++;
+                btn.textContent = `⏳ ${completed}/${s.shots.length}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🧠';
+            window._sceneAbortController = null;
+            hideAbortButton();
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        async function generateSceneVideoPrompts(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-vp-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${s.shots.length}`;
+            let completed = 0;
+
+            for (const sh of s.shots) {
+                if (signal.aborted) break;
+                btn.textContent = `⏳ ${completed}/${s.shots.length}`;
+                await regenerateShotVideoPrompt(sceneIdx, s.shots.indexOf(sh));
+                completed++;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '📝';
+            window._sceneAbortController = null;
+            hideAbortButton();
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        async function generateSceneVideos(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-vid-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            const pending = s.shots.filter(sh => sh.storyboard_status === 'approved' && sh.storyboard_image);
+            if (!pending.length) { btn.style.display = 'none'; return; }
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${pending.length}`;
+            let completed = 0;
+
+            for (const sh of pending) {
+                if (signal.aborted) break;
+                const shotIdx = s.shots.indexOf(sh);
+                showShotSpinner(sceneIdx, shotIdx);
+                const inputImagePath = `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`;
+                const seed = Math.floor(Math.random() * 999999999) + 1;
+                try {
+                    const res = await fetch('/api/comfyui/generate/i2v', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal,
+                        body: JSON.stringify({
+                            prompt: sh.video_prompt,
+                            seed: seed,
+                            project_path: currentProject?.path || '',
+                            input_image: inputImagePath,
+                            scene_index: sceneIdx,
+                            steps: storyboardVideoSteps(),
+                            refine: llmEnhanceEnabled()
+                        })
+                    });
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    const data = await res.json();
+                    if (data.success) {
+                        sh._temp_video_clip = data.filename;
+                        sh._temp_video_subfolder = data.subfolder || '';
+                        sh.video_status = 'generated';
+                    } else {
+                        notify('I2V Failed', `Shot ${sh.shot_id}: ${data.error || 'Generation failed'}`);
+                    }
+                } catch(e) {
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    if (e.name === 'AbortError') break;
+                    notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
+                }
+                completed++;
+                btn.textContent = `⏳ ${completed}/${pending.length}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🎥';
+            window._sceneAbortController = null;
+            hideAbortButton();
+            renderStoryboard();
+        }
+
+        async function approveSceneVideos(sceneIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            if (!s || !s.shots) return;
+            const btn = document.getElementById(`scene-vapp-btn-${sceneIdx}`);
+            if (!btn) return;
+
+            const pending = s.shots.filter(sh => sh._temp_video_clip);
+            if (!pending.length) { btn.style.display = 'none'; return; }
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+
+            btn.disabled = true;
+            btn.textContent = `⏳ 0/${pending.length}`;
+            let completed = 0;
+
+            for (const sh of pending) {
+                if (signal.aborted) break;
+                const shotIdx = s.shots.indexOf(sh);
+                showShotSpinner(sceneIdx, shotIdx);
+                const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+                try {
+                    const res = await fetch('/api/projects/save-video', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal,
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            filename: sh._temp_video_clip,
+                            subfolder: sh._temp_video_subfolder || '',
+                            card_name: cardName
+                        })
+                    });
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    const data = await res.json();
+                    if (data.success) {
+                        const savedFilename = data.path.split(/[\\/]/).pop();
+                        const relativePath = 'videos/' + savedFilename;
+                        addAsset('video', cardName, relativePath);
+                        sh.video_clip = savedFilename;
+                        sh.video_status = 'approved';
+                        sh._temp_video_clip = null;
+                        sh._temp_video_subfolder = null;
+                    } else {
+                        notify('Save Failed', `Shot ${sh.shot_id}: ${data.error}`);
+                    }
+                } catch(e) {
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    if (e.name === 'AbortError') break;
+                    notify('Error', `Shot ${sh.shot_id}: ${e.message}`);
+                }
+                completed++;
+                btn.textContent = `⏳ ${completed}/${pending.length}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '✔️';
+            window._sceneAbortController = null;
+            hideAbortButton();
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        async function approveShotImage(sceneIdx, shotIdx) {
+            const sh = screenplayData.scenes[sceneIdx].shots[shotIdx];
+            const tempFilename = sh._temp_storyboard_image;
+            if (!tempFilename) return;
+
+            // Upscale warning — check both temp and saved paths for _4k_ marker
+            const isUpscaled = (sh._temp_upscaled_file && sh._temp_upscaled_file.includes('_4k_'))
+                || (sh.storyboard_image && sh.storyboard_image.includes('_4k_'))
+                || (sh._temp_storyboard_image && sh._temp_storyboard_image.includes('_4k_'));
+            if (currentProject?.settings?.upscaleWarning !== false && !isUpscaled) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await storyboardUpscaleImage(sceneIdx, shotIdx);
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        return;
+                    }
+                }
+            }
+
+            const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+            try {
+                // If image was already saved by the upscale, skip re-saving
+                if (sh._temp_upscaled_file) {
+                    sh.storyboard_image = sh._temp_upscaled_file;
+                    sh.storyboard_status = 'approved';
+                    sh._temp_storyboard_image = null;
+                    sh._temp_upscaled_file = null;
+                    const relativePath = 'scenes/' + sh.storyboard_image;
+                    addAsset('scene', cardName, relativePath);
+                    notify('✅ Approved', `Upscaled image saved as ${sh.storyboard_image}`);
+                    renderStoryboard();
+                    scheduleSaveState();
+                    return;
+                }
+                // If image is already saved to project (contains /), just approve it
+                if (tempFilename && tempFilename.includes('/')) {
+                    const savedFilename = tempFilename.split('/').pop();
+                    sh.storyboard_image = savedFilename;
+                    sh.storyboard_status = 'approved';
+                    sh._temp_storyboard_image = null;
+                    const relativePath = 'scenes/' + savedFilename;
+                    addAsset('scene', cardName, relativePath);
+                    notify('✅ Approved', `Approved ${savedFilename}`);
+                    renderStoryboard();
+                    scheduleSaveState();
+                    return;
+                }
+                const res = await fetch('/api/projects/save-image', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_name: currentProject?.name || '',
+                        project_path: currentProject?.path || '',
+                        stage: 'scenes',
+                        filename: tempFilename,
+                        card_name: cardName,
+                        previous_file: sh.storyboard_image ? sh.storyboard_image : null
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('✅ Saved', `Saved to scenes/`);
+                    const savedFilename = data.path.split(/[\\/]/).pop();
+                    const relativePath = 'scenes/' + savedFilename;
+                    addAsset('scene', cardName, relativePath);
+                    sh.storyboard_image = savedFilename;
+                    sh.storyboard_status = 'approved';
+                    sh._temp_storyboard_image = null;
+                    // Track in history if not already
+                    sh.storyboard_history = sh.storyboard_history || [];
+                    if (!sh.storyboard_history.includes(tempFilename)) {
+                        sh.storyboard_history.push(tempFilename);
+                    }
+                    renderStoryboard();
+                    scheduleSaveState();
+                } else {
+                    notify('Save Failed', data.error);
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+        }
+
+        function rejectShotImage(sceneIdx, shotIdx) {
+            generateShotImage(sceneIdx, shotIdx);
+        }
+
+        function skipShotImage(sceneIdx, shotIdx) {
+            const sh = screenplayData.scenes[sceneIdx].shots[shotIdx];
+            sh._temp_storyboard_image = null;
+            sh.storyboard_status = 'pending';
+            renderStoryboard();
+        }
+
+        function llmEnhanceEnabled() {
+            const el = document.getElementById('sb-llm-enhance');
+            return !!(el && el.checked);
+        }
+
+        function prevFrameRefEnabled() {
+            const el = document.getElementById('sb-prev-frame-ref');
+            return !!(el && el.checked);
+        }
+
+        function initPrevFrameRefToggle() {
+            const el = document.getElementById('sb-prev-frame-ref');
+            if (!el) return;
+            const saved = localStorage.getItem('sb_prev_frame_ref');
+            if (saved !== null) el.checked = saved === '1';
+            el.onchange = () => localStorage.setItem('sb_prev_frame_ref', el.checked ? '1' : '0');
+        }
+
+        // Project-resolvable path to the previous shot's frame: the approved
+        // image lives in scenes/ (basename stored on storyboard_image), falling
+        // back to a saved temp image (already prefixed with its folder).
+        function getPrevShotFramePath(sceneIdx, shotIdx) {
+            if (!screenplayData?.scenes) return '';
+            let prev = null;
+            if (shotIdx > 0) {
+                prev = screenplayData.scenes[sceneIdx]?.shots?.[shotIdx - 1] || null;
+            } else if (sceneIdx > 0) {
+                const prevScene = screenplayData.scenes[sceneIdx - 1];
+                if (prevScene && prevScene.shots && prevScene.shots.length) {
+                    prev = prevScene.shots[prevScene.shots.length - 1];
+                }
+            }
+            if (!prev) return '';
+            if (prev.storyboard_image) return 'scenes/' + prev.storyboard_image.split('/').pop();
+            if (prev._temp_storyboard_image && prev._temp_storyboard_image.includes('/')) return prev._temp_storyboard_image;
+            return '';
+        }
+
+        function storyboardVideoSteps() {
+            const el = document.getElementById('sb-global-video-steps');
+            const v = parseInt(el?.value);
+            return (v && v > 0) ? v : 8;
+        }
+
+        async function generateShotVideo(sceneIdx, shotIdx) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            const btn = document.getElementById(`shot-i2v-btn-${sceneIdx}-${shotIdx}`);
+            if (!btn) return;
+
+            const prompt = sh.video_prompt;
+            if (!prompt || !prompt.trim()) {
+                notify('No Prompt', 'Write a video prompt first'); return;
+            }
+            if (!sh.storyboard_image) {
+                notify('No Image', 'Please generate and approve the storyboard image first', '⚠️'); return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳...';
+            showShotSpinner(sceneIdx, shotIdx);
+            const seed = sh._genSeed || Math.floor(Math.random() * 999999999) + 1;
+            const inputImagePath = `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`;
+
+            try {
+                const body = {
+                    prompt: prompt,
+                    seed: seed,
+                    project_path: currentProject?.path || '',
+                    input_image: inputImagePath,
+                    scene_index: sceneIdx
+                };
+                body.steps = storyboardVideoSteps();
+                body.refine = llmEnhanceEnabled();
+                const res = await fetch('/api/comfyui/generate/i2v', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                hideShotSpinner(sceneIdx, shotIdx);
+                if (data.success) {
+                    sh._temp_video_clip = data.filename;
+                    sh._temp_video_subfolder = data.subfolder || '';
+                    sh.video_status = 'generated';
+                    renderStoryboard();
+                } else {
+                    notify('I2V Failed', data.error || 'Generation failed');
+                    btn.disabled = false;
+                    btn.textContent = '🎥 Generate Video';
+                }
+            } catch(e) {
+                notify('Error', e.message);
+                btn.disabled = false;
+                btn.textContent = '🎥 Generate Video';
+                hideShotSpinner(sceneIdx, shotIdx);
+            }
+        }
+
+        async function approveShotVideo(sceneIdx, shotIdx) {
+            const sh = screenplayData.scenes[sceneIdx].shots[shotIdx];
+            const tempFilename = sh._temp_video_clip;
+            const tempSubfolder = sh._temp_video_subfolder || '';
+            if (!tempFilename) return;
+
+            const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+            try {
+                const res = await fetch('/api/projects/save-video', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_name: currentProject?.name || '',
+                        project_path: currentProject?.path || '',
+                        filename: tempFilename,
+                        subfolder: tempSubfolder,
+                        card_name: cardName
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    notify('✅ Saved', `Video saved to videos/`);
+                    const savedFilename = data.path.split(/[\\/]/).pop();
+                    const relativePath = 'videos/' + savedFilename;
+                    addAsset('video', cardName, relativePath);
+                    sh.video_clip = savedFilename;
+                    sh.video_status = 'approved';
+                    sh._temp_video_clip = null;
+                    sh._temp_video_subfolder = null;
+                    renderStoryboard();
+                    scheduleSaveState();
+                } else {
+                    notify('Save Failed', data.error);
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+        }
+
+        function rejectShotVideo(sceneIdx, shotIdx) {
+            generateShotVideo(sceneIdx, shotIdx);
+        }
+
+        function skipShotVideo(sceneIdx, shotIdx) {
+            const sh = screenplayData.scenes[sceneIdx].shots[shotIdx];
+            sh._temp_video_clip = null;
+            sh._temp_video_subfolder = null;
+            sh.video_status = 'pending';
+            renderStoryboard();
+        }
+
+        // === VISUAL STYLE MODAL ===
+        function categorizeVS(name) {
+            const n = name.toLowerCase();
+            if (n.includes('anime') || n.includes('ghibli') || n.includes('stop motion') || n.includes('claymation') || n.includes('pixel art') || n.includes('8 bit') || n.includes('16 bit') || n.includes('low poly') || n.includes('ps1') || n.includes('dreamworks') || n.includes('pixar') || n.includes('disney') || n.includes('hand drawn') || n.includes('rotoscope') || n.includes('paper cutout') || n.includes('origami') || n.includes('puppet')) return 'Anime & Animation';
+            if (n.includes('punk') || n.includes('wave') || n.includes('vapor') || n.includes('synth') || n.includes('retro') || n.includes('futurism') || n.includes('cassette') || n.includes('afrofuturism')) return 'Punk & Retro-Futurism';
+            if (n.includes('horror') || n.includes('gothic') || n.includes('occult') || n.includes('lovecraft') || n.includes('cryptid') || n.includes('backrooms') || n.includes('found footage') || n.includes('voidcore') || n.includes('devilcore') || n.includes('hell') || n.includes('monster') || n.includes('kaidan') || n.includes('swamp') || n.includes('nautical')) return 'Horror & Dark';
+            if (n.includes('noir') || n.includes('grindhouse') || n.includes('miami vice') || n.includes('giallo') || n.includes('detective')) return 'Noir & Crime';
+            if (n.includes('french new wave') || n.includes('neorealism') || n.includes('dogme') || n.includes('cinéma') || n.includes('german expressionism') || n.includes('soviet montage') || n.includes('silent film') || n.includes('black and white') || n.includes('technicolor') || n.includes('art deco') || n.includes('bollywood') || n.includes('parallel cinema')) return 'Film Movements & Eras';
+            if (n.includes('surrealism') || n.includes('impressionist') || n.includes('baroque') || n.includes('rococo') || n.includes('watercolor') || n.includes('oil painting') || n.includes('ink wash') || n.includes('minimalist') || n.includes('maximalist') || n.includes('brutalist') || n.includes('hyperrealism') || n.includes('scandinavian')) return 'Art & Painting';
+            if (n.includes('fantasy') || n.includes('fairy') || n.includes('magical') || n.includes('whimsical') || n.includes('cottagecore') || n.includes('goblincore') || n.includes('fairycore') || n.includes('high fantasy') || n.includes('sword') || n.includes('mythological') || n.includes('epic')) return 'Fantasy & Fairy Tale';
+            if (n.includes('lynchian') || n.includes('tarkovsky') || n.includes('wes anderson') || n.includes('fincher') || n.includes('nolan') || n.includes('kubrickian') || n.includes('malick') || n.includes('music video') || n.includes('experimental') || n.includes('avant garde')) return 'Director-Inspired';
+            if (n.includes('sci fi') || n.includes('space opera') || n.includes('alien') || n.includes('dystopian') || n.includes('utopian') || n.includes('biomechanical') || n.includes('post apocalyptic')) return 'Sci-Fi & Futurism';
+            if (n.includes('samurai') || n.includes('wuxia') || n.includes('martial arts') || n.includes('hong kong') || n.includes('spaghetti western') || n.includes('western') || n.includes('acid western') || n.includes('indian') || n.includes('nordic noir')) return 'Regional & Cultural';
+            if (n.includes('jungle') || n.includes('pirate') || n.includes('action') || n.includes('adventure')) return 'Action & Adventure';
+            if (n.includes('dark academia') || n.includes('light academia') || n.includes('royalcore') || n.includes('angelcore') || n.includes('dreamcore') || n.includes('weirdcore') || n.includes('liminal')) return 'Core Aesthetics';
+            return 'Other Styles';
+        }
+
+        async function loadVisualStyleGrid() {
+            const container = document.getElementById('visual-style-grid');
+            try {
+                const res = await fetch('/api/visual-styles');
+                const data = await res.json();
+                const styles = data.styles || [];
+                if (styles.length === 0) {
+                    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No styles yet. Add some in Settings.</div>';
+                    return;
+                }
+                const groups = {};
+                for (const s of styles) {
+                    const cat = categorizeVS(s.name);
+                    if (!groups[cat]) groups[cat] = [];
+                    groups[cat].push(s);
+                }
+                let html = '';
+                const catOrder = ['Anime & Animation','Punk & Retro-Futurism','Horror & Dark','Fantasy & Fairy Tale','Sci-Fi & Futurism','Film Movements & Eras','Art & Painting','Director-Inspired','Noir & Crime','Regional & Cultural','Action & Adventure','Core Aesthetics','Other Styles'];
+                for (const cat of catOrder) {
+                    if (!groups[cat] || !groups[cat].length) continue;
+                    html += `<div class="genre-section-title">${cat}</div>`;
+                    html += '<div class="genre-grid">';
+                    for (const s of groups[cat]) {
+                        const sel = selectedVisualStyle === s.name ? ' selected' : '';
+                        const imgUrl = s.image ? '/api/visual-styles/image/' + encodeURIComponent(s.image) : null;
+                        html += `<div class="genre-card${sel}" data-vs="${s.name}" onclick="selectVisualStyleCard(this)">
+                            ${imgUrl ? `<img src="${imgUrl}" alt="${s.name}" onerror="this.style.display='none'">` : `<div style="height:140px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:var(--text-secondary);">${s.name.charAt(0).toUpperCase()}</div>`}
+                            <div class="genre-label" style="padding:8px;font-size:0.8rem;">${s.name}</div>
+                        </div>`;
+                    }
+                    html += '</div>';
+                }
+                container.innerHTML = html;
+            } catch(e) {
+                container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">Could not load styles</div>';
+            }
+        }
+
+        function selectVisualStyleCard(el) {
+            document.querySelectorAll('#visual-style-grid .genre-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedVisualStyle = el.dataset.vs;
+            document.getElementById('selected-visual-style').textContent = '🎨 ' + selectedVisualStyle;
+            scheduleSaveState();
+        }
+
+        function openVisualStyleModal() {
+            loadVisualStyleGrid();
+            document.getElementById('visual-style-modal').style.display = 'flex';
+        }
+        function closeVisualStyleModal() {
+            document.getElementById('visual-style-modal').style.display = 'none';
+        }
+        function confirmVisualStyleSelection() {
+            closeVisualStyleModal();
+        }
+        function clearVisualStyleSelection() {
+            selectedVisualStyle = null;
+            document.getElementById('selected-visual-style').textContent = 'None selected';
+            document.querySelectorAll('#visual-style-grid .genre-card').forEach(c => c.classList.remove('selected'));
+            scheduleSaveState();
+        }
+        function filterVisualStyleGrid() {
+            const q = document.getElementById('vs-search-input').value.toLowerCase().trim();
+            document.querySelectorAll('#visual-style-grid .genre-card').forEach(c => {
+                c.style.display = (!q || c.dataset.vs.toLowerCase().includes(q)) ? '' : 'none';
+            });
+            document.querySelectorAll('#visual-style-grid .genre-section-title').forEach(t => {
+                const grid = t.nextElementSibling;
+                if (grid && grid.classList.contains('genre-grid')) {
+                    const visible = [...grid.querySelectorAll('.genre-card')].some(c => c.style.display !== 'none');
+                    t.style.display = visible ? '' : 'none';
+                }
+            });
+        }
+
+        // === FILM AESTHETIC MODAL ===
+        function categorizeFA(name) {
+            const n = name.toLowerCase();
+            if (n.includes('bloodborne') || n.includes('dark souls') || n.includes('elden ring') || n.includes('silent hill') || n.includes('dead space') || n.includes('dishonored') || n.includes('bioshock') || n.includes('metro') || n.includes('resident evil') || n.includes('love death robots') || n.includes('arcane')) return 'Games & Animation';
+            if (n.includes('akira') || n.includes('ghost in the shell') || n.includes('spirited away') || n.includes('princess mononoke') || n.includes('howls moving')) return 'Games & Animation';
+            if (n.includes('blade runner') || n.includes('prometheus') || n.includes('dune') || n.includes('interstellar') || n.includes('inception') || n.includes('the matrix') || n.includes('tron') || n.includes('oblivion') || n.includes('arrival') || n.includes('children of men') || n.includes('the creator')) return 'Sci-Fi';
+            if (n.includes('game of thrones') || n.includes('stranger things') || n.includes('twin peaks') || n.includes('breaking bad') || n.includes('peaky blinders') || n.includes('true detective') || n.includes('chernobyl') || n.includes('house of the dragon')) return 'TV Series';
+            if (n.includes('alien') || n.includes('hereditary') || n.includes('midsommar') || n.includes('the witch') || n.includes('the lighthouse') || n.includes('se7en') || n.includes('requiem') || n.includes('black swan') || n.includes('train to busan') || n.includes('parasite')) return 'Horror & Thriller';
+            if (n.includes('john wick') || n.includes('fight club') || n.includes('taxi driver') || n.includes('drive ') || n.includes('only god forgives') || n.includes('oldboy') || n.includes('sicario') || n.includes('heat ') || n.includes('collateral') || n.includes('the revenant') || n.includes('no country')) return 'Action & Crime';
+            if (n.includes('the godfather') || n.includes('goodfellas') || n.includes('scarface') || n.includes('the irishman') || n.includes('american psycho') || n.includes('whiplash') || n.includes('joker')) return 'Crime & Drama';
+            if (n.includes('gladiator') || n.includes('troy') || n.includes('kingdom of heaven') || n.includes('pirates') || n.includes('the last') || n.includes('braveheart')) return 'Historical & Epic';
+            if (n.includes('grand budapest') || n.includes('moonrise') || n.includes('fantastic mr') || n.includes('french dispatch') || n.includes('everything everywhere') || n.includes('scott pilgrim')) return 'Quirky & Indie';
+            return 'Classic Cinema';
+        }
+
+        async function loadFilmAestheticGrid() {
+            const container = document.getElementById('film-aesthetic-grid');
+            try {
+                const res = await fetch('/api/film-aesthetics');
+                const data = await res.json();
+                const aesthetics = data.aesthetics || [];
+                if (aesthetics.length === 0) {
+                    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No aesthetics yet. Add some in Settings.</div>';
+                    return;
+                }
+                const groups = {};
+                for (const a of aesthetics) {
+                    const cat = categorizeFA(a.name);
+                    if (!groups[cat]) groups[cat] = [];
+                    groups[cat].push(a);
+                }
+                let html = '';
+                const catOrder = ['Games & Animation','Sci-Fi','TV Series','Horror & Thriller','Action & Crime','Crime & Drama','Historical & Epic','Quirky & Indie','Classic Cinema'];
+                for (const cat of catOrder) {
+                    if (!groups[cat] || !groups[cat].length) continue;
+                    html += `<div class="genre-section-title">${cat}</div>`;
+                    html += '<div class="genre-grid">';
+                    for (const a of groups[cat]) {
+                        const sel = selectedFilmAesthetic === a.name ? ' selected' : '';
+                        const imgUrl = a.image ? '/api/film-aesthetics/image/' + encodeURIComponent(a.image) : null;
+                        html += `<div class="genre-card${sel}" data-fa="${a.name}" onclick="selectFilmAestheticCard(this)">
+                            ${imgUrl ? `<img src="${imgUrl}" alt="${a.name}" onerror="this.style.display='none'">` : `<div style="height:140px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:var(--text-secondary);">${a.name.charAt(0).toUpperCase()}</div>`}
+                            <div class="genre-label" style="padding:8px;font-size:0.8rem;">${a.name}</div>
+                        </div>`;
+                    }
+                    html += '</div>';
+                }
+                container.innerHTML = html;
+            } catch(e) {
+                container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">Could not load aesthetics</div>';
+            }
+        }
+
+        function selectFilmAestheticCard(el) {
+            document.querySelectorAll('#film-aesthetic-grid .genre-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedFilmAesthetic = el.dataset.fa;
+            document.getElementById('selected-film-aesthetic').textContent = '🎞️ ' + selectedFilmAesthetic;
+            scheduleSaveState();
+        }
+
+        function openFilmAestheticModal() {
+            loadFilmAestheticGrid();
+            document.getElementById('film-aesthetic-modal').style.display = 'flex';
+        }
+        function closeFilmAestheticModal() {
+            document.getElementById('film-aesthetic-modal').style.display = 'none';
+        }
+        function confirmFilmAestheticSelection() {
+            closeFilmAestheticModal();
+        }
+        function clearFilmAestheticSelection() {
+            selectedFilmAesthetic = null;
+            document.getElementById('selected-film-aesthetic').textContent = 'None selected';
+            document.querySelectorAll('#film-aesthetic-grid .genre-card').forEach(c => c.classList.remove('selected'));
+            scheduleSaveState();
+        }
+        function filterFilmAestheticGrid() {
+            const q = document.getElementById('fa-search-input').value.toLowerCase().trim();
+            document.querySelectorAll('#film-aesthetic-grid .genre-card').forEach(c => {
+                c.style.display = (!q || c.dataset.fa.toLowerCase().includes(q)) ? '' : 'none';
+            });
+            document.querySelectorAll('#film-aesthetic-grid .genre-section-title').forEach(t => {
+                const grid = t.nextElementSibling;
+                if (grid && grid.classList.contains('genre-grid')) {
+                    const visible = [...grid.querySelectorAll('.genre-card')].some(c => c.style.display !== 'none');
+                    t.style.display = visible ? '' : 'none';
+                }
+            });
+        }
+
+        // === VISUAL STYLE MANAGER MODAL ===
+        let vsmFile = null;
+        document.getElementById('vsm-image')?.addEventListener('change', function(e) {
+            vsmFile = e.target.files[0];
+            if (vsmFile) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    document.getElementById('vsm-preview-img').src = ev.target.result;
+                    document.getElementById('vsm-preview-name').textContent = vsmFile.name;
+                    document.getElementById('vsm-preview').style.display = 'block';
+                };
+                reader.readAsDataURL(vsmFile);
+            }
+        });
+
+        async function loadVisualStyleManagerGrid() {
+            const container = document.getElementById('vsm-grid');
+            try {
+                const res = await fetch('/api/visual-styles');
+                const data = await res.json();
+                const styles = data.styles || [];
+                document.getElementById('vsm-count').textContent = styles.length + ' total';
+                if (!styles.length) {
+                    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No styles yet. Add one above or drop a folder.</div>';
+                    return;
+                }
+                const groups = {};
+                styles.forEach(s => {
+                    const cat = categorizeVS(s.name);
+                    if (!groups[cat]) groups[cat] = [];
+                    groups[cat].push(s);
+                });
+                const catOrder = ['Anime & Animation','Punk & Retro-Futurism','Horror & Dark','Noir & Crime','Film Movements & Eras','Art & Painting','Fantasy & Fairy Tale','Director-Inspired','Sci-Fi & Futurism','Regional & Cultural','Action & Adventure','Core Aesthetics','Other Styles'];
+                let html = '';
+                for (const cat of catOrder) {
+                    if (!groups[cat]) continue;
+                    html += `<div class="genre-section-title">${cat}</div><div class="genre-grid">`;
+                    html += groups[cat].map(s => renderVSManagerCard(s)).join('');
+                    html += '</div>';
+                }
+                // Uncategorized
+                const used = new Set(Object.keys(groups));
+                const remaining = styles.filter(s => !used.has(categorizeVS(s.name)));
+                if (remaining.length) {
+                    html += `<div class="genre-section-title">Other</div><div class="genre-grid">`;
+                    html += remaining.map(s => renderVSManagerCard(s)).join('');
+                    html += '</div>';
+                }
+                container.innerHTML = html;
+            } catch(e) {}
+        }
+
+        function renderVSManagerCard(s) {
+            const imgUrl = s.image ? '/api/visual-styles/image/' + encodeURIComponent(s.image) : null;
+            return `<div class="genre-card" data-vs="${s.name}" style="position:relative;">
+                <button class="btn btn-secondary" onclick="deleteVisualStyleFromManager('${s.name.replace(/'/g, "\\'")}')" style="position:absolute;top:4px;right:4px;padding:2px 8px;font-size:0.7rem;z-index:2;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:4px;cursor:pointer;">✕</button>
+                ${imgUrl ? `<img src="${imgUrl}" alt="${s.name}" onerror="this.style.display='none'">` : `<div style="height:140px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:var(--text-secondary);">${s.name.charAt(0).toUpperCase()}</div>`}
+                <div class="genre-label" style="padding:8px;font-size:0.8rem;">${s.name}</div>
+            </div>`;
+        }
+
+        function filterVSManagerGrid() {
+            const q = document.getElementById('vsm-search').value.toLowerCase().trim();
+            document.querySelectorAll('#vsm-grid .genre-card').forEach(c => {
+                const name = (c.dataset.vs || '').toLowerCase();
+                c.style.display = (!q || name.includes(q)) ? '' : 'none';
+            });
+            document.querySelectorAll('#vsm-grid .genre-section-title').forEach(t => {
+                const grid = t.nextElementSibling;
+                if (grid && grid.classList.contains('genre-grid')) {
+                    const visible = [...grid.querySelectorAll('.genre-card')].some(c => c.style.display !== 'none');
+                    t.style.display = visible ? '' : 'none';
+                }
+            });
+        }
+
+        async function addVisualStyleFromManager() {
+            const name = document.getElementById('vsm-name').value.trim();
+            if (!name) return notify('Name Required', 'Enter a style name');
+            const formData = new FormData();
+            formData.append('name', name);
+            if (vsmFile) formData.append('file', vsmFile);
+            try {
+                const res = await fetch('/api/visual-styles', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('vsm-name').value = '';
+                    document.getElementById('vsm-image').value = '';
+                    vsmFile = null;
+                    document.getElementById('vsm-preview').style.display = 'none';
+                    await loadVisualStyleManagerGrid();
+                    await loadVisualStyleGrid();
+                } else {
+                    notify('Error', data.error || 'Failed to add');
+                }
+            } catch(e) { notify('Error', 'Could not add style'); }
+        }
+
+        async function deleteVisualStyleFromManager(name) {
+            try {
+                const res = await fetch('/api/visual-styles/' + encodeURIComponent(name), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    await loadVisualStyleManagerGrid();
+                    await loadVisualStyleGrid();
+                }
+            } catch(e) {}
+        }
+
+        function openVisualStyleManagerModal() { loadVisualStyleManagerGrid(); document.getElementById('visual-style-manager-modal').style.display = 'flex'; }
+        function closeVisualStyleManagerModal() { document.getElementById('visual-style-manager-modal').style.display = 'none'; }
+
+        // === FILM AESTHETIC MANAGER MODAL ===
+        let famFile = null;
+        document.getElementById('fam-image')?.addEventListener('change', function(e) {
+            famFile = e.target.files[0];
+            if (famFile) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    document.getElementById('fam-preview-img').src = ev.target.result;
+                    document.getElementById('fam-preview-name').textContent = famFile.name;
+                    document.getElementById('fam-preview').style.display = 'block';
+                };
+                reader.readAsDataURL(famFile);
+            }
+        });
+
+        async function loadFilmAestheticManagerGrid() {
+            const container = document.getElementById('fam-grid');
+            try {
+                const res = await fetch('/api/film-aesthetics');
+                const data = await res.json();
+                const aesthetics = data.aesthetics || [];
+                document.getElementById('fam-count').textContent = aesthetics.length + ' total';
+                if (!aesthetics.length) {
+                    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;text-align:center;padding:40px;">No aesthetics yet. Add one above or drop a folder.</div>';
+                    return;
+                }
+                const groups = {};
+                aesthetics.forEach(a => {
+                    const cat = categorizeFA(a.name);
+                    if (!groups[cat]) groups[cat] = [];
+                    groups[cat].push(a);
+                });
+                const catOrder = ['Games & Animation','Sci-Fi','TV Series','Horror & Thriller','Action & Crime','Crime & Drama','Historical & Epic','Quirky & Indie','Classic Cinema'];
+                let html = '';
+                for (const cat of catOrder) {
+                    if (!groups[cat]) continue;
+                    html += `<div class="genre-section-title">${cat}</div><div class="genre-grid">`;
+                    html += groups[cat].map(a => renderFAManagerCard(a)).join('');
+                    html += '</div>';
+                }
+                const used = new Set(Object.keys(groups));
+                const remaining = aesthetics.filter(a => !used.has(categorizeFA(a.name)));
+                if (remaining.length) {
+                    html += `<div class="genre-section-title">Other</div><div class="genre-grid">`;
+                    html += remaining.map(a => renderFAManagerCard(a)).join('');
+                    html += '</div>';
+                }
+                container.innerHTML = html;
+            } catch(e) {}
+        }
+
+        function renderFAManagerCard(a) {
+            const imgUrl = a.image ? '/api/film-aesthetics/image/' + encodeURIComponent(a.image) : null;
+            return `<div class="genre-card" data-fa="${a.name}" style="position:relative;">
+                <button class="btn btn-secondary" onclick="deleteFilmAestheticFromManager('${a.name.replace(/'/g, "\\'")}')" style="position:absolute;top:4px;right:4px;padding:2px 8px;font-size:0.7rem;z-index:2;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:4px;cursor:pointer;">✕</button>
+                ${imgUrl ? `<img src="${imgUrl}" alt="${a.name}" onerror="this.style.display='none'">` : `<div style="height:140px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:var(--text-secondary);">${a.name.charAt(0).toUpperCase()}</div>`}
+                <div class="genre-label" style="padding:8px;font-size:0.8rem;">${a.name}</div>
+            </div>`;
+        }
+
+        function filterFAManagerGrid() {
+            const q = document.getElementById('fam-search').value.toLowerCase().trim();
+            document.querySelectorAll('#fam-grid .genre-card').forEach(c => {
+                const name = (c.dataset.fa || '').toLowerCase();
+                c.style.display = (!q || name.includes(q)) ? '' : 'none';
+            });
+            document.querySelectorAll('#fam-grid .genre-section-title').forEach(t => {
+                const grid = t.nextElementSibling;
+                if (grid && grid.classList.contains('genre-grid')) {
+                    const visible = [...grid.querySelectorAll('.genre-card')].some(c => c.style.display !== 'none');
+                    t.style.display = visible ? '' : 'none';
+                }
+            });
+        }
+
+        async function addFilmAestheticFromManager() {
+            const name = document.getElementById('fam-name').value.trim();
+            if (!name) return notify('Name Required', 'Enter an aesthetic name');
+            const formData = new FormData();
+            formData.append('name', name);
+            if (famFile) formData.append('file', famFile);
+            try {
+                const res = await fetch('/api/film-aesthetics', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('fam-name').value = '';
+                    document.getElementById('fam-image').value = '';
+                    famFile = null;
+                    document.getElementById('fam-preview').style.display = 'none';
+                    await loadFilmAestheticManagerGrid();
+                    await loadFilmAestheticGrid();
+                } else {
+                    notify('Error', data.error || 'Failed to add');
+                }
+            } catch(e) { notify('Error', 'Could not add aesthetic'); }
+        }
+
+        async function deleteFilmAestheticFromManager(name) {
+            try {
+                const res = await fetch('/api/film-aesthetics/' + encodeURIComponent(name), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    await loadFilmAestheticManagerGrid();
+                    await loadFilmAestheticGrid();
+                }
+            } catch(e) {}
+        }
+
+        function openFilmAestheticManagerModal() { loadFilmAestheticManagerGrid(); document.getElementById('film-aesthetic-manager-modal').style.display = 'flex'; }
+        function closeFilmAestheticManagerModal() { document.getElementById('film-aesthetic-manager-modal').style.display = 'none'; }
+
+        // === CHARACTERS MODULE ===
+        let charData = [];
+
+        function renderCharacterCards() {
+            const count = (currentProject?.settings?.characters) || parseInt(document.getElementById('sel-characters').value) || 3;
+            document.getElementById('char-count-label').textContent = count + ' characters';
+            const container = document.getElementById('characters-container');
+
+            while (charData.length < count) {
+                charData.push({ name: '', description: '', imagePrompt: '', savedImage: null });
+            }
+
+            container.innerHTML = Array.from({ length: count }, (_, i) => {
+                const img = charData[i];
+                const savedUrl = img?.savedImage ? resolveSavedImagePath(img.savedImage, 'characters') : null;
+                return `
+                <div style="background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color);display:flex;flex-direction:column;padding:8px;">
+                    <div id="t2i-preview-char-${i}" style="height:200px;background:var(--bg-tertiary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;">
+                        <span id="t2i-placeholder-char-${i}" style="color:var(--text-secondary);font-size:0.7rem;text-align:center;${savedUrl ? 'display:none;' : ''}">No image</span>
+                        <img id="t2i-img-char-${i}" alt="Character ${i+1}" style="${savedUrl ? 'width:100%;height:100%;object-fit:cover;border-radius:4px;cursor:pointer;' : 'display:none;width:100%;height:100%;object-fit:cover;border-radius:4px;cursor:pointer;'}" src="${savedUrl || ''}" onclick="openFullscreenImage(this.src)">
+                        ${savedUrl ? `<span id="t2i-res-badge-char-${i}" style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:#222;z-index:2;">${getResolutionLabel(img?.savedImage || '')}</span>` : ''}
+                    </div>
+                    <div style="font-weight:600;font-size:0.75rem;color:var(--accent-success);margin-top:6px;">Character ${i+1}</div>
+                    <input type="text" class="form-input" id="char-name-${i}" placeholder="Name" value="${img?.name || ''}" oninput="charData[${i}].name=this.value;scheduleSaveState()" style="font-size:0.8rem;padding:4px 6px;margin-top:4px;">
+                    <div style="position:relative;margin-top:4px;">
+                        <textarea class="form-input" id="char-img-${i}" rows="2" placeholder="Image prompt..." style="resize:vertical;width:100%;font-size:0.8rem;padding:4px 6px;" oninput="charData[${i}].imagePrompt=this.value;scheduleSaveState()">${img?.imagePrompt || ''}</textarea>
+                        <button type="button" onclick="openPromptExpand(${i})" style="position:absolute;right:2px;top:2px;padding:0 5px;font-size:0.7rem;cursor:pointer;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);line-height:1.5;z-index:1;" title="Edit prompt fullscreen">⤢</button>
+                    </div>
+                    <button class="btn btn-secondary" type="button" id="reg-char-btn-${i}" onclick="regenerateCharacter(${i})" style="padding:3px 8px;font-size:0.7rem;width:100%;margin-top:4px;">🔄 Regenerate</button>
+                    <button class="btn btn-primary" type="button" onclick="generateT2I('char',${i})" id="t2i-btn-char-${i}" style="padding:3px 8px;font-size:0.7rem;width:100%;margin-top:4px;${img?.savedImage ? 'display:none;' : ''}">🎨 Generate Image</button>
+                    <div id="t2i-actions-char-${i}" style="display:none;margin-top:4px;">
+                        <div style="display:flex;gap:4px;">
+                            <button class="btn btn-success" type="button" onclick="approveT2I('char',${i})" style="padding:2px 6px;font-size:0.8rem;flex:1;" title="Approve">✅</button>
+                            <button class="btn btn-warning" type="button" onclick="rejectT2I('char',${i})" style="padding:2px 6px;font-size:0.8rem;flex:1;" title="Reject">❌</button>
+                            <button class="btn btn-secondary" type="button" onclick="skipT2I('char',${i})" style="padding:2px 6px;font-size:0.8rem;flex:1;" title="Skip">⏭️</button>
+                        </div>
+                    </div>
+                    ${img?.savedImage ? `<div style="margin-top:4px;display:flex;gap:4px;">
+                        <div style="flex:1;padding:3px 6px;background:var(--accent-success);color:#fff;border-radius:4px;font-size:0.65rem;text-align:center;">✅ Saved</div>
+                        <button type="button" onclick="regenerateCharImage(${i})" style="padding:2px 6px;font-size:0.65rem;cursor:pointer;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-secondary);white-space:nowrap;" title="Regenerate image">🔄 Regenerate</button>
+                    </div>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        function regenerateCharImage(index) {
+            if (charData[index]) {
+                charData[index].savedImage = null;
+            }
+            renderCharacterCards();
+            scheduleSaveState();
+        }
+
+        async function generateAllCharacters() {
+            const count = currentProject?.settings?.characters || 3;
+            const pb = document.getElementById('characters-progress');
+            pb.style.display = 'block';
+            document.getElementById('char-progress-title').textContent = 'Generating characters...';
+            document.getElementById('char-progress-bar').style.width = '10%';
+            document.getElementById('char-progress-pct').textContent = '10%';
+
+            // Try orchestrator for screenplay-aware character generation
+            try {
+                const res = await fetch('/api/orchestrator/characters', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success && data.characters && data.characters.length) {
+                    charData = data.characters.map(ch => ({
+                        name: ch.character_name || ch.name || '',
+                        description: `${ch.role || ''}: ${ch.personality || ''} ${ch.emotional_traits || ''} ${ch.physical_appearance || ''} ${ch.clothing || ''}`.trim(),
+                        imagePrompt: ch.image_prompt || ''
+                    }));
+                    document.getElementById('char-progress-bar').style.width = '100%';
+                    document.getElementById('char-progress-pct').textContent = '100%';
+                    document.getElementById('char-progress-title').textContent = '✅ Characters from screenplay!';
+                    setTimeout(() => { pb.style.display = 'none'; }, 1000);
+                    renderCharacterCards();
+                    scheduleSaveState();
+                    return;
+                }
+            } catch(e) {
+                // Fall through to individual generation
+            }
+
+            const context = buildCharacterContext();
+
+            for (let i = 0; i < count; i++) {
+                const pct = Math.round(((i) / count) * 90);
+                document.getElementById('char-progress-bar').style.width = pct + '%';
+                document.getElementById('char-progress-pct').textContent = pct + '%';
+                document.getElementById('char-progress-title').textContent = `Character ${i+1}/${count}...`;
+
+                const prompt = `Generate a compelling character for a short film.
+
+Context:
+${context}
+
+Character ${i+1} of ${count}:
+
+Return ONLY valid JSON with these fields:
+- "name": a memorable character name
+- "description": 2-3 sentence description of personality, backstory, and role
+- "imagePrompt": a concise text-to-image prompt for this character's appearance
+
+Respond with raw JSON only, no markdown, no backticks.`;
+
+                try {
+                    const data = await generateFromLLM(prompt);
+                    if (data.success) {
+                        const text = data.response.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+                        const parsed = JSON.parse(text);
+                        charData[i] = {
+                            name: parsed.name || '',
+                            description: parsed.description || '',
+                            imagePrompt: parsed.imagePrompt || ''
+                        };
+                        scheduleSaveState();
+                    }
+                } catch(e) {
+                    // continue to next character
+                }
+            }
+
+            document.getElementById('char-progress-bar').style.width = '100%';
+            document.getElementById('char-progress-pct').textContent = '100%';
+            document.getElementById('char-progress-title').textContent = '✅ Done!';
+            setTimeout(() => { pb.style.display = 'none'; }, 1000);
+            renderCharacterCards();
+        }
+
+        function buildCharacterContext() {
+            const parts = [];
+            if (selectedVisualStyle) parts.push('Visual Style: ' + selectedVisualStyle);
+            if (selectedFilmAesthetic) parts.push('Film Aesthetic: ' + selectedFilmAesthetic);
+            if (selectedGenres.length) parts.push('Genres: ' + selectedGenres.join(', '));
+            if (sceneData.length) parts.push('Scenes:\n' + sceneData.join('\n'));
+            return parts.join('\n\n') || 'General short film';
+        }
+
+        async function regenerateCharacter(index) {
+            const btn = document.getElementById('reg-char-btn-' + index);
+            if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span>'; }
+            const context = buildCharacterContext();
+            const prompt = `Generate a character for a short film.
+
+Context:
+${context}
+
+Return ONLY valid JSON with these fields:
+- "name": a memorable character name
+- "description": 2-3 sentence description of personality, backstory, and role
+- "imagePrompt": a concise text-to-image prompt for this character's appearance
+
+Respond with raw JSON only, no markdown, no backticks.`;
+
+            try {
+                const data = await generateFromLLM(prompt);
+                if (data.success) {
+                    const text = data.response.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+                    const parsed = JSON.parse(text);
+                    charData[index] = {
+                        name: parsed.name || charData[index]?.name || '',
+                        description: parsed.description || charData[index]?.description || '',
+                        imagePrompt: parsed.imagePrompt || charData[index]?.imagePrompt || ''
+                    };
+                    // Update only this card's DOM without re-rendering all cards
+                    const nameInput = document.getElementById('char-name-' + index);
+                    const descTextarea = document.getElementById('char-desc-' + index);
+                    const imgInput = document.getElementById('char-img-' + index);
+                    if (nameInput) nameInput.value = charData[index].name;
+                    if (descTextarea) descTextarea.value = charData[index].description;
+                    if (imgInput) imgInput.value = charData[index].imagePrompt;
+                    scheduleSaveState();
+                }
+            } catch(e) {
+                notify('Error', 'Could not regenerate character');
+            }
+            if (btn) { btn.disabled = false; btn.innerHTML = '🔄 Regenerate'; }
+        }
+
+        // === T2I IMAGE GENERATION ===
+        let t2iQueue = [];
+        let t2iProcessing = false;
+
+        async function generateT2I(type, index) {
+            const btn = document.getElementById(`t2i-btn-${type}-${index}`);
+            if (!btn) return;
+            const prompt = type === 'char' ? charData[index]?.imagePrompt : locationData[index]?.imagePrompt;
+            if (!prompt || !prompt.trim()) {
+                notify('No Prompt', 'Write an image prompt first'); return;
+            }
+            btn.disabled = true;
+            btn.textContent = '⏳...';
+            showT2ISpinner(type, index);
+            const seed = Math.floor(Math.random() * 999999999) + 1;
+            const t2iResEl = document.getElementById('sel-img-resolution');
+            const t2iResolution = t2iResEl ? t2iResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
+            try {
+                const res = await fetch('/api/comfyui/generate/t2i', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: t2iResolution })
+                });
+                const data = await res.json();
+                hideT2ISpinner(type, index);
+                if (data.success) {
+                    showT2IPreview(type, index, data.filename);
+                } else {
+                    notify('T2I Failed', data.error || 'Generation failed');
+                    btn.disabled = false;
+                    btn.textContent = '🎨 Generate Image';
+                    hideT2ISpinner(type, index);
+                }
+            } catch(e) {
+                notify('Error', e.message);
+                btn.disabled = false;
+                btn.textContent = '🎨 Generate Image';
+                hideT2ISpinner(type, index);
+            }
+        }
+
+        function showT2ISpinner(type, index) {
+            const preview = document.getElementById(`t2i-preview-${type}-${index}`);
+            const img = document.getElementById(`t2i-img-${type}-${index}`);
+            const placeholder = document.getElementById(`t2i-placeholder-${type}-${index}`);
+            if (!preview) return;
+            if (img) img.style.display = 'none';
+            if (placeholder) placeholder.style.display = 'none';
+            // Remove existing spinner
+            const old = preview.querySelector('.t2i-spinner');
+            if (old) old.remove();
+            const spinner = document.createElement('div');
+            spinner.className = 't2i-spinner';
+            spinner.innerHTML = '<div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">Generating...</div>';
+            preview.appendChild(spinner);
+        }
+
+        function hideT2ISpinner(type, index) {
+            const preview = document.getElementById(`t2i-preview-${type}-${index}`);
+            if (!preview) return;
+            const spinner = preview.querySelector('.t2i-spinner');
+            if (spinner) spinner.remove();
+        }
+
+        function showT2IPreview(type, index, filename) {
+            const img = document.getElementById(`t2i-img-${type}-${index}`);
+            const placeholder = document.getElementById(`t2i-placeholder-${type}-${index}`);
+            const actions = document.getElementById(`t2i-actions-${type}-${index}`);
+            if (!img) return;
+            img.src = `/api/comfyui/view?filename=${filename}`;
+            img.style.display = 'block';
+            img.onclick = function() { openFullscreenImage(this.src); };
+            if (placeholder) placeholder.style.display = 'none';
+            if (actions) actions.style.display = 'block';
+            img.dataset.filename = filename;
+            const btn = document.getElementById(`t2i-btn-${type}-${index}`);
+            if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate Image'; }
+        }
+
+        function openFullscreenImage(src) {
+            const overlay = document.getElementById('image-fullscreen-overlay');
+            const fsImg = document.getElementById('fullscreen-image');
+            fsImg.src = src;
+            overlay.classList.add('active');
+        }
+
+        function closeFullscreenImage(event) {
+            if (event && event.target !== event.currentTarget) return;
+            const overlay = document.getElementById('image-fullscreen-overlay');
+            overlay.classList.remove('active');
+            document.getElementById('fullscreen-image').src = '';
+        }
+
+        let _promptExpandIndex = -1;
+        let _promptExpandType = '';
+        function openModalPromptExpand(elementId) {
+            const ta = document.getElementById(elementId);
+            if (!ta) return;
+            _promptExpandIndex = elementId;
+            _promptExpandType = 'modal';
+            document.getElementById('prompt-expand-textarea').value = ta.value;
+            document.getElementById('prompt-expand-title').textContent = 'Edit Prompt';
+            document.getElementById('prompt-expand-overlay').classList.add('active');
+            setTimeout(() => document.getElementById('prompt-expand-textarea').focus(), 100);
+        }
+
+        function openPromptExpand(index) {
+            _promptExpandIndex = index;
+            const ta = document.getElementById('shot-img-prompt-' + index) || 
+                       document.getElementById('shot-video-prompt-' + index) || 
+                       document.getElementById('scene-img-' + index) || 
+                       document.getElementById('vidprompt-' + index) || 
+                       document.getElementById('char-img-' + index) || 
+                       document.getElementById('loc-img-' + index);
+            if (!ta) return;
+            
+            if (ta.id.startsWith('shot-img-prompt-')) _promptExpandType = 'shot-image';
+            else if (ta.id.startsWith('shot-video-prompt-')) _promptExpandType = 'shot-video';
+            else if (ta.id.startsWith('scene-img')) _promptExpandType = 'scene';
+            else if (ta.id.startsWith('vidprompt-')) _promptExpandType = 'video';
+            else if (ta.id.startsWith('char-img-')) _promptExpandType = 'char';
+            else _promptExpandType = 'loc';
+
+            const label = _promptExpandType === 'shot-image' ? 'Shot Image' :
+                          _promptExpandType === 'shot-video' ? 'Shot Video' :
+                          _promptExpandType === 'scene' ? 'Scene' : 
+                          _promptExpandType === 'video' ? 'Video' : 
+                          _promptExpandType === 'char' ? 'Character' : 'Location';
+            
+            document.getElementById('prompt-expand-textarea').value = ta.value;
+            document.getElementById('prompt-expand-title').textContent = 'Edit Prompt - ' + label + ' ' + (typeof index === 'string' ? index.replace('_', ' Shot ') : (index + 1));
+            document.getElementById('prompt-expand-overlay').classList.add('active');
+            setTimeout(() => document.getElementById('prompt-expand-textarea').focus(), 100);
+        }
+        function syncPromptExpand() {
+            const idx = _promptExpandIndex;
+            if (idx === -1) return;
+            const val = document.getElementById('prompt-expand-textarea').value;
+            let ta;
+            if (_promptExpandType === 'modal') {
+                ta = document.getElementById(idx);
+            } else {
+                const taId = _promptExpandType === 'shot-image' ? 'shot-img-prompt-' :
+                             _promptExpandType === 'shot-video' ? 'shot-video-prompt-' :
+                             _promptExpandType === 'scene' ? 'scene-img-' : 
+                             _promptExpandType === 'video' ? 'vidprompt-' : 
+                             _promptExpandType === 'char' ? 'char-img-' : 'loc-img-';
+                ta = document.getElementById(taId + idx);
+            }
+            if (ta) { ta.value = val; ta.dispatchEvent(new Event('input', { bubbles: true })); }
+        }
+        function closePromptExpand() {
+            syncPromptExpand();
+            document.getElementById('prompt-expand-overlay').classList.remove('active');
+            _promptExpandIndex = -1;
+            _promptExpandType = '';
+        }
+        async function regeneratePromptFromExpand() {
+            const idx = _promptExpandIndex;
+            const type = _promptExpandType;
+            if (idx === -1) return;
+            const errEl = document.getElementById('prompt-expand-error');
+            const llmStatus = document.getElementById('status-llm').textContent;
+            if (llmStatus.includes('Not connected')) {
+                if (errEl) errEl.style.display = 'inline';
+                return;
+            }
+            if (errEl) errEl.style.display = 'none';
+            const btn = document.getElementById('prompt-expand-regen-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+            
+            if (type === 'shot-image') {
+                const parts = String(idx).split('_');
+                await regenerateShotPrompt(parseInt(parts[0]), parseInt(parts[1]));
+            } else if (type === 'shot-video') {
+                const parts = String(idx).split('_');
+                await regenerateShotVideoPrompt(parseInt(parts[0]), parseInt(parts[1]));
+            } else if (type === 'scene') {
+                await regenerateScenePrompt(idx);
+            } else if (type === 'video') {
+                await regenerateVideoPrompt(idx);
+            } else if (type === 'char') {
+                await regenerateCharacter(idx);
+            } else if (type === 'loc') {
+                await regenerateLocation(idx);
+            }
+            
+            const taId = type === 'shot-image' ? 'shot-img-prompt-' :
+                         type === 'shot-video' ? 'shot-video-prompt-' :
+                         type === 'scene' ? 'scene-img-' : 
+                         type === 'video' ? 'vidprompt-' : 
+                         type === 'char' ? 'char-img-' : 'loc-img-';
+            const updatedTa = document.getElementById(taId + idx);
+            if (updatedTa) document.getElementById('prompt-expand-textarea').value = updatedTa.value;
+            if (btn) { btn.disabled = false; btn.textContent = '🔄 Regenerate Prompt'; }
+        }
+
+        async function approveT2I(type, index) {
+            const img = document.getElementById(`t2i-img-${type}-${index}`);
+            if (!img || !img.dataset.filename) return;
+            const cardName = type === 'char' ? (charData[index]?.name || 'character_' + index) : (locationData[index]?.name || 'location_' + index);
+            const stage = type === 'char' ? 'characters' : 'locations';
+            const prevSaved = type === 'char' ? charData[index]?.savedImage : locationData[index]?.savedImage;
+            const res = await fetch('/api/projects/save-image', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    project_name: currentProject?.name || '',
+                    project_path: currentProject?.path || '',
+                    stage: stage,
+                    filename: img.dataset.filename,
+                    card_name: cardName,
+                    previous_file: prevSaved ? prevSaved + '.png' : null
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                notify('✅ Saved', `Saved to ${stage}/`);
+                const savedFilename = data.path.split(/[\\/]/).pop();
+                const relativePath = stage + '/' + savedFilename;
+                addAsset(type === 'loc' ? 'location' : 'character', cardName, relativePath);
+                if (type === 'loc') {
+                    locationData[index].savedImage = cardName;
+                } else {
+                    charData[index].savedImage = cardName;
+                }
+                scheduleSaveState();
+                const actions = document.getElementById(`t2i-actions-${type}-${index}`);
+                if (actions) actions.style.display = 'none';
+                const btn = document.getElementById(`t2i-btn-${type}-${index}`);
+                if (btn) { btn.style.display = 'none'; }
+                autoNextT2I(type, index);
+            } else {
+                notify('Save Failed', data.error);
+            }
+        }
+
+        async function rejectT2I(type, index) {
+            await generateT2I(type, index);
+        }
+
+        function skipT2I(type, index) {
+            hideT2IPreview(type, index);
+            autoNextT2I(type, index);
+        }
+
+        function hideT2IPreview(type, index) {
+            const img = document.getElementById(`t2i-img-${type}-${index}`);
+            const placeholder = document.getElementById(`t2i-placeholder-${type}-${index}`);
+            const actions = document.getElementById(`t2i-actions-${type}-${index}`);
+            if (img) { img.style.display = 'none'; img.removeAttribute('src'); }
+            if (placeholder) placeholder.style.display = 'block';
+            if (actions) actions.style.display = 'none';
+        }
+
+        function autoNextT2I(type, index) {
+            const count = type === 'char'
+                ? (currentProject?.settings?.characters || 3)
+                : (currentProject?.settings?.locations || 3);
+            const nextIdx = index + 1;
+            if (nextIdx < count) {
+                const nextBtn = document.getElementById(`t2i-btn-${type}-${nextIdx}`);
+                if (nextBtn && !nextBtn.disabled) {
+                    generateT2I(type, nextIdx);
+                }
+            } else {
+                notify('T2I Complete', 'All ' + type + ' images processed');
+            }
+        }
+
+        let sceneData = [];
+
+        // === LOCATIONS MODULE ===
+        let locationData = [];
+        let propData = [];
+
+        function renderLocations() {
+            const count = (currentProject?.settings?.locations) || parseInt(document.getElementById('sel-locations').value) || 3;
+            document.getElementById('locations-count-label').textContent = count + ' locations';
+            const container = document.getElementById('locations-container');
+
+            while (locationData.length < count) {
+                locationData.push({ name: '', type: '', details: '', imagePrompt: '', savedImage: null });
+            }
+
+            container.innerHTML = Array.from({ length: count }, (_, i) => {
+                const loc = locationData[i];
+                const savedUrl = loc?.savedImage ? resolveSavedImagePath(loc.savedImage, 'locations') : null;
+                return `
+                <div style="background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color);display:flex;flex-direction:column;padding:8px;">
+                    <div id="t2i-preview-loc-${i}" style="height:200px;background:var(--bg-tertiary);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px dashed var(--border-color);position:relative;">
+                        <span id="t2i-placeholder-loc-${i}" style="color:var(--text-secondary);font-size:0.7rem;text-align:center;${savedUrl ? 'display:none;' : ''}">No image</span>
+                        <img id="t2i-img-loc-${i}" alt="Location ${i+1}" style="${savedUrl ? 'width:100%;height:100%;object-fit:cover;border-radius:4px;cursor:pointer;' : 'display:none;width:100%;height:100%;object-fit:cover;border-radius:4px;cursor:pointer;'}" src="${savedUrl || ''}" onclick="openFullscreenImage(this.src)">
+                        ${savedUrl ? `<span id="t2i-res-badge-loc-${i}" style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:#222;z-index:2;">${getResolutionLabel(loc?.savedImage || '')}</span>` : ''}
+                    </div>
+                    <div style="font-weight:600;font-size:0.75rem;color:var(--accent-success);margin-top:6px;">Location ${i+1}</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px;">
+                        <input type="text" class="form-input" id="loc-name-${i}" placeholder="Name" value="${loc?.name || ''}" oninput="locationData[${i}].name=this.value;scheduleSaveState()" style="font-size:0.8rem;padding:4px 6px;">
+                        <input type="text" class="form-input" id="loc-type-${i}" placeholder="Type" value="${loc?.type || ''}" oninput="locationData[${i}].type=this.value;scheduleSaveState()" style="font-size:0.8rem;padding:4px 6px;">
+                    </div>
+                    <div style="position:relative;margin-top:4px;">
+                        <textarea class="form-input" id="loc-img-${i}" rows="2" placeholder="Image prompt..." style="resize:vertical;width:100%;font-size:0.8rem;padding:4px 6px;" oninput="locationData[${i}].imagePrompt=this.value;scheduleSaveState()">${loc?.imagePrompt || ''}</textarea>
+                        <button type="button" onclick="openPromptExpand(${i})" style="position:absolute;right:2px;top:2px;padding:0 5px;font-size:0.7rem;cursor:pointer;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:3px;color:var(--text-secondary);line-height:1.5;z-index:1;" title="Edit prompt fullscreen">⤢</button>
+                    </div>
+                    <button class="btn btn-secondary" type="button" id="reg-loc-btn-${i}" onclick="regenerateLocation(${i})" style="padding:3px 8px;font-size:0.7rem;width:100%;margin-top:4px;">🔄 Regenerate</button>
+                    <button class="btn btn-primary" type="button" onclick="generateT2I('loc',${i})" id="t2i-btn-loc-${i}" style="padding:3px 8px;font-size:0.7rem;width:100%;margin-top:4px;${loc?.savedImage ? 'display:none;' : ''}">🎨 Generate Image</button>
+                    <div id="t2i-actions-loc-${i}" style="display:none;margin-top:4px;">
+                        <div style="display:flex;gap:4px;">
+                            <button class="btn btn-success" type="button" onclick="approveT2I('loc',${i})" style="padding:2px 6px;font-size:0.8rem;flex:1;" title="Approve">✅</button>
+                            <button class="btn btn-warning" type="button" onclick="rejectT2I('loc',${i})" style="padding:2px 6px;font-size:0.8rem;flex:1;" title="Reject">❌</button>
+                            <button class="btn btn-secondary" type="button" onclick="skipT2I('loc',${i})" style="padding:2px 6px;font-size:0.8rem;flex:1;" title="Skip">⏭️</button>
+                        </div>
+                    </div>
+                    ${loc?.savedImage ? `<div style="margin-top:4px;display:flex;gap:4px;">
+                        <div style="flex:1;padding:3px 6px;background:var(--accent-success);color:#fff;border-radius:4px;font-size:0.65rem;text-align:center;">✅ Saved</div>
+                        <button type="button" onclick="regenerateLocImage(${i})" style="padding:2px 6px;font-size:0.65rem;cursor:pointer;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-secondary);white-space:nowrap;" title="Regenerate image">🔄 Regenerate</button>
+                    </div>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        function regenerateLocImage(index) {
+            if (locationData[index]) {
+                locationData[index].savedImage = null;
+            }
+            renderLocations();
+            scheduleSaveState();
+        }
+
+        async function generateLocations() {
+            const count = (currentProject?.settings?.locations) || parseInt(document.getElementById('sel-locations').value) || 3;
+            const pb = document.getElementById('locations-progress');
+            pb.style.display = 'block';
+            document.getElementById('locations-progress-title').textContent = 'Generating locations...';
+            document.getElementById('locations-progress-bar').style.width = '20%';
+            document.getElementById('locations-progress-pct').textContent = '20%';
+
+            // Try using orchestrator for continuity-aware location generation
+            try {
+                const res = await fetch('/api/orchestrator/locations', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success && data.locations && data.locations.length) {
+                    locationData = data.locations.map(loc => ({
+                        name: loc.location_name || loc.name || '',
+                        type: loc.environment_type || loc.type || '',
+                        details: `${loc.mood || ''} ${loc.lighting_style || ''} ${loc.cinematic_features || ''} ${loc.environmental_storytelling || ''}`.trim() || '',
+                        imagePrompt: loc.image_prompt || ''
+                    }));
+                    document.getElementById('locations-progress-bar').style.width = '100%';
+                    document.getElementById('locations-progress-pct').textContent = '100%';
+                    document.getElementById('locations-progress-title').textContent = '✅ Locations generated from screenplay!';
+                    setTimeout(() => { pb.style.display = 'none'; }, 1000);
+                    renderLocations();
+                    scheduleSaveState();
+                    return;
+                }
+            } catch(e) {
+                // Fall through to individual generation
+            }
+
+            const context = buildModuleContext();
+
+            for (let i = 0; i < count; i++) {
+                const pct = Math.round(((i) / count) * 90);
+                document.getElementById('locations-progress-bar').style.width = pct + '%';
+                document.getElementById('locations-progress-pct').textContent = pct + '%';
+                document.getElementById('locations-progress-title').textContent = `Location ${i+1}/${count}...`;
+
+                const prompt = `Generate a location for a short film.
+
+Context: ${context}
+
+Location ${i+1} of ${count}:
+
+Return ONLY valid JSON with:
+- "name": short location name
+- "type": location type (bedroom, street, etc.)
+- "details": 2-3 sentence description of layout, objects, atmosphere, lighting
+- "imagePrompt": concise T2I prompt for this location
+
+Raw JSON only, no markdown.`;
+
+                try {
+                    const data = await generateFromLLM(prompt);
+                    if (data.success) {
+                        const text = data.response.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+                        const parsed = JSON.parse(text);
+                        locationData[i] = {
+                            name: parsed.name || '',
+                            type: parsed.type || '',
+                            details: parsed.details || '',
+                            imagePrompt: parsed.imagePrompt || ''
+                        };
+                        scheduleSaveState();
+                    }
+                } catch(e) {}
+            }
+
+            document.getElementById('locations-progress-bar').style.width = '100%';
+            document.getElementById('locations-progress-pct').textContent = '100%';
+            document.getElementById('locations-progress-title').textContent = '✅ Done!';
+            setTimeout(() => { pb.style.display = 'none'; }, 1000);
+  renderLocations();
+  }
+
+async function regenerateLocation(index) {
+            const btn = document.getElementById('reg-loc-btn-' + index);
+            if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span>'; }
+            const context = buildModuleContext();
+            const prompt = `Generate a location for a short film.
+
+Context: ${context}
+
+Return ONLY valid JSON with:
+- "name": short location name
+- "type": location type
+- "details": 2-3 sentence description of layout, objects, atmosphere, lighting
+- "imagePrompt": concise T2I prompt
+
+Raw JSON only, no markdown.`;
+
+            try {
+                const data = await generateFromLLM(prompt);
+                if (data.success) {
+                    const text = data.response.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+                    const parsed = JSON.parse(text);
+                    locationData[index] = {
+                        name: parsed.name || locationData[index]?.name || '',
+                        type: parsed.type || locationData[index]?.type || '',
+                        details: parsed.details || locationData[index]?.details || '',
+                        imagePrompt: parsed.imagePrompt || locationData[index]?.imagePrompt || ''
+                    };
+                    // Update only this card's DOM without re-rendering all locations
+                    const nameInput = document.getElementById('loc-name-' + index);
+                    const typeInput = document.getElementById('loc-type-' + index);
+                    const detailsTextarea = document.getElementById('loc-details-' + index);
+                    const imgTextarea = document.getElementById('loc-img-' + index);
+                    if (nameInput) nameInput.value = locationData[index].name;
+                    if (typeInput) typeInput.value = locationData[index].type;
+                    if (detailsTextarea) detailsTextarea.value = locationData[index].details;
+                    if (imgTextarea) imgTextarea.value = locationData[index].imagePrompt;
+                    scheduleSaveState();
+                }
+            } catch(e) { notify('Error', 'Could not regenerate location'); }
+            if (btn) { btn.disabled = false; btn.innerHTML = '🔄 Regenerate'; }
+        }
+
+        // === IMAGE PROMPTS MODULE ===
+        let imagePromptData = [];
+        let sceneImageData = [];
+
+        // === VIDEO PROMPTS MODULE ===
+        let videoPromptData = [];
+
+        async function generateSceneT2I(index) {
+            const btn = document.getElementById(`scene-t2i-btn-${index}`);
+            if (!btn) return;
+            const prompt = sceneImageData[index]?.prompt || imagePromptData[index];
+            if (!prompt || !prompt.trim()) {
+                notify('No Prompt', 'Write an image prompt first'); return;
+            }
+            btn.disabled = true;
+            btn.textContent = '⏳...';
+            showSceneT2ISpinner(index);
+            const seed = Math.floor(Math.random() * 999999999) + 1;
+            try {
+                const res = await fetch('/api/comfyui/generate/t2i', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ prompt: prompt, seed: seed })
+                });
+                const data = await res.json();
+                hideSceneT2ISpinner(index);
+                if (data.success) {
+                    showSceneT2IPreview(index, data.filename);
+                } else {
+                    notify('T2I Failed', data.error || 'Generation failed');
+                    btn.disabled = false;
+                    btn.textContent = '🎨 Generate Scene Image';
+                }
+            } catch(e) {
+                notify('Error', e.message);
+                btn.disabled = false;
+                btn.textContent = '🎨 Generate Scene Image';
+                hideSceneT2ISpinner(index);
+            }
+        }
+
+        function showSceneT2ISpinner(index) {
+            const preview = document.getElementById(`scene-t2i-preview-${index}`);
+            const img = document.getElementById(`scene-t2i-img-${index}`);
+            const placeholder = document.getElementById(`scene-t2i-placeholder-${index}`);
+            if (!preview) return;
+            if (img) img.style.display = 'none';
+            if (placeholder) placeholder.style.display = 'none';
+            const old = preview.querySelector('.t2i-spinner');
+            if (old) old.remove();
+            const spinner = document.createElement('div');
+            spinner.className = 't2i-spinner';
+            spinner.innerHTML = '<div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">Generating...</div>';
+            preview.appendChild(spinner);
+        }
+
+        function hideSceneT2ISpinner(index) {
+            const preview = document.getElementById(`scene-t2i-preview-${index}`);
+            if (!preview) return;
+            const spinner = preview.querySelector('.t2i-spinner');
+            if (spinner) spinner.remove();
+        }
+
+        function showSceneT2IPreview(index, filename) {
+            const img = document.getElementById(`scene-t2i-img-${index}`);
+            const placeholder = document.getElementById(`scene-t2i-placeholder-${index}`);
+            const actions = document.getElementById(`scene-t2i-actions-${index}`);
+            if (!img) return;
+            img.src = `/api/comfyui/view?filename=${filename}`;
+            img.style.display = 'block';
+            img.onclick = function() { openFullscreenImage(this.src); };
+            if (placeholder) placeholder.style.display = 'none';
+            if (actions) actions.style.display = 'block';
+            img.dataset.filename = filename;
+            const btn = document.getElementById(`scene-t2i-btn-${index}`);
+            if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate'; }
+        }
+
+        async function approveSceneT2I(index) {
+            const img = document.getElementById(`scene-t2i-img-${index}`);
+            if (!img || !img.dataset.filename) return;
+            const cardName = 'scene_' + (index + 1);
+            const prevSaved = sceneImageData[index]?.savedImage;
+            const res = await fetch('/api/projects/save-image', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    project_name: currentProject?.name || '',
+                    project_path: currentProject?.path || '',
+                    stage: 'scenes',
+                    filename: img.dataset.filename,
+                    card_name: cardName,
+                    previous_file: prevSaved ? prevSaved + '.png' : null
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                notify('✅ Saved', `Saved to scenes/`);
+                const savedFilename = data.path.split(/[\\/]/).pop();
+                const relativePath = 'scenes/' + savedFilename;
+                addAsset('scene', cardName, relativePath);
+                sceneImageData[index].savedImage = cardName;
+                sceneImageData[index].savedPath = data.path;
+                scheduleSaveState();
+                const actions = document.getElementById(`scene-t2i-actions-${index}`);
+                if (actions) actions.style.display = 'none';
+                const btn = document.getElementById(`scene-t2i-btn-${index}`);
+                if (btn) { btn.style.display = 'none'; }
+                autoNextSceneT2I(index);
+            } else {
+                notify('Save Failed', data.error);
+            }
+        }
+
+        async function rejectSceneT2I(index) {
+            await generateSceneI2I(index);
+        }
+
+        function skipSceneT2I(index) {
+            const img = document.getElementById(`scene-t2i-img-${index}`);
+            const placeholder = document.getElementById(`scene-t2i-placeholder-${index}`);
+            const actions = document.getElementById(`scene-t2i-actions-${index}`);
+            if (img) { img.style.display = 'none'; img.removeAttribute('src'); }
+            if (placeholder) placeholder.style.display = 'block';
+            if (actions) actions.style.display = 'none';
+            autoNextSceneT2I(index);
+        }
+
+        function autoNextSceneT2I(index) {
+            const nextIdx = index + 1;
+            if (nextIdx < imagePromptData.length) {
+                const nextBtn = document.getElementById(`scene-t2i-btn-${nextIdx}`);
+                if (nextBtn && !nextBtn.disabled) {
+                    generateSceneI2I(nextIdx);
+                }
+            } else {
+                notify('Storyboard Complete', 'All scene images processed');
+            }
+        }
+
+        async function generateStoryboardPromptsPhase() {
+            const pb = document.getElementById('storyboard-progress');
+            if (!pb) return;
+            pb.style.display = 'block';
+
+            try {
+                // Step 1: Generate Image Prompts
+                document.getElementById('sb-progress-bar').style.width = '10%';
+                document.getElementById('sb-progress-pct').textContent = '10%';
+                document.getElementById('sb-progress-title').textContent = 'Generating image prompts...';
+                let imgRes = await fetch('/api/orchestrator/storyboard', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+                });
+                let imgData = await imgRes.json();
+                if (!imgData.success) {
+                    notify('Error', imgData.error || 'Failed to generate image prompts');
+                    pb.style.display = 'none'; return;
+                }
+
+                // Step 2: Generate Video Prompts
+                document.getElementById('sb-progress-bar').style.width = '50%';
+                document.getElementById('sb-progress-pct').textContent = '50%';
+                document.getElementById('sb-progress-title').textContent = 'Generating video prompts...';
+                let vidRes = await fetch('/api/orchestrator/video-prompts', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+                });
+                let vidData = await vidRes.json();
+                if (!vidData.success) {
+                    notify('Warning', 'Image prompts generated but video prompts failed: ' + (vidData.error || ''), '⚠️');
+                }
+
+                document.getElementById('sb-progress-bar').style.width = '100%';
+                document.getElementById('sb-progress-pct').textContent = '100%';
+                document.getElementById('sb-progress-title').textContent = '✅ All prompts generated!';
+                setTimeout(() => { pb.style.display = 'none'; }, 1000);
+                await loadProjectState();
+                renderStoryboard();
+            } catch(e) {
+                notify('Error', e.message);
+                pb.style.display = 'none';
+            }
+        }
+
+        async function generateAllStoryboardImages() {
+            if (!requireProject()) return;
+
+            if (!screenplayData || !screenplayData.scenes) {
+                notify('No Screenplay', 'Please generate screenplay first.'); return;
+            }
+            const pendingByScene = {};
+            let totalPending = 0;
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (!sh.storyboard_image && !sh._temp_storyboard_image) {
+                        if (!pendingByScene[sIdx]) pendingByScene[sIdx] = [];
+                        pendingByScene[sIdx].push(shIdx);
+                        totalPending++;
+                    }
+                }
+            }
+            if (totalPending === 0) return;
+            
+            window._sbBatchTotal = totalPending;
+            window._sbBatchCompleted = 0;
+            
+            const pb = document.getElementById('storyboard-progress');
+            if (pb) pb.style.display = 'block';
+
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            showAbortButton();
+            
+            let imagesGeneratedInThisBatch = 0;
+            const sceneIndices = Object.keys(pendingByScene).map(Number).sort((a,b)=>a-b);
+            
+            for (const sIdx of sceneIndices) {
+                if (signal.aborted) break;
+                
+                const shots = pendingByScene[sIdx];
+                for (const shIdx of shots) {
+                    if (signal.aborted) break;
+                    await generateShotImage(sIdx, shIdx, signal);
+                    window._sbBatchCompleted++;
+                    
+                    imagesGeneratedInThisBatch++;
+                    if (imagesGeneratedInThisBatch >= 6) {
+                        console.log("[VRAM Flush] Automatic batch threshold reached. Flushing system caches...");
+                        try {
+                            await fetch('/api/system/clear-cache', { method: 'POST' });
+                        } catch (e) {}
+                        imagesGeneratedInThisBatch = 0;
+                    }
+                }
+                
+                if (signal.aborted) break;
+                
+                // Perform automated scene consistency check after the scene finishes
+                document.getElementById('sb-progress-title').textContent = `Verifying Scene ${sIdx + 1} Consistency...`;
+                await verifySceneConsistency(sIdx, signal);
+            }
+            
+            if (pb) {
+                document.getElementById('sb-progress-bar').style.width = '100%';
+                document.getElementById('sb-progress-pct').textContent = '100%';
+                document.getElementById('sb-progress-title').textContent = '✅ All images generated & verified!';
+                setTimeout(() => { pb.style.display = 'none'; }, 1500);
+            }
+            window._sceneAbortController = null;
+            hideAbortButton();
+            renderStoryboard();
+        }
+
+        async function generateAllStoryboardVideos() {
+            if (!requireProject()) return;
+
+            if (!screenplayData || !screenplayData.scenes) {
+                notify('No Screenplay', 'Please generate screenplay first.'); return;
+            }
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh.video_clip) continue;
+                    if (!sh.storyboard_image) continue;
+                    await generateShotVideo(sIdx, shIdx);
+                }
+            }
+        }
+
+        async function generateAllStoryboardVideoPrompts() {
+            if (!screenplayData || !screenplayData.scenes) {
+                notify('No Screenplay', 'Please generate screenplay first.'); return;
+            }
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    await regenerateShotVideoPrompt(sIdx, shIdx);
+                }
+            }
+            renderStoryboard();
+            scheduleSaveState();
+        }
+
+        // ── Batch Approve / Clear ───────────────────────────────────
+        async function approveAllImages() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            let count = 0;
+
+            // Upscale warning — check all pending images once
+            if (currentProject?.settings?.upscaleWarning !== false) {
+                const allPending = [];
+                for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                    const s = screenplayData.scenes[sIdx];
+                    if (!s.shots) continue;
+                    for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                        const sh = s.shots[shIdx];
+                        if (sh._temp_storyboard_image && !sh.storyboard_image) allPending.push({ sIdx, shIdx, sh });
+                    }
+                }
+                const anyNotUpscaled = allPending.some(({ sh }) => {
+                    return !(sh._temp_upscaled_file && sh._temp_upscaled_file.includes('_4k_'))
+                        && !(sh.storyboard_image && sh.storyboard_image.includes('_4k_'))
+                        && !(sh._temp_storyboard_image && sh._temp_storyboard_image.includes('_4k_'));
+                });
+                if (anyNotUpscaled) {
+                    const doUpscale = await showConfirm(
+                        'Upscale to 4K?',
+                        `${allPending.length} image(s) have not been upscaled to 4K. Would you like to upscale all before approving?`
+                    );
+                    if (doUpscale) {
+                        for (const { sIdx, shIdx } of allPending) {
+                            await storyboardUpscaleImage(sIdx, shIdx);
+                        }
+                    }
+                }
+            }
+
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh._temp_storyboard_image && !sh.storyboard_image) {
+                        await approveShotImage(sIdx, shIdx);
+                        count++;
+                    }
+                }
+            }
+            notify('Batch Approve', `Approved ${count} image(s)`, '✅');
+            renderStoryboard();
+        }
+
+        async function approveAllVideos() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            let count = 0;
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh._temp_video_clip && !sh.video_clip) {
+                        await approveShotVideo(sIdx, shIdx);
+                        count++;
+                    }
+                }
+            }
+            notify('Batch Approve', `Approved ${count} video(s)`, '✅');
+            renderStoryboard();
+        }
+
+        async function clearAllTempImages() {
+            const confirmed = await showConfirm('Clear Temp Images', 'Move ALL non-approved generated images to deleted_history? You can retrieve them manually from the project folder.');
+            if (!confirmed) return;
+            const filenames = [];
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh._temp_storyboard_image && !sh.storyboard_image) {
+                        filenames.push(sh._temp_storyboard_image);
+                    }
+                }
+            }
+            if (!filenames.length) { notify('Nothing to clear', 'No temp images found', 'ℹ️'); return; }
+            try {
+                await fetch('/api/projects/delete-history-files', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_path: currentProject?.path || '',
+                        stage: '',
+                        filenames: filenames
+                    })
+                });
+                for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                    const s = screenplayData.scenes[sIdx];
+                    if (!s.shots) continue;
+                    for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                        const sh = s.shots[shIdx];
+                        if (sh._temp_storyboard_image && !sh.storyboard_image) {
+                            sh._temp_storyboard_image = null;
+                            sh.storyboard_status = 'enriched';
+                        }
+                    }
+                }
+                notify('Cleared', `Moved ${filenames.length} temp image(s) to deleted_history`, '🗑');
+                renderStoryboard();
+                scheduleSaveState();
+            } catch(e) { notify('Error', e.message, '❌'); }
+        }
+
+        async function clearAllTempVideos() {
+            const confirmed = await showConfirm('Clear Temp Videos', 'Move ALL non-approved generated videos to deleted_history? You can retrieve them manually from the project folder.');
+            if (!confirmed) return;
+            const filenames = [];
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    if (sh._temp_video_clip && !sh.video_clip) {
+                        filenames.push(sh._temp_video_clip);
+                    }
+                }
+            }
+            if (!filenames.length) { notify('Nothing to clear', 'No temp videos found', 'ℹ️'); return; }
+            try {
+                await fetch('/api/projects/delete-history-files', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project_path: currentProject?.path || '',
+                        stage: '',
+                        filenames: filenames
+                    })
+                });
+                for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                    const s = screenplayData.scenes[sIdx];
+                    if (!s.shots) continue;
+                    for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                        const sh = s.shots[shIdx];
+                        if (sh._temp_video_clip && !sh.video_clip) {
+                            sh._temp_video_clip = null;
+                            sh._temp_video_subfolder = null;
+                            sh.video_status = 'enriched';
+                        }
+                    }
+                }
+                notify('Cleared', `Moved ${filenames.length} temp video(s) to deleted_history`, '🗑');
+                renderStoryboard();
+                scheduleSaveState();
+            } catch(e) { notify('Error', e.message, '❌'); }
+        }
+
+        async function regenerateScenePrompt(index) {
+            const scene = sceneData[index];
+            if (!scene) { notify('No Scene', 'Scene data not found'); return; }
+            const btn = document.getElementById('reg-sp-btn-' + index);
+            if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+            const context = buildModuleContext();
+            const charsText = charData.filter(c => c.name).map(c => `${c.name}: ${c.description}`).join('\n');
+            const locsText = locationData.filter(l => l.name).map(l => `${l.name}: ${l.details}`).join('\n');
+            const prompt = `Convert this scene into a detailed text-to-image prompt for a short film.
+
+Style Context: ${context}
+${charsText ? 'Characters:\n' + charsText : ''}
+${locsText ? 'Locations:\n' + locsText : ''}
+
+Scene:
+${scene}
+
+Output format:
+Characters Present:
+Image Prompt:
+
+The image prompt must include: exact location, time of day, character actions, objects, lighting, atmosphere, textures. ${selectedVisualStyle ? 'Style: ' + selectedVisualStyle : ''} ${selectedFilmAesthetic ? 'Aesthetic: ' + selectedFilmAesthetic : ''}`;
+            try {
+                const data = await generateFromLLM(prompt);
+                if (data.success) {
+                    const m = data.response.match(/Image Prompt:\s*([\s\S]+?)(?=Scene \d|$)/);
+                    if (m) {
+                        imagePromptData[index] = m[1].trim();
+                    renderStoryboard();
+                        scheduleSaveState();
+                        return;
+                    } else {
+                        notify('Parse Error', 'Could not extract prompt from LLM response');
+                    }
+                } else {
+                    notify('LLM Error', data.error || 'Failed to regenerate');
+                }
+            } catch(e) {
+                notify('Error', e.message);
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🔄 Regenerate'; }
+        }
+
+        // === VIDEO PROMPTS MODULE ===
+
+        async function generateVideoPrompts() {
+            const pb = document.getElementById('vidprompts-progress');
+            pb.style.display = 'block';
+            document.getElementById('vidprompts-progress-bar').style.width = '10%';
+            document.getElementById('vidprompts-progress-pct').textContent = '10%';
+            document.getElementById('vidprompts-progress-title').textContent = 'Generating LTX 2.3 video prompts...';
+
+            // Try orchestrator for continuity-aware video prompt generation
+            try {
+                const res = await fetch('/api/orchestrator/video-prompts', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                if (data.success && data.video_prompts && data.video_prompts.length) {
+                    videoPromptData = [];
+                    sceneVideoData = [];
+                    data.video_prompts.forEach(vp => {
+                        if (vp.shots && vp.shots.length) {
+                            vp.shots.forEach(shot => {
+                                videoPromptData.push(shot.ltx_prompt || '');
+                                sceneVideoData.push({ savedVideo: null, genFilename: null, genSubfolder: null });
+                            });
+                        }
+                    });
+                    document.getElementById('vidprompts-progress-bar').style.width = '100%';
+                    document.getElementById('vidprompts-progress-pct').textContent = '100%';
+                    document.getElementById('vidprompts-progress-title').textContent = '✅ LTX 2.3 prompts generated!';
+                    setTimeout(() => { pb.style.display = 'none'; }, 1000);
+                    renderVideoStoryboard();
+                    scheduleSaveState();
+                    return;
+                }
+            } catch(e) {
+                // Fall through
+            }
+
+            if (!sceneData.length) {
+                notify('No Scenes', 'Storyboard data not available for fallback generation.');
+                pb.style.display = 'none';
+                return;
+            }
+
+            const context = buildModuleContext();
+            const charsText = charData.filter(c => c.name).map(c => `${c.name}: ${c.description}`).join('\n');
+            const locsText = locationData.filter(l => l.name).map(l => `${l.name}: ${l.details}`).join('\n');
+
+            const totalBatches = Math.ceil(sceneData.length / 10);
+            videoPromptData = [];
+            const projName = currentProject?.name || '';
+
+            for (let b = 0; b < totalBatches; b++) {
+                const batch = sceneData.slice(b * 10, (b + 1) * 10);
+                const pct = Math.round((b / totalBatches) * 90);
+                document.getElementById('vidprompts-progress-bar').style.width = pct + '%';
+                document.getElementById('vidprompts-progress-pct').textContent = pct + '%';
+                document.getElementById('vidprompts-progress-title').textContent = `Batch ${b+1}/${totalBatches}...`;
+
+                const scenesText = batch.map((s, i) => `Scene ${b*10 + i + 1}: ${s}`).join('\n');
+                const prompt = `Study the provided storyboard images carefully. Convert each scene into a detailed text-to-video prompt for a short film.
+
+Style Context: ${context}
+${charsText ? 'Characters:\n' + charsText : ''}
+${locsText ? 'Locations:\n' + locsText : ''}
+
+Scenes to convert:
+${scenesText}
+
+For each scene, output:
+Scene [number]:
+Video Prompt:
+
+The video prompt must describe: camera movement, character actions, timing, lighting changes, atmosphere, mood. Focus on motion and temporal elements. Reference what is actually visible in each image. ${selectedVisualStyle ? 'Style: ' + selectedVisualStyle : ''} ${selectedFilmAesthetic ? 'Aesthetic: ' + selectedFilmAesthetic : ''}
+
+Output all prompts in one block, separated by blank lines.`;
+
+                const images = [];
+                for (let i = 0; i < batch.length; i++) {
+                    const sceneIdx = b * 10 + i;
+                    const savedImg = sceneImageData[sceneIdx]?.savedImage;
+                    if (savedImg) {
+                        try {
+                            const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+                            const imgUrl = `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg.replace(/\s+/g, '_') + '.png')}${projectPathQuery}`;
+                            const imgResp = await fetch(imgUrl);
+                            if (imgResp.ok) {
+                                const blob = await imgResp.blob();
+                                const base64 = await new Promise(resolve => {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                                    reader.readAsDataURL(blob);
+                                });
+                                images.push(base64);
+                            }
+                        } catch(e) {}
+                    }
+                }
+
+                let data;
+                let triedWithImages = false;
+                data = await generateFromLLM(prompt, images.length ? images : null);
+                if (!data.success && images.length && data.error && /image|vision|multimodal/i.test(data.error)) {
+                    triedWithImages = true;
+                    data = await generateFromLLM(prompt, null);
+                }
+                if (data.success) {
+                    if (triedWithImages) notify('Image input not supported', 'LLM model does not support image input. Generated prompts without visual reference.', '⚠️');
+                    const blocks = data.response.split(/(?=Scene \d+:)/);
+                    blocks.forEach(b => {
+                        const m = b.match(/Video Prompt:\s*([\s\S]+?)(?=Scene \d|$)/);
+                        if (m) videoPromptData.push(m[1].trim());
+                    });
+                }
+            }
+
+            document.getElementById('vidprompts-progress-bar').style.width = '100%';
+            document.getElementById('vidprompts-progress-pct').textContent = '100%';
+            document.getElementById('vidprompts-progress-title').textContent = '✅ Done!';
+            setTimeout(() => { pb.style.display = 'none'; }, 1000);
+            renderVideoStoryboard();
+            scheduleSaveState();
+        }
+
+        function renderVideoStoryboard() {
+            renderStoryboard();
+        }
+
+        // ── NLE Timeline & Non-Linear Editing Logic ──────────────────
+        let timelineClips = [];
+        let selectedClipIndex = -1;
+        let nlePlaybackInterval = null;
+        let currentPlayheadFrame = 0;
+        let nleIsPlaying = false;
+        let timelineTotalFrames = 0;
+
+        // DaVinci Resolve Tool & Interface States
+        let activeResolveTool = 'select'; // 'select' or 'blade'
+        let resolveSnappingEnabled = true;
+        let nleZoomScale = 1.5;
+        let timelineMarkers = []; // { frame, color, note }
+        let lockedTracks = { v1: false, a1: false, a2: false };
+        let mutedTracks = { v1: false, a1: false, a2: false };
+        let soloedTracks = { a1: false, a2: false };
+
+        function setResolveTool(tool) {
+            activeResolveTool = tool;
+            document.querySelectorAll('.resolve-tool-btn').forEach(btn => {
+                btn.style.background = 'transparent';
+                btn.style.color = '#888';
+                btn.style.fontWeight = 'normal';
+            });
+            const activeBtn = document.getElementById('tool-' + tool);
+            if (activeBtn) {
+                activeBtn.style.background = '#ff6600';
+                activeBtn.style.color = '#fff';
+                activeBtn.style.fontWeight = 'bold';
+            }
+            const indicator = document.getElementById('resolve-status-indicator');
+            if (indicator) {
+                indicator.textContent = tool === 'blade' ? '✂️ Razor Blade Active (Click to Split)' : '🏹 Selection Mode Active';
+            }
+        }
+
+        function toggleResolveSnapping() {
+            resolveSnappingEnabled = !resolveSnappingEnabled;
+            const btn = document.getElementById('btn-snapping');
+            if (btn) {
+                if (resolveSnappingEnabled) {
+                    btn.style.color = '#ff6600';
+                    btn.classList.add('active');
+                } else {
+                    btn.style.color = '#888';
+                    btn.classList.remove('active');
+                }
+            }
+        }
+
+        function changeResolveZoom(value) {
+            nleZoomScale = parseFloat(value);
+            updateNleTimeline();
+        }
+
+        function addTimelineMarker() {
+            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            const markerFrame = currentPlayheadFrame;
+            const colors = ['#3a86ff', '#8338ec', '#ff006e', '#fb5607', '#ffbe0b'];
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            
+            if (timelineMarkers.some(m => m.frame === markerFrame)) {
+                notify('Marker exists', 'A marker already exists at this frame', 'ℹ️');
+                return;
+            }
+            
+            timelineMarkers.push({
+                frame: markerFrame,
+                color: randomColor,
+                note: `Marker at ${framesToTimecode(markerFrame, timebase)}`
+            });
+            
+            renderTimelineMarkers();
+            notify('Marker Added', `Added marker at frame ${markerFrame}`, '🔖');
+        }
+
+        function renderTimelineMarkers() {
+            const container = document.getElementById('nle-markers-container');
+            if (!container) return;
+            container.innerHTML = '';
+            
+            timelineMarkers.forEach((m, idx) => {
+                const leftPx = m.frame * nleZoomScale;
+                const markerEl = document.createElement('div');
+                markerEl.setAttribute('style', `position:absolute;top:2px;left:${leftPx - 4}px;width:8px;height:8px;background:${m.color};clip-path:polygon(50% 0%, 100% 35%, 100% 70%, 50% 100%, 0% 70%, 0% 35%);cursor:pointer;z-index:95;`);
+                markerEl.title = m.note;
+                markerEl.onclick = (e) => {
+                    e.stopPropagation();
+                    currentPlayheadFrame = m.frame;
+                    updateNlePlayheadVisual();
+                    syncNlePreviewFrame();
+                    notify('Go to Marker', m.note, '🔖');
+                };
+                container.appendChild(markerEl);
+            });
+        }
+
+        function getSnappedFrame(targetFrame, timebase) {
+            if (!resolveSnappingEnabled) return targetFrame;
+            const snapThresholdFrames = Math.max(4, Math.round(10 / nleZoomScale));
+            
+            let boundaries = [0];
+            let accum = 0;
+            timelineClips.forEach(clip => {
+                accum += (clip.out_frame - clip.in_frame);
+                boundaries.push(accum);
+            });
+            
+            timelineMarkers.forEach(m => boundaries.push(m.frame));
+            
+            let closest = targetFrame;
+            let minDiff = Infinity;
+            boundaries.forEach(b => {
+                const diff = Math.abs(b - targetFrame);
+                if (diff < snapThresholdFrames && diff < minDiff) {
+                    minDiff = diff;
+                    closest = b;
+                }
+            });
+            
+            return closest;
+        }
+
+        function toggleTrackLock(track, btn) {
+            lockedTracks[track] = !lockedTracks[track];
+            btn.textContent = lockedTracks[track] ? '🔒' : '🔓';
+            btn.style.color = lockedTracks[track] ? '#ff3333' : '#888';
+            notify(`${track.toUpperCase()} Locked`, lockedTracks[track] ? 'Track locked' : 'Track unlocked', '🔒');
+            updateNleTimeline();
+        }
+
+        function toggleTrackVisibility(track, btn) {
+            mutedTracks[track] = !mutedTracks[track];
+            btn.style.color = mutedTracks[track] ? '#555' : '#ff6600';
+            btn.textContent = mutedTracks[track] ? '👁️‍🗨️' : '👁️';
+            notify(`Video Mute`, mutedTracks[track] ? 'Track video hidden' : 'Track video visible', '👁️');
+            updateNleTimeline();
+        }
+
+        function toggleTrackAudioMute(track, btn) {
+            mutedTracks[track] = !mutedTracks[track];
+            btn.style.background = mutedTracks[track] ? '#ff3333' : '#2b2b2b';
+            btn.style.color = mutedTracks[track] ? '#fff' : '#ccc';
+            
+            if (track === 'a2') {
+                const player = document.getElementById('nle-music-player');
+                if (player) player.muted = mutedTracks.a2;
+            }
+            updateNleTimeline();
+        }
+
+        function toggleTrackAudioSolo(track, btn) {
+            soloedTracks[track] = !soloedTracks[track];
+            btn.style.background = soloedTracks[track] ? '#ffaa00' : '#2b2b2b';
+            btn.style.color = soloedTracks[track] ? '#000' : '#ccc';
+            
+            updateNleTimeline();
+        }
+
+        function splitClipAtIndex(index, frameOffset) {
+            if (lockedTracks.v1) {
+                notify('Blade Failed', 'V1 Video Track is locked', '⚠️');
+                return;
+            }
+            const clip = timelineClips[index];
+            const duration = clip.out_frame - clip.in_frame;
+            if (frameOffset <= 5 || frameOffset >= duration - 5) {
+                notify('Blade Info', 'Cannot split too close to boundaries', 'ℹ️');
+                return;
+            }
+            
+            const splitFrame = clip.in_frame + frameOffset;
+            const clip2 = {
+                ...clip,
+                in_frame: splitFrame,
+            };
+            
+            clip.out_frame = splitFrame;
+            timelineClips.splice(index + 1, 0, clip2);
+            
+            selectedClipIndex = -1;
+            updateNleTimeline();
+            saveProjectState();
+            notify('Clip Split', `Successfully split clip ${clip.shot_id} into two segments`, '✂️');
+        }
+
+        function assembleTimelineFromScript() {
+            if (!screenplayData || !screenplayData.scenes) {
+                notify('Assemble Failed', 'Please generate a screenplay script first', '⚠️');
+                return;
+            }
+            timelineClips = [];
+            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            
+            screenplayData.scenes.forEach((scene, sceneIdx) => {
+                if (scene.shots) {
+                    scene.shots.forEach((shot, shotIdx) => {
+                        const videoFile = shot.video_clip;
+                    if (videoFile) {
+                        const dialogueText = shot.dialogue && shot.dialogue.length > 0 
+                            ? shot.dialogue[0].text 
+                            : (shot.action || shot.storyboard_prompt || '');
+                            
+                        timelineClips.push({
+                            scene_idx: sceneIdx,
+                            shot_idx: shotIdx,
+                            shot_id: shot.shot_id || `SC_${sceneIdx+1}_SH_${shotIdx+1}`,
+                            filename: videoFile,
+                            in_frame: 0,
+                            out_frame: 240, // 10 seconds default
+                            dialogue: dialogueText,
+                            transition: 'none',
+                            volume: 1.0,
+                            image_url: shot.storyboard_image || ''
+                        });
+                    }
+                });
+            }
+        });
+
+            if (timelineClips.length === 0) {
+                notify('Assemble Info', 'No approved video clips found to assemble yet', '🎬');
+            } else {
+                notify('Assemble Success', `Automatically assembled ${timelineClips.length} video clips matching the script`, '⚡');
+            }
+            selectedClipIndex = -1;
+            currentPlayheadFrame = 0;
+            updateNleTimeline();
+            populateResolveMediaPool();
+            saveProjectState();
+        }
+
+        function updateNleTimeline() {
+            const nleFpsEl = document.getElementById('nle-fps');
+            const trackV1 = document.getElementById('nle-track-v1');
+            const trackA1 = document.getElementById('nle-track-a1');
+            const scrollableContent = document.getElementById('nle-timeline-scrollable');
+            
+            if (!nleFpsEl || !trackV1 || !trackA1 || !scrollableContent) {
+                return;
+            }
+            
+            const timebase = parseInt(nleFpsEl.value || 24);
+            trackV1.innerHTML = '';
+            trackA1.innerHTML = '';
+            
+            timelineTotalFrames = 0;
+            
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+
+            timelineClips.forEach((clip, idx) => {
+                const duration = clip.out_frame - clip.in_frame;
+                timelineTotalFrames += duration;
+                
+                const widthPx = duration * nleZoomScale;
+                const isSelected = selectedClipIndex === idx ? ' border:2px solid #ff6600; background:#2c3e50;' : '';
+                const isV1Locked = lockedTracks.v1 ? ' opacity:0.6; cursor:not-allowed;' : '';
+                const isV1Muted = mutedTracks.v1 ? ' background:#333 !important; color:#666;' : '';
+                
+                // Add a small thumbnail if clip has storyboard image
+                let thumbImgHtml = '';
+                if (clip.image_url) {
+                    const imgUrl = `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(clip.image_url.replace(/\s+/g, '_') + '.png')}${projectPathQuery}`;
+                    thumbImgHtml = `<img src="${imgUrl}" style="height:100%; width:35px; object-fit:cover; border-right:1px solid #222; border-radius:3px 0 0 3px; flex-shrink:0;">`;
+                }
+                
+                // V1 Block
+                const v1Block = document.createElement('div');
+                v1Block.className = 'nle-clip-block';
+                v1Block.setAttribute('style', `min-width:${widthPx}px; width:${widthPx}px; height:100%; display:flex; align-items:center; justify-content:flex-start; color:#fff; font-size:0.65rem; font-weight:700; border-right:1px solid #2d2d2d; position:relative; background:#2e4053; cursor:pointer; overflow:hidden; user-select:none; box-sizing:border-box; border-radius:4px; margin-right:1px;${isSelected}${isV1Locked}${isV1Muted}`);
+                v1Block.innerHTML = `
+                    ${thumbImgHtml}
+                    <span style="white-space:nowrap; padding:0 6px; text-shadow:1px 1px 2px #000;">🎬 ${clip.shot_id}</span>
+                    <div class="trim-handle-left" style="position:absolute;left:0;top:0;bottom:0;width:5px;background:#ff6600;opacity:0;cursor:ew-resize;z-index:15;" title="Trim In"></div>
+                    <div class="trim-handle-right" style="position:absolute;right:0;top:0;bottom:0;width:5px;background:#ff6600;opacity:0;cursor:ew-resize;z-index:15;" title="Trim Out"></div>
+                `;
+                v1Block.onclick = (e) => {
+                    e.stopPropagation();
+                    if (activeResolveTool === 'blade') {
+                        const rect = v1Block.getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const clickedFrameOffset = Math.round(clickX / nleZoomScale);
+                        splitClipAtIndex(idx, clickedFrameOffset);
+                    } else {
+                        selectNleClip(idx);
+                    }
+                };
+                
+                if (!lockedTracks.v1) {
+                    v1Block.onmouseenter = () => {
+                        v1Block.querySelectorAll('.trim-handle-left, .trim-handle-right').forEach(d => d.style.opacity = '1');
+                    };
+                    v1Block.onmouseleave = () => {
+                        v1Block.querySelectorAll('.trim-handle-left, .trim-handle-right').forEach(d => d.style.opacity = '0');
+                    };
+                    setupTrimDragging(v1Block, idx);
+                }
+                trackV1.appendChild(v1Block);
+                
+                // A1 Dialogue Block
+                const a1Muted = mutedTracks.a1 || (soloedTracks.a2 && !soloedTracks.a1);
+                const a1Style = a1Muted 
+                    ? 'background:#222; color:#555;' 
+                    : `background: #1e3f35 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='30' viewBox='0 0 40 30'%3E%3Cpath d='M2 15 L2 5 L2 25 L6 15 L6 10 L6 20 L10 15 L10 2 L10 28 L14 15 L14 8 L14 22 L18 15 L18 12 L18 18 L22 15 L22 5 L22 25 L26 15 L26 10 L26 20 L30 15 L30 2 L30 28 L34 15 L34 8 L34 22 L38 15 L38 12 L38 18' stroke='%2327ae60' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") repeat-x; color:#a3e4d7;`;
+                const a1Block = document.createElement('div');
+                a1Block.setAttribute('style', `min-width:${widthPx}px; width:${widthPx}px; height:100%; display:flex; align-items:center; justify-content:flex-start; font-size:0.6rem; border-right:1px solid #2d2d2d; box-sizing:border-box; padding:0 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:1px; border-radius:4px; ${a1Style}`);
+                a1Block.textContent = clip.dialogue || '—';
+                trackA1.appendChild(a1Block);
+            });
+            
+            const minWidthPx = Math.max(scrollableContent.clientWidth, (timelineTotalFrames * nleZoomScale) + 150);
+            document.getElementById('nle-ruler-container').style.width = `${minWidthPx}px`;
+            trackV1.style.width = `${minWidthPx}px`;
+            trackA1.style.width = `${minWidthPx}px`;
+            document.getElementById('nle-track-a2').style.width = `${minWidthPx}px`;
+            
+            document.getElementById('nle-timeline-duration').textContent = `Duration: ${framesToTimecode(timelineTotalFrames, timebase)}`;
+            updateNleRuler(timelineTotalFrames, timebase);
+            updateNlePlayheadVisual();
+            renderTimelineMarkers();
+        }
+
+        function setupTrimDragging(element, index) {
+            const handleL = element.querySelector('.trim-handle-left');
+            const handleR = element.querySelector('.trim-handle-right');
+            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            
+            let isDragging = false;
+            let startX = 0;
+            let startIn = 0;
+            let startOut = 0;
+            let activeSide = '';
+            
+            const onMouseDown = (e, side) => {
+                if (lockedTracks.v1) return;
+                e.stopPropagation();
+                isDragging = true;
+                activeSide = side;
+                startX = e.clientX;
+                startIn = timelineClips[index].in_frame;
+                startOut = timelineClips[index].out_frame;
+                
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            };
+            
+            const onMouseMove = (e) => {
+                if (!isDragging) return;
+                const deltaX = e.clientX - startX;
+                const deltaFrames = Math.round(deltaX / nleZoomScale);
+                
+                if (activeSide === 'left') {
+                    let newIn = startIn + deltaFrames;
+                    newIn = Math.max(0, Math.min(newIn, startOut - 24));
+                    timelineClips[index].in_frame = newIn;
+                } else {
+                    let newOut = startOut + deltaFrames;
+                    newOut = Math.max(startIn + 24, newOut);
+                    timelineClips[index].out_frame = newOut;
+                }
+                updateNleTimeline();
+                if (selectedClipIndex === index) {
+                    selectNleClip(index);
+                }
+            };
+            
+            const onMouseUp = () => {
+                isDragging = false;
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                scheduleSaveState();
+            };
+            
+            handleL.addEventListener('mousedown', (e) => onMouseDown(e, 'left'));
+            handleR.addEventListener('mousedown', (e) => onMouseDown(e, 'right'));
+        }
+
+        function updateNleRuler(totalFrames, timebase) {
+            const rulerTicks = document.getElementById('nle-ruler-ticks');
+            rulerTicks.innerHTML = '';
+            
+            const rulerWidth = parseInt(document.getElementById('nle-ruler-container').style.width || '1000');
+            const stepSec = Math.max(1, Math.round(30 / nleZoomScale));
+            const totalSec = Math.ceil(rulerWidth / (timebase * nleZoomScale));
+            
+            for (let sec = 0; sec <= totalSec; sec += stepSec) {
+                const tick = document.createElement('span');
+                const frames = sec * timebase;
+                tick.textContent = formatTimecodeMinSec(frames, timebase);
+                rulerTicks.appendChild(tick);
+            }
+        }
+
+        function startScrubPlayhead(e) {
+            const scrollable = document.getElementById('nle-timeline-scrollable');
+            const ruler = document.getElementById('nle-ruler-container');
+            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            
+            const onMouseMove = (moveEv) => {
+                const rect = ruler.getBoundingClientRect();
+                let x = moveEv.clientX - rect.left;
+                x = Math.max(0, Math.min(x, rect.width));
+                
+                const targetFrame = Math.round(x / nleZoomScale);
+                currentPlayheadFrame = getSnappedFrame(targetFrame, timebase);
+                currentPlayheadFrame = Math.max(0, Math.min(currentPlayheadFrame, timelineTotalFrames));
+                
+                updateNlePlayheadVisual();
+                syncNlePreviewFrame();
+            };
+            
+            const onMouseUp = () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            onMouseMove(e);
+        }
+
+        function updateNlePlayheadVisual() {
+            const playhead = document.getElementById('nle-playhead');
+            const leftPx = currentPlayheadFrame * nleZoomScale;
+            playhead.style.left = `${leftPx}px`;
+            
+            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            document.getElementById('nle-timecode').textContent = framesToTimecode(currentPlayheadFrame, timebase);
+        }
+
+        function selectNleClip(index) {
+            selectedClipIndex = index;
+            updateNleTimeline();
+            
+            const activeShotLabel = document.getElementById('inspector-active-shot');
+            if (index < 0 || index >= timelineClips.length) {
+                if (activeShotLabel) activeShotLabel.textContent = 'No Selected Clip';
+                resetInspectorSlidersUI();
+                return;
+            }
+            
+            const clip = timelineClips[index];
+            if (activeShotLabel) activeShotLabel.textContent = clip.shot_id;
+            
+            // Load clip inspector values (initialize if missing)
+            if (clip.zoom === undefined) clip.zoom = 1.0;
+            if (clip.posX === undefined) clip.posX = 0;
+            if (clip.posY === undefined) clip.posY = 0;
+            if (clip.rotate === undefined) clip.rotate = 0;
+            if (clip.cropLeft === undefined) clip.cropLeft = 0;
+            if (clip.cropRight === undefined) clip.cropRight = 0;
+            if (clip.cropTop === undefined) clip.cropTop = 0;
+            if (clip.cropBottom === undefined) clip.cropBottom = 0;
+            if (clip.opacity === undefined) clip.opacity = 100;
+            
+            // Update sliders UI
+            if (document.getElementById('slider-zoom')) document.getElementById('slider-zoom').value = clip.zoom;
+            if (document.getElementById('slider-posx')) document.getElementById('slider-posx').value = clip.posX;
+            if (document.getElementById('slider-posy')) document.getElementById('slider-posy').value = clip.posY;
+            if (document.getElementById('slider-rotate')) document.getElementById('slider-rotate').value = clip.rotate;
+            if (document.getElementById('slider-crop-left')) document.getElementById('slider-crop-left').value = clip.cropLeft;
+            if (document.getElementById('slider-crop-right')) document.getElementById('slider-crop-right').value = clip.cropRight;
+            if (document.getElementById('slider-crop-top')) document.getElementById('slider-crop-top').value = clip.cropTop;
+            if (document.getElementById('slider-crop-bottom')) document.getElementById('slider-crop-bottom').value = clip.cropBottom;
+            if (document.getElementById('slider-opacity')) document.getElementById('slider-opacity').value = clip.opacity;
+            
+            // Prefill AI NLE B-Roll prompt area if clip has dialogue or description
+            const promptTextArea = document.getElementById('ai-nle-prompt');
+            if (promptTextArea) {
+                promptTextArea.value = (clip.dialogue || '').replace(/^\[B-ROLL\]\s*/i, '');
+            }
+            
+            updateInspectorLabels(clip);
+            applyLiveInspectorTransform();
+        }
+
+        function updateInspectorLabels(clip) {
+            if (document.getElementById('label-zoom-val')) document.getElementById('label-zoom-val').textContent = clip.zoom.toFixed(3);
+            if (document.getElementById('label-posx-val')) document.getElementById('label-posx-val').textContent = clip.posX;
+            if (document.getElementById('label-posy-val')) document.getElementById('label-posy-val').textContent = clip.posY;
+            if (document.getElementById('label-rotate-val')) document.getElementById('label-rotate-val').textContent = clip.rotate.toFixed(1) + '°';
+            if (document.getElementById('label-opacity-val')) document.getElementById('label-opacity-val').textContent = clip.opacity + '%';
+        }
+
+        function resetInspectorSlidersUI() {
+            if (document.getElementById('slider-zoom')) document.getElementById('slider-zoom').value = 1.0;
+            if (document.getElementById('slider-posx')) document.getElementById('slider-posx').value = 0;
+            if (document.getElementById('slider-posy')) document.getElementById('slider-posy').value = 0;
+            if (document.getElementById('slider-rotate')) document.getElementById('slider-rotate').value = 0;
+            if (document.getElementById('slider-crop-left')) document.getElementById('slider-crop-left').value = 0;
+            if (document.getElementById('slider-crop-right')) document.getElementById('slider-crop-right').value = 0;
+            if (document.getElementById('slider-crop-top')) document.getElementById('slider-crop-top').value = 0;
+            if (document.getElementById('slider-crop-bottom')) document.getElementById('slider-crop-bottom').value = 0;
+            if (document.getElementById('slider-opacity')) document.getElementById('slider-opacity').value = 100;
+            
+            const promptTextArea = document.getElementById('ai-nle-prompt');
+            if (promptTextArea) promptTextArea.value = '';
+            
+            if (document.getElementById('label-zoom-val')) document.getElementById('label-zoom-val').textContent = '1.000';
+            if (document.getElementById('label-posx-val')) document.getElementById('label-posx-val').textContent = '0';
+            if (document.getElementById('label-posy-val')) document.getElementById('label-posy-val').textContent = '0';
+            if (document.getElementById('label-rotate-val')) document.getElementById('label-rotate-val').textContent = '0.0°';
+            if (document.getElementById('label-opacity-val')) document.getElementById('label-opacity-val').textContent = '100%';
+            
+            const previewBox = document.getElementById('resolve-preview-transform-box');
+            if (previewBox) {
+                previewBox.style.transform = 'none';
+                previewBox.style.clipPath = 'none';
+                previewBox.style.opacity = '1.0';
+            }
+        }
+
+        function applyLiveInspectorTransform() {
+            if (selectedClipIndex < 0 || selectedClipIndex >= timelineClips.length) return;
+            const clip = timelineClips[selectedClipIndex];
+            
+            // Get slider values
+            if (document.getElementById('slider-zoom')) clip.zoom = parseFloat(document.getElementById('slider-zoom').value);
+            if (document.getElementById('slider-posx')) clip.posX = parseInt(document.getElementById('slider-posx').value);
+            if (document.getElementById('slider-posy')) clip.posY = parseInt(document.getElementById('slider-posy').value);
+            if (document.getElementById('slider-rotate')) clip.rotate = parseInt(document.getElementById('slider-rotate').value);
+            if (document.getElementById('slider-crop-left')) clip.cropLeft = parseInt(document.getElementById('slider-crop-left').value);
+            if (document.getElementById('slider-crop-right')) clip.cropRight = parseInt(document.getElementById('slider-crop-right').value);
+            if (document.getElementById('slider-crop-top')) clip.cropTop = parseInt(document.getElementById('slider-crop-top').value);
+            if (document.getElementById('slider-crop-bottom')) clip.cropBottom = parseInt(document.getElementById('slider-crop-bottom').value);
+            if (document.getElementById('slider-opacity')) clip.opacity = parseInt(document.getElementById('slider-opacity').value);
+            
+            updateInspectorLabels(clip);
+            
+            // Apply live CSS style modifications
+            const previewBox = document.getElementById('resolve-preview-transform-box');
+            if (previewBox) {
+                previewBox.style.transform = `scale(${clip.zoom}) translate(${clip.posX}px, ${-clip.posY}px) rotate(${clip.rotate}deg)`;
+                
+                // Crop with CSS clip-path inset
+                if (clip.cropLeft > 0 || clip.cropRight > 0 || clip.cropTop > 0 || clip.cropBottom > 0) {
+                    previewBox.style.clipPath = `inset(${clip.cropTop}% ${clip.cropRight}% ${clip.cropBottom}% ${clip.cropLeft}%)`;
+                } else {
+                    previewBox.style.clipPath = 'none';
+                }
+                
+                previewBox.style.opacity = (clip.opacity / 100).toFixed(2);
+            }
+        }
+
+        function resetInspectorTransform() {
+            if (selectedClipIndex >= 0) {
+                const clip = timelineClips[selectedClipIndex];
+                clip.zoom = 1.0;
+                clip.posX = 0;
+                clip.posY = 0;
+                clip.rotate = 0;
+                selectNleClip(selectedClipIndex);
+                scheduleSaveState();
+            }
+        }
+
+        function resetInspectorCropping() {
+            if (selectedClipIndex >= 0) {
+                const clip = timelineClips[selectedClipIndex];
+                clip.cropLeft = 0;
+                clip.cropRight = 0;
+                clip.cropTop = 0;
+                clip.cropBottom = 0;
+                selectNleClip(selectedClipIndex);
+                scheduleSaveState();
+            }
+        }
+
+        function toggleResolvePanel(panel) {
+            if (panel === 'mixer') {
+                const p = document.getElementById('resolve-mixer-panel');
+                const btn = document.getElementById('btn-toggle-mixer');
+                if (p) {
+                    if (p.style.display === 'none') {
+                        p.style.display = 'flex';
+                        if (btn) btn.classList.add('active');
+                    } else {
+                        p.style.display = 'none';
+                        if (btn) btn.classList.remove('active');
+                    }
+                }
+            } else if (panel === 'inspector') {
+                const p = document.getElementById('resolve-inspector-panel');
+                const btn = document.getElementById('btn-toggle-inspector');
+                if (p) {
+                    if (p.style.display === 'none') {
+                        p.style.display = 'flex';
+                        if (btn) btn.classList.add('active');
+                    } else {
+                        p.style.display = 'none';
+                        if (btn) btn.classList.remove('active');
+                    }
+                }
+            }
+        }
+
+        function populateResolveMediaPool() {
+            const grid = document.getElementById('resolve-media-pool-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            
+            if (!screenplayData || !screenplayData.scenes) {
+                grid.innerHTML = '<span style="color:#555; text-align:center; grid-column:1/-1; font-size:0.65rem; margin-top:20px;">No clips imported. Click Assemble Script to load media.</span>';
+                return;
+            }
+            
+            let count = 0;
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+            
+            screenplayData.scenes.forEach((scene, sceneIdx) => {
+                if (scene.shots) {
+                    scene.shots.forEach((shot, shotIdx) => {
+                        const videoFile = shot.video_clip;
+                        if (videoFile) {
+                            count++;
+                        const clipEl = document.createElement('div');
+                        clipEl.setAttribute('style', 'background:#252525; border:1px solid #333; border-radius:4px; padding:3px; display:flex; flex-direction:column; cursor:pointer; text-align:center; overflow:hidden;');
+                        clipEl.title = `Double-click to load: ${shot.shot_id}`;
+                        
+                        let thumbUrl = '';
+                        if (shot.storyboard_image) {
+                            thumbUrl = `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(shot.storyboard_image)}${projectPathQuery}${projectPathQuery ? '&' : '?'}thumbnail=true`;
+                        }
+                        
+                        clipEl.innerHTML = `
+                            <div style="width:100%; height:35px; background:#000; display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:2px; position:relative;">
+                                ${thumbUrl ? `<img src="${thumbUrl}" style="width:100%; height:100%; object-fit:cover;">` : '📹'}
+                            </div>
+                            <span style="font-size:0.55rem; color:#ccc; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; margin-top:2px;">${shot.shot_id}</span>
+                        `;
+                        
+                        clipEl.ondblclick = () => {
+                            loadClipIntoSourcePlayer(videoFile, shot.shot_id);
+                        };
+                        grid.appendChild(clipEl);
+                    }
+                });
+            }
+        });
+            
+            if (count === 0) {
+                grid.innerHTML = '<span style="color:#555; text-align:center; grid-column:1/-1; font-size:0.65rem; margin-top:20px;">No clips imported. Click Assemble Script to load media.</span>';
+            }
+        }
+
+        let activeSourcePlayback = false;
+        function loadClipIntoSourcePlayer(filename, shotId) {
+            const player = document.getElementById('resolve-source-player');
+            if (!player) return;
+            const projName = currentProject?.name || '';
+            const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+            const videoUrl = `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(filename)}${projectPathQuery}`;
+            
+            player.src = videoUrl;
+            player.load();
+            
+            const tc = document.getElementById('resolve-source-timecode');
+            if (tc) tc.textContent = '00:00:00:00';
+            activeSourcePlayback = false;
+            const playBtn = document.getElementById('resolve-source-play-btn');
+            if (playBtn) playBtn.textContent = '▶';
+            
+            player.ontimeupdate = () => {
+                const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+                const currentFrames = Math.round(player.currentTime * timebase);
+                const tc2 = document.getElementById('resolve-source-timecode');
+                if (tc2) tc2.textContent = framesToTimecode(currentFrames, timebase);
+            };
+            
+            notify('Loaded Source', `Loaded clip ${shotId} into Source Viewer`, '📹');
+        }
+
+        function toggleSourcePlayback() {
+            const player = document.getElementById('resolve-source-player');
+            const btn = document.getElementById('resolve-source-play-btn');
+            if (!player || !player.src) return;
+            
+            if (activeSourcePlayback) {
+                activeSourcePlayback = false;
+                if (btn) btn.textContent = '▶';
+                player.pause();
+            } else {
+                activeSourcePlayback = true;
+                if (btn) btn.textContent = '⏸';
+                player.play().catch(()=>{});
+            }
+        }
+
+        function stepSourcePlayer(direction) {
+            const player = document.getElementById('resolve-source-player');
+            if (!player || !player.src) return;
+            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            player.currentTime = Math.max(0, player.currentTime + (direction / timebase));
+        }
+
+        function adjustClipInFrame(index, value) {
+            const inVal = parseInt(value);
+            timelineClips[index].in_frame = inVal;
+            document.getElementById('val-in-frame').textContent = inVal;
+            updateNleTimeline();
+            scheduleSaveState();
+        }
+
+        function adjustClipOutFrame(index, value) {
+            const outVal = parseInt(value);
+            timelineClips[index].out_frame = outVal;
+            document.getElementById('val-out-frame').textContent = outVal;
+            updateNleTimeline();
+            scheduleSaveState();
+        }
+
+        function adjustClipVolume(index, value) {
+            const vol = parseFloat(value);
+            timelineClips[index].volume = vol;
+            document.getElementById('val-volume').textContent = `${Math.round(vol*100)}%`;
+            scheduleSaveState();
+        }
+
+        function adjustClipTransition(index, value) {
+            timelineClips[index].transition = value;
+            scheduleSaveState();
+        }
+
+        function adjustClipDialogue(index, value) {
+            timelineClips[index].dialogue = value;
+            updateNleTimeline();
+            scheduleSaveState();
+        }
+
+        function moveClipInTimeline(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= timelineClips.length) return;
+            
+            const temp = timelineClips[index];
+            timelineClips[index] = timelineClips[newIndex];
+            timelineClips[newIndex] = temp;
+            
+            selectNleClip(newIndex);
+            scheduleSaveState();
+        }
+
+        function removeClipFromTimeline(index) {
+            timelineClips.splice(index, 1);
+            selectedClipIndex = -1;
+            updateNleTimeline();
+            selectNleClip(-1);
+            scheduleSaveState();
+        }
+
+        function syncNlePreviewFrame() {
+            const player = document.getElementById('nle-preview-player');
+            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            
+            let frameOffset = 0;
+            let activeClip = null;
+            
+            for (let idx = 0; idx < timelineClips.length; idx++) {
+                const clip = timelineClips[idx];
+                const clipFrames = clip.out_frame - clip.in_frame;
+                if (currentPlayheadFrame >= frameOffset && currentPlayheadFrame < frameOffset + clipFrames) {
+                    activeClip = clip;
+                    break;
+                }
+                frameOffset += clipFrames;
+            }
+            
+            if (activeClip) {
+                const clipNameEl = document.getElementById('nle-active-clip-name');
+                if (clipNameEl) clipNameEl.textContent = `Playing: ${activeClip.shot_id}`;
+                
+                const projName = currentProject?.name || '';
+                const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+                const videoUrl = `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(activeClip.filename)}${projectPathQuery}`;
+                
+                if (!player.src.includes(encodeURIComponent(activeClip.filename))) {
+                    player.src = videoUrl;
+                    player.load();
+                }
+                
+                const clipFramePosition = activeClip.in_frame + (currentPlayheadFrame - frameOffset);
+                const secondsPosition = clipFramePosition / timebase;
+                
+                if (Math.abs(player.currentTime - secondsPosition) > 0.1) {
+                    player.currentTime = secondsPosition;
+                }
+            } else {
+                const clipNameEl = document.getElementById('nle-active-clip-name');
+                if (clipNameEl) clipNameEl.textContent = 'End of Timeline';
+                player.src = '';
+            }
+        }
+
+        function toggleNlePlayback() {
+            const btn = document.getElementById('nle-play-btn');
+            const player = document.getElementById('nle-preview-player');
+            const musicPlayer = document.getElementById('nle-music-player');
+            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            
+            if (nleIsPlaying) {
+                nleIsPlaying = false;
+                btn.textContent = '▶ Play';
+                clearInterval(nlePlaybackInterval);
+                player.pause();
+                musicPlayer.pause();
+            } else {
+                if (timelineClips.length === 0) {
+                    notify('Playback Error', 'Timeline is empty. Please assemble first.', '⚠️');
+                    return;
+                }
+                if (currentPlayheadFrame >= timelineTotalFrames) {
+                    currentPlayheadFrame = 0;
+                }
+                
+                nleIsPlaying = true;
+                btn.textContent = '⏸ Pause';
+                
+                const intervalMs = 1000 / timebase;
+                nlePlaybackInterval = setInterval(tickNlePlayback, intervalMs);
+                
+                if (musicPlayer.src) {
+                    const musicSeconds = currentPlayheadFrame / timebase;
+                    musicPlayer.currentTime = musicSeconds;
+                    musicPlayer.play().catch(()=>{});
+                }
+                
+                syncNlePreviewFrame();
+                player.play().catch(()=>{});
+            }
+        }
+
+        function tickNlePlayback() {
+            const player = document.getElementById('nle-preview-player');
+            currentPlayheadFrame++;
+            if (currentPlayheadFrame >= timelineTotalFrames) {
+                stopNlePlayback();
+                return;
+            }
+            
+            updateNlePlayheadVisual();
+            syncNlePreviewFrame();
+            
+            if (player.paused && player.src) {
+                player.play().catch(()=>{});
+            }
+
+            // Animate VU meters dynamically when playing
+            if (nleIsPlaying) {
+                const randA1 = Math.floor(Math.random() * 45) + 30; // 30% to 75% height
+                const randA2 = document.getElementById('nle-music-player').src ? Math.floor(Math.random() * 35) + 20 : 0;
+                const randMst = Math.max(randA1, randA2) + Math.floor(Math.random() * 5);
+                
+                const meterA1 = document.getElementById('vu-meter-a1');
+                const meterA2 = document.getElementById('vu-meter-a2');
+                const meterMst = document.getElementById('vu-meter-master');
+                
+                if (meterA1) meterA1.style.height = `${randA1}%`;
+                if (meterA2) meterA2.style.height = `${randA2}%`;
+                if (meterMst) meterMst.style.height = `${Math.min(100, randMst)}%`;
+                
+                const dbA1 = document.getElementById('mixer-a1-db');
+                const dbA2 = document.getElementById('mixer-a2-db');
+                const dbMst = document.getElementById('mixer-master-db');
+                
+                if (dbA1) dbA1.textContent = `${Math.round(-40 + (randA1 * 0.4))} dB`;
+                if (dbA2) dbA2.textContent = randA2 ? `${Math.round(-45 + (randA2 * 0.45))} dB` : '-inf';
+                if (dbMst) dbMst.textContent = `${Math.round(-38 + (randMst * 0.38))} dB`;
+            }
+        }
+
+        function stopNlePlayback() {
+            nleIsPlaying = false;
+            document.getElementById('nle-play-btn').textContent = '▶ Play';
+            clearInterval(nlePlaybackInterval);
+            
+            const player = document.getElementById('nle-preview-player');
+            player.pause();
+            player.src = '';
+            
+            const musicPlayer = document.getElementById('nle-music-player');
+            musicPlayer.pause();
+            musicPlayer.currentTime = 0;
+            
+            currentPlayheadFrame = 0;
+            updateNlePlayheadVisual();
+            const clipNameEl = document.getElementById('nle-active-clip-name');
+            if (clipNameEl) clipNameEl.textContent = 'Timeline Stopped';
+
+            // Reset VU meters
+            const meterA1 = document.getElementById('vu-meter-a1');
+            const meterA2 = document.getElementById('vu-meter-a2');
+            const meterMst = document.getElementById('vu-meter-master');
+            
+            if (meterA1) meterA1.style.height = '0%';
+            if (meterA2) meterA2.style.height = '0%';
+            if (meterMst) meterMst.style.height = '0%';
+            
+            const dbA1 = document.getElementById('mixer-a1-db');
+            const dbA2 = document.getElementById('mixer-a2-db');
+            const dbMst = document.getElementById('mixer-master-db');
+            
+            if (dbA1) dbA1.textContent = '-inf';
+            if (dbA2) dbA2.textContent = '-inf';
+            if (dbMst) dbMst.textContent = '-inf';
+        }
+
+        // NLE In-Timeline AI B-Roll Generator Variables
+        let nleTempImageFile = null;
+        let nleTempVideoFile = null;
+
+        async function generateNleBrollImage() {
+            const prompt = document.getElementById('ai-nle-prompt').value.trim();
+            if (!prompt) {
+                notify('Prompt Empty', 'Please enter a visual description for the B-Roll shot', '⚠️');
+                return;
+            }
+
+            const btn = document.getElementById('ai-nle-gen-img-btn');
+            const seed = Math.floor(Math.random() * 999999999);
+            const resolution = currentProject?.settings?.imgResolution || '1024x576';
+            
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+
+            const previewContainer = document.getElementById('ai-nle-preview-container');
+            previewContainer.style.display = 'flex';
+            previewContainer.innerHTML = '<div style="color:#ff6600;font-size:0.65rem;text-align:center;">⌛ Generating Image...</div>';
+
+            try {
+                const res = await fetch('/api/comfyui/generate/t2i', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: resolution, refine: llmEnhanceEnabled() })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    nleTempImageFile = data.filename;
+                    nleTempVideoFile = null; // Clear old video
+                    
+                    const thumbUrl = `/api/comfyui/view?filename=${encodeURIComponent(data.filename)}`;
+                    previewContainer.innerHTML = `<img src="${thumbUrl}" style="width:100%;height:100%;object-fit:cover;">`;
+                    
+                    // Show animation / video generation button & insert button
+                    document.getElementById('ai-nle-gen-vid-btn').style.display = 'inline-block';
+                    document.getElementById('ai-nle-insert-container').style.display = 'block';
+                    notify('B-Roll Generated', 'Image generated successfully. You can animate it or insert it.', '🎨');
+                } else {
+                    previewContainer.innerHTML = '<div style="color:#ff4444;font-size:0.65rem;text-align:center;">❌ Generation Failed</div>';
+                    notify('T2I Failed', data.error || 'Generation failed', '⚠️');
+                }
+            } catch (e) {
+                previewContainer.innerHTML = '<div style="color:#ff4444;font-size:0.65rem;text-align:center;">❌ Connection Error</div>';
+                notify('Error', e.message, '⚠️');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🎨 Gen Image';
+            }
+        }
+
+        async function generateNleBrollVideo() {
+            if (!nleTempImageFile) {
+                notify('No Image', 'Please generate a B-Roll image first', '⚠️');
+                return;
+            }
+
+            const btn = document.getElementById('ai-nle-gen-vid-btn');
+            const steps = parseInt(document.getElementById('ai-nle-steps').value || 8);
+            const seed = Math.floor(Math.random() * 999999999);
+            
+            btn.disabled = true;
+            btn.textContent = 'Animating...';
+
+            const previewContainer = document.getElementById('ai-nle-preview-container');
+            const originalContent = previewContainer.innerHTML;
+            previewContainer.innerHTML = originalContent + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#ff6600;font-size:0.55rem;text-align:center;padding:2px;">⌛ Generating Video...</div>';
+
+            try {
+                const res = await fetch('/api/comfyui/generate/i2v', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        seed: seed,
+                        project_path: currentProject?.path || '',
+                        input_image: nleTempImageFile,
+                        scene_index: 0,
+                        steps: steps,
+                        refine: llmEnhanceEnabled()
+                    })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    nleTempVideoFile = data.filename;
+                    const videoUrl = `/api/comfyui/view?filename=${encodeURIComponent(data.filename)}${data.subfolder ? '&subfolder=' + encodeURIComponent(data.subfolder) : ''}`;
+                    
+                    previewContainer.innerHTML = `<video src="${videoUrl}" autoplay loop muted style="width:100%;height:100%;object-fit:cover;"></video>`;
+                    notify('B-Roll Animated', 'Video generated successfully.', '🎥');
+                } else {
+                    previewContainer.innerHTML = originalContent + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#ff4444;font-size:0.55rem;text-align:center;padding:2px;">❌ Animate Failed</div>';
+                    notify('I2V Failed', data.error || 'Video generation failed', '⚠️');
+                }
+            } catch (e) {
+                previewContainer.innerHTML = originalContent + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#ff4444;font-size:0.55rem;text-align:center;padding:2px;">❌ Error</div>';
+                notify('Error', e.message, '⚠️');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🎥 Gen Video';
+            }
+        }
+
+        async function insertNleBrollIntoTimeline() {
+            const fileToInsert = nleTempVideoFile || nleTempImageFile;
+            if (!fileToInsert) {
+                notify('No Asset', 'Please generate an image or video first', '⚠️');
+                return;
+            }
+
+            const prompt = document.getElementById('ai-nle-prompt').value.trim();
+            const placement = document.getElementById('ai-nle-placement').value;
+            const isVideo = !!nleTempVideoFile;
+            
+            const prefix = isVideo ? 'broll_video_' : 'broll_image_';
+            const timestamp = Date.now();
+            const extension = isVideo ? '.mp4' : '.png';
+            const saveName = `${prefix}${timestamp}${extension}`;
+            
+            const endpoint = isVideo ? '/api/projects/save-video' : '/api/assets/approve-single';
+            const projName = currentProject?.name || '';
+            const projPath = currentProject?.path || '';
+            
+            const reqBody = isVideo ? {
+                project_name: projName,
+                project_path: projPath,
+                filename: fileToInsert,
+                card_name: `broll_${timestamp}`
+            } : {
+                id: `BROLL_${timestamp}`,
+                type: 'prop',
+                image_path: fileToInsert,
+                project_path: projPath
+            };
+            
+            notify('Saving Asset', 'Copying generated asset to project workspace...', '⚡');
+            
+            try {
+                const saveRes = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(reqBody)
+                });
+                const saveData = await saveRes.json();
+                
+                if (!saveData.success) {
+                    notify('Save Failed', saveData.error || 'Failed to copy asset into project', '⚠️');
+                    return;
+                }
+                
+                const finalFilename = isVideo 
+                    ? `broll_${timestamp}.mp4`
+                    : `BROLL_${timestamp}.png`;
+                
+                const finalImgUrl = isVideo
+                    ? null
+                    : `props/approved/BROLL_${timestamp}.png`;
+                
+                const newClip = {
+                    scene_idx: -1,
+                    shot_idx: -1,
+                    shot_id: `B-ROLL_${timestamp.toString().slice(-4)}`,
+                    filename: isVideo ? finalFilename : '',
+                    in_frame: 0,
+                    out_frame: 120, // 5 seconds default
+                    dialogue: `[B-ROLL] ${prompt}`,
+                    transition: 'none',
+                    volume: 1.0,
+                    image_url: finalImgUrl || ''
+                };
+                
+                if (placement === 'replace' && selectedClipIndex >= 0) {
+                    newClip.scene_idx = timelineClips[selectedClipIndex].scene_idx;
+                    newClip.shot_idx = timelineClips[selectedClipIndex].shot_idx;
+                    newClip.shot_id = timelineClips[selectedClipIndex].shot_id;
+                    timelineClips[selectedClipIndex] = newClip;
+                    notify('Clip Replaced', 'Replaced selected timeline clip with new B-Roll', '🪄');
+                } else if (placement === 'split') {
+                    let frameOffset = 0;
+                    let inserted = false;
+                    for (let i = 0; i < timelineClips.length; i++) {
+                        const clip = timelineClips[i];
+                        const duration = clip.out_frame - clip.in_frame;
+                        if (currentPlayheadFrame >= frameOffset && currentPlayheadFrame < frameOffset + duration) {
+                            const splitFrame = clip.in_frame + (currentPlayheadFrame - frameOffset);
+                            const clip2 = {
+                                ...clip,
+                                in_frame: splitFrame,
+                            };
+                            clip.out_frame = splitFrame;
+                            
+                            timelineClips.splice(i + 1, 0, newClip, clip2);
+                            inserted = true;
+                            break;
+                        }
+                        frameOffset += duration;
+                    }
+                    
+                    if (!inserted) {
+                        timelineClips.push(newClip);
+                    }
+                    notify('B-Roll Inserted', 'Inserted B-Roll clip at playhead position', '🪄');
+                } else {
+                    timelineClips.push(newClip);
+                    notify('B-Roll Appended', 'Appended B-Roll clip to end of timeline', '🪄');
+                }
+                
+                nleTempImageFile = null;
+                nleTempVideoFile = null;
+                document.getElementById('ai-nle-preview-container').style.display = 'none';
+                document.getElementById('ai-nle-insert-container').style.display = 'none';
+                document.getElementById('ai-nle-gen-vid-btn').style.display = 'none';
+                document.getElementById('ai-nle-prompt').value = '';
+                
+                updateNleTimeline();
+                populateResolveMediaPool();
+                saveProjectState();
+                
+            } catch(err) {
+                notify('Insert Error', err.message, '⚠️');
+            }
+        }
+
+        function uploadTimelineMusic(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const musicPlayer = document.getElementById('nle-music-player');
+            const url = URL.createObjectURL(file);
+            musicPlayer.src = url;
+            
+            document.getElementById('nle-music-filename').textContent = file.name;
+            notify('Music Loaded', `Successfully loaded ambient track: ${file.name}`, '🎵');
+        }
+
+        function framesToTimecode(frames, fps) {
+            const hrs = Math.floor(frames / (3600 * fps));
+            const mins = Math.floor((frames % (3600 * fps)) / (60 * fps));
+            const secs = Math.floor((frames % (60 * fps)) / fps);
+            const fms = frames % fps;
+            return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${fms.toString().padStart(2, '0')}`;
+        }
+
+        function formatTimecodeMinSec(frames, fps) {
+            const mins = Math.floor(frames / (60 * fps));
+            const secs = Math.floor((frames % (60 * fps)) / fps);
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        async function exportTimelineXML() {
+            if (timelineClips.length === 0) {
+                notify('Export Failed', 'Timeline is empty. Please assemble first.', '⚠️');
+                return;
+            }
+            
+            const projName = currentProject?.name || '';
+            const projPath = currentProject?.path || '';
+            const timebase = parseInt(document.getElementById('nle-fps').value || 24);
+            
+            try {
+                notify('Exporting', 'Generating Apple FCP7 XML timeline file...', '⏳');
+                
+                const response = await fetch(`/api/projects/${encodeURIComponent(projName)}/export-xml`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_path: projPath,
+                        timeline: timelineClips,
+                        timebase: timebase
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    const blob = new Blob([result.xml_content], { type: 'text/xml' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = result.filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    notify('Export Success', `Downloaded timeline XML file successfully: ${result.filename}`, '✅');
+                } else {
+                    notify('Export Failed', result.error, '❌');
+                }
+            } catch (err) {
+                notify('Export Error', err.message, '❌');
+                console.error('exportTimelineXML error:', err);
+            }
+        }
+
+        function buildModuleContext() {
+            const parts = [];
+            if (selectedVisualStyle) parts.push('Visual Style: ' + selectedVisualStyle);
+            if (selectedFilmAesthetic) parts.push('Film Aesthetic: ' + selectedFilmAesthetic);
+            if (selectedGenres.length) parts.push('Genres: ' + selectedGenres.join(', '));
+            if (screenplayData && screenplayData.scenes) {
+                parts.push('\nScreenplay:');
+                screenplayData.scenes.forEach(s => {
+                    parts.push(`  Scene ${s.scene_number || ''}: ${s.scene_title || ''} @ ${s.location_id || ''}`);
+                    if (s.characters_present && s.characters_present.length) {
+                        parts.push(`    Characters: ${s.characters_present.join(', ')}`);
+                    }
+                });
+            }
+            return parts.join('\n') || 'General short film';
+        }
+
+        // === LEFT SIDEBAR ===
+        let sidebarExpanded = false;
+        let savedAssets = [];
+        let currentAssetFilter = 'all';
+        let selectedAssetIds = new Set();
+
+        function toggleSidebar() {
+            sidebarExpanded = !sidebarExpanded;
+            const sidebar = document.getElementById('sidebar');
+            const icon = document.getElementById('sidebar-toggle-icon');
+            if (sidebarExpanded) {
+                sidebar.classList.remove('collapsed');
+                sidebar.classList.add('expanded');
+                icon.textContent = '▶';
+            } else {
+                sidebar.classList.remove('expanded');
+                sidebar.classList.add('collapsed');
+                icon.textContent = '◀';
+            }
+            scheduleSaveState();
+        }
+
+        function switchSidebarPanel(panel) {
+            if (!requireProject()) return;
+            document.querySelectorAll('.sidebar-rail-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('rail-' + panel).classList.add('active');
+            document.getElementById('panel-' + panel).classList.add('active');
+            selectedAssetIds.clear();
+            renderAssets();
+        }
+
+        function addAsset(type, name, filename) {
+            savedAssets.push({ type, name, filename, timestamp: Date.now() });
+            renderAssets();
+            scheduleSaveState();
+        }
+
+        function getAssetSearchTerm(panelId) {
+            const map = { 'assets': 'assets-search', 'locs': 'locs-search', 'chars': 'chars-search', 'scenes': 'scenes-search', 'videos': 'videos-search', 'sheets': 'sheets-search' };
+            const el = document.getElementById(map[panelId] || '');
+            return el ? el.value.toLowerCase().trim() : '';
+        }
+
+        function filterAssetsGrid() {
+            renderAssets();
+        }
+
+        function getFilteredAssetsForPanel(panelId) {
+            const search = getAssetSearchTerm(panelId);
+            if (panelId === 'assets') {
+                let items = currentAssetFilter === 'all' ? savedAssets : savedAssets.filter(a => a.type === currentAssetFilter);
+                if (search) items = items.filter(a => a.name.toLowerCase().includes(search));
+                return items;
+            }
+            const typeMap = { 'locs': 'location', 'chars': 'character', 'scenes': 'scene', 'videos': 'video', 'sheets': 'sheet' };
+            let items = savedAssets.filter(a => a.type === typeMap[panelId]);
+            if (search) items = items.filter(a => a.name.toLowerCase().includes(search));
+            return items;
+        }
+
+        function renderAssets() {
+            const allGrid = document.getElementById('assets-grid');
+            const locGrid = document.getElementById('locations-grid');
+            const charGrid = document.getElementById('characters-grid');
+            const sceneGrid = document.getElementById('scenes-grid');
+            const videoGrid = document.getElementById('videos-grid');
+            const sheetGrid = document.getElementById('sheets-grid');
+
+            const locAssets = savedAssets.filter(a => a.type === 'location');
+            const charAssets = savedAssets.filter(a => a.type === 'character');
+            const sceneAssets = savedAssets.filter(a => a.type === 'scene');
+            const videoAssets = savedAssets.filter(a => a.type === 'video');
+            const sheetAssets = savedAssets.filter(a => a.type === 'sheet');
+
+            document.getElementById('asset-count').textContent = savedAssets.length + ' items';
+            document.getElementById('loc-count').textContent = locAssets.length + ' items';
+            document.getElementById('char-count').textContent = charAssets.length + ' items';
+            document.getElementById('scene-count').textContent = sceneAssets.length + ' items';
+            document.getElementById('video-count').textContent = videoAssets.length + ' items';
+            if (document.getElementById('sheet-count')) {
+                document.getElementById('sheet-count').textContent = sheetAssets.length + ' items';
+            }
+
+            const allFiltered = getFilteredAssetsForPanel('assets');
+            const locsFiltered = getFilteredAssetsForPanel('locs');
+            const charsFiltered = getFilteredAssetsForPanel('chars');
+            const scenesFiltered = getFilteredAssetsForPanel('scenes');
+            const videosFiltered = getFilteredAssetsForPanel('videos');
+            const sheetsFiltered = getFilteredAssetsForPanel('sheets');
+
+            const renderOrEmpty = (arr, grid, emptyMsg) => {
+                if (grid) {
+                    grid.innerHTML = arr.length ? arr.map(a => renderAssetCard(a)).join('') : '<div class="sidebar-empty">' + emptyMsg + '</div>';
+                }
+            };
+
+            renderOrEmpty(allFiltered, allGrid, 'No assets match.');
+            renderOrEmpty(locsFiltered, locGrid, 'No location images yet.');
+            renderOrEmpty(charsFiltered, charGrid, 'No character images yet.');
+            renderOrEmpty(scenesFiltered, sceneGrid, 'No scene images yet.');
+            renderOrEmpty(videosFiltered, videoGrid, 'No videos yet.');
+            renderOrEmpty(sheetsFiltered, sheetGrid, 'No turnaround sheets yet.');
+
+            // Show toolbars only when assets exist
+            ['assets', 'locs', 'chars', 'scenes', 'videos', 'sheets'].forEach(id => {
+                const tb = document.getElementById(id + '-toolbar');
+                if (tb) {
+                    const count = id === 'assets' ? allFiltered.length :
+                        id === 'locs' ? locsFiltered.length :
+                        id === 'chars' ? charsFiltered.length :
+                        id === 'scenes' ? scenesFiltered.length :
+                        id === 'videos' ? videosFiltered.length : sheetsFiltered.length;
+                    tb.style.display = count ? 'flex' : 'none';
+                }
+            });
+        }
+
+        function renderAssetCard(a) {
+            const isVideo = a.type === 'video';
+            const aid = a.timestamp + '-' + a.filename;
+            const checked = selectedAssetIds.has(aid) ? ' checked' : '';
+            
+            // Build the image source URL
+            let imgSrc = '';
+            if (isVideo) {
+                const projName = currentProject?.name || '';
+                const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+                imgSrc = `/api/projects/${encodeURIComponent(projName)}/saved-video/${encodeURIComponent(a.filename)}${projectPathQuery}`;
+            } else {
+                if (a.filename.includes('/')) {
+                    imgSrc = getAssetImageSrc(a.filename, true);
+                } else {
+                    imgSrc = `/api/comfyui/view?filename=${a.filename}&thumbnail=true`;
+                }
+            }
+            
+            const onClick = isVideo ? `openVideo('${imgSrc}')` : `openFullscreenImage('${imgSrc}')`;
+            return `<div class="asset-card${checked ? ' selected' : ''}" data-asset-id="${aid}">
+                <div class="asset-checkbox${checked}" onclick="event.stopPropagation();toggleAssetSelect('${aid}',this)" data-aid="${aid}">${checked ? '✓' : ''}</div>
+                ${isVideo ? `<div style="width:100%;height:100px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:2rem;cursor:pointer;" onclick="${onClick}">🎥</div>` : `<img src="${imgSrc}" alt="${a.name}" onclick="${onClick}" onerror="this.style.display='none'">`}
+                <div class="asset-info">
+                    <div class="asset-name">${a.name}</div>
+                    <div class="asset-type">${a.type}</div>
+                </div>
+            </div>`;
+        }
+
+        function toggleAssetSelect(aid, el) {
+            if (selectedAssetIds.has(aid)) {
+                selectedAssetIds.delete(aid);
+                el.classList.remove('checked');
+                el.textContent = '';
+            } else {
+                selectedAssetIds.add(aid);
+                el.classList.add('checked');
+                el.textContent = '✓';
+            }
+            // Update card highlight
+            const card = el.closest('.asset-card');
+            if (card) card.classList.toggle('selected');
+        }
+
+        function selectAllAssets(panelId) {
+            const items = getFilteredAssetsForPanel(panelId);
+            const allSelected = items.every(a => selectedAssetIds.has(a.timestamp + '-' + a.filename));
+            items.forEach(a => {
+                const aid = a.timestamp + '-' + a.filename;
+                if (allSelected) {
+                    selectedAssetIds.delete(aid);
+                } else {
+                    selectedAssetIds.add(aid);
+                }
+            });
+            renderAssets();
+        }
+
+        function deleteSelectedAssets(panelId) {
+            const items = getFilteredAssetsForPanel(panelId);
+            const toDelete = items.filter(a => selectedAssetIds.has(a.timestamp + '-' + a.filename));
+            if (!toDelete.length) { notify('No Selection', 'Select assets first'); return; }
+            if (!confirm('Delete ' + toDelete.length + ' selected asset(s)?')) return;
+            const projectPath = currentProject?.path || '';
+            toDelete.forEach(async a => {
+                // Remove from savedAssets
+                const idx = savedAssets.findIndex(s => s.filename === a.filename && s.timestamp === a.timestamp);
+                if (idx >= 0) savedAssets.splice(idx, 1);
+                // Try to delete from disk
+                if (projectPath) {
+                    const stage = a.type === 'location' ? 'locations' : a.type === 'character' ? 'characters' : a.type === 'scene' ? 'scenes' : 'videos';
+                    try {
+                        await fetch('/api/projects/' + encodeURIComponent(currentProject.name) + '/file', {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ project_path: projectPath, stage: stage, filename: a.name + '.png' })
+                        });
+                    } catch(e) {}
+                }
+            });
+            selectedAssetIds.clear();
+            renderAssets();
+            scheduleSaveState();
+            notify('Deleted', toDelete.length + ' asset(s) removed');
+        }
+
+        function refreshAssetPanel(panelId) {
+            selectedAssetIds.clear();
+            document.getElementById(panelId + '-search').value = '';
+            renderAssets();
+        }
+
+        function openVideo(url) {
+            notify('Video Preview', 'Opening video...', '🎥');
+            window.open(url, '_blank');
+        }
+
+        function filterAssets(filter, btn) {
+            currentAssetFilter = filter;
+            document.querySelectorAll('.sidebar-panel-tab').forEach(t => t.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            renderAssets();
+        }
+
+        function clearAllAssets() {
+            if (savedAssets.length && confirm('Clear all saved assets?')) {
+                savedAssets = [];
+                selectedAssetIds.clear();
+                renderAssets();
+                scheduleSaveState();
+            }
+        }
+
+        // === SIDEBAR DRAG RESIZE ===
+        let isDragging = false;
+        let startX = 0;
+        let startWidth = 320;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const handle = document.getElementById('sidebar-resize-handle');
+            if (!handle) return;
+            handle.addEventListener('mousedown', function(e) {
+                isDragging = true;
+                startX = e.clientX;
+                const sidebar = document.getElementById('sidebar');
+                startWidth = sidebar.offsetWidth;
+                handle.classList.add('active');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                // Disable transition during drag
+                sidebar.style.transition = 'none';
+                e.preventDefault();
+            });
+            // Always start on home page — user picks New Project or Open Project
+            // (Auto-restore removed: landing page is the entry point)
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            const sidebar = document.getElementById('sidebar');
+            let newWidth = startWidth + (e.clientX - startX);
+            newWidth = Math.max(200, Math.min(600, newWidth));
+            sidebar.style.width = newWidth + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (!isDragging) return;
+            isDragging = false;
+            const handle = document.getElementById('sidebar-resize-handle');
+            if (handle) handle.classList.remove('active');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            const sidebar = document.getElementById('sidebar');
+            sidebar.style.transition = '';
+        });
+
+        // === Film Agent Integration ===
+        const FILM_AGENT_SKILLS_ICONS = {
+            'write_screenplay': '🎬', 'design_montage': '🎞️', 'plan_shot_composition': '📷',
+            'design_character': '👤', 'analyze_story_structure': '📐', 'advise_color_grading': '🎨',
+            'design_sound_design': '🔊', 'generate_comfyui_prompt': '🖼️', 'advise_editing_rhythm': '✂️',
+            'advise_cinematography': '🎥', 'get_project_state': '📂', 'web_search_reference': '🔍'
+        };
+
+        async function sendAgentChatMessage() {
+            const inputEl = document.getElementById('agent-chat-input');
+            const msg = inputEl.value.trim();
+            if (!msg) return;
+            
+            inputEl.value = '';
+            appendAgentChatMessage('user', msg);
+            
+            const statusEl = document.getElementById('agent-chat-status');
+            statusEl.textContent = '🎬 Film Agent thinking...';
+            
+            try {
+                const res = await fetch('/api/film-agent/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message: msg, session_id: 'web_session', project_path: currentProject?.path || null })
+                });
+                const data = await res.json();
+                statusEl.textContent = '';
+                if (data.success) {
+                    // Show tool usage indicators first
+                    if (data.tools_used && data.tools_used.length > 0) {
+                        const toolNames = data.tools_used.map(t => FILM_AGENT_SKILLS_ICONS[t.name] || '🔧' + ' ' + t.name.replace(/_/g, ' ')).join(' → ');
+                        const toolIndicator = document.createElement('div');
+                        toolIndicator.style.cssText = 'font-size:0.65rem;color:var(--accent-secondary);padding:4px 12px;font-style:italic;opacity:0.8;';
+                        toolIndicator.textContent = `Used: ${toolNames}`;
+                        document.getElementById('agent-chat-messages').appendChild(toolIndicator);
+                    }
+                    appendAgentChatMessage('agent', data.response);
+                    if (data.message_count > 0) {
+                        statusEl.textContent = `💬 ${data.message_count} messages`;
+                        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+                    }
+                } else {
+                    appendAgentChatMessage('agent', 'Error: ' + (data.message || 'Unknown error'));
+                }
+            } catch (e) {
+                statusEl.textContent = '';
+                appendAgentChatMessage('agent', 'Error: ' + e.message);
+            }
+        }
+
+        function appendAgentChatMessage(sender, text) {
+            const box = document.getElementById('agent-chat-messages');
+            const msgEl = document.createElement('div');
+            msgEl.style.padding = '8px 12px';
+            msgEl.style.borderRadius = '2px';
+            msgEl.style.maxWidth = '85%';
+            msgEl.style.color = '#fff';
+            msgEl.style.fontSize = '0.85rem';
+            
+            if (sender === 'user') {
+                msgEl.style.background = 'rgba(255,51,51,0.1)';
+                msgEl.style.borderRight = '2px solid var(--accent-primary)';
+                msgEl.style.alignSelf = 'flex-end';
+                msgEl.style.lineHeight = '1.5';
+                msgEl.textContent = text;
+            } else {
+                msgEl.style.background = 'var(--bg-tertiary)';
+                msgEl.style.borderLeft = '2px solid var(--accent-primary)';
+                msgEl.style.alignSelf = 'flex-start';
+                msgEl.style.lineHeight = '1.6';
+                // Enhanced markdown: bold, code blocks, headers, bullet points
+                let html = text
+                    .replace(/```([\s\S]*?)```/g, '<pre style="background:rgba(0,0,0,0.3);padding:6px 8px;border-radius:3px;font-size:0.78rem;overflow-x:auto;margin:6px 0;font-family:monospace;">$1</pre>')
+                    .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3);padding:1px 4px;border-radius:2px;font-size:0.8rem;">$1</code>')
+                    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                    .replace(/\*(.*?)\*/g, '<i>$1</i>')
+                    .replace(/^### (.+)$/gm, '<div style="font-size:0.8rem;font-weight:700;color:var(--accent-primary);margin:8px 0 4px;">$1</div>')
+                    .replace(/^## (.+)$/gm, '<div style="font-size:0.85rem;font-weight:700;color:#fff;margin:10px 0 4px;">$1</div>')
+                    .replace(/^# (.+)$/gm, '<div style="font-size:0.9rem;font-weight:800;color:var(--accent-primary);margin:12px 0 4px;">🎬 $1</div>')
+                    .replace(/^- (.+)$/gm, '<div style="padding-left:12px;">• $1</div>')
+                    .replace(/\n/g, '<br>');
+                msgEl.innerHTML = html;
+            }
+            box.appendChild(msgEl);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function appendApprovalWidget(item) {
+            const box = document.getElementById('agent-chat-messages');
+            // Remove previous widgets to avoid duplicates
+            box.querySelectorAll('.agent-approval-widget').forEach(el => el.remove());
+            
+            const widget = document.createElement('div');
+            widget.className = 'agent-approval-widget';
+            widget.style.cssText = "background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:4px;padding:12px;margin:8px 0;width:95%;align-self:flex-start;display:flex;flex-direction:column;gap:8px;font-family:'Space Grotesk',sans-serif;";
+            
+            const title = document.createElement('div');
+            title.style.cssText = "font-weight:700;font-size:0.8rem;text-transform:uppercase;color:var(--accent-primary);";
+            title.textContent = `⚖️ Approval Required: ${item.type}`;
+            widget.appendChild(title);
+            
+            const desc = document.createElement('div');
+            desc.style.cssText = "font-size:0.75rem;color:var(--text-secondary);";
+            const details = item.data || {};
+            desc.innerHTML = `<b>Name:</b> ${details.name || item.type}<br><b>Details:</b> ${details.description || details.details || item.description || ''}`;
+            widget.appendChild(desc);
+            
+            const actions = document.createElement('div');
+            actions.style.display = 'flex';
+            actions.style.gap = '8px';
+            
+            const btnApprove = document.createElement('button');
+            btnApprove.className = 'btn btn-primary';
+            btnApprove.style.cssText = "font-size:0.7rem;padding:4px 10px;";
+            btnApprove.textContent = 'Approve';
+            btnApprove.onclick = async () => {
+                widget.remove();
+                await handleApprovalAction('approve');
+            };
+            
+            const btnRegen = document.createElement('button');
+            btnRegen.className = 'btn btn-secondary';
+            btnRegen.style.cssText = "font-size:0.7rem;padding:4px 10px;";
+            btnRegen.textContent = 'Regenerate';
+            btnRegen.onclick = async () => {
+                widget.remove();
+                const feed = prompt('Any feedback to tweak generation? (leave empty for default)');
+                await handleApprovalAction('regen', feed);
+            };
+            
+            actions.appendChild(btnApprove);
+            actions.appendChild(btnRegen);
+            widget.appendChild(actions);
+            box.appendChild(widget);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        async function handleApprovalAction(action, feedback) {
+            const statusEl = document.getElementById('agent-chat-status');
+            statusEl.textContent = '⏳ Processing approval action...';
+            try {
+                const res = await fetch('/api/agent-wizard/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        message: action === 'approve' ? 'approve' : ('regen ' + (feedback || '')),
+                        mode: document.getElementById('agent-mode-select').value,
+                        chat_id: 'web_session'
+                    })
+                });
+                const data = await res.json();
+                statusEl.textContent = '';
+                if (data.success) {
+                    appendAgentChatMessage('agent', data.response);
+                    if (data.current_approval) {
+                        appendApprovalWidget(data.current_approval);
+                    }
+                    startAgentPolling();
+                }
+            } catch(e) {
+                statusEl.textContent = '';
+                notify('Error', e.message);
+            }
+        }
+
+        let agentPollInterval = null;
+        function startAgentPolling() {
+            if (agentPollInterval) clearInterval(agentPollInterval);
+            agentPollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/agent-wizard/status?chat_id=web_session');
+                    const data = await res.json();
+                    if (data.success) {
+                        const statusEl = document.getElementById('agent-chat-status');
+                        statusEl.textContent = data.progress || '';
+                        
+                        if (data.current_approval && !document.querySelector('.agent-approval-widget')) {
+                            appendApprovalWidget(data.current_approval);
+                        }
+                        
+                        if (data.state === 'complete') {
+                            clearInterval(agentPollInterval);
+                            agentPollInterval = null;
+                            appendAgentChatMessage('agent', '🎉 Build completed successfully!');
+                            syncRecentProjectsWithBackend();
+                        } else if (data.state === 'welcome' && data.progress.includes('Error')) {
+                            clearInterval(agentPollInterval);
+                            agentPollInterval = null;
+                            appendAgentChatMessage('agent', '❌ Generation failed: ' + data.progress);
+                        }
+                    }
+                } catch(e) {
+                    console.error("Agent polling error", e);
+                }
+            }, 3000);
+        }
+
+        // === INIT ===
+        try { updateIdeaInputs(); } catch(e) { console.error("INIT Error (updateIdeaInputs):", e); }
+        try { syncRecentProjectsWithBackend(); } catch(e) { console.error("INIT Error (syncRecentProjectsWithBackend):", e); }
+        try { loadGenreModalGrid(); } catch(e) { console.error("INIT Error (loadGenreModalGrid):", e); }
+        try { loadMasterSystemPrompt(); } catch(e) { console.error("INIT Error (loadMasterSystemPrompt):", e); }
+        // Auto-connect LLM on start
+        fetch('/api/settings').then(r => r.json()).then(s => {
+            if (s.llm && s.llm.host && s.llm.model) {
+                document.getElementById('llm-provider').value = s.llm.provider || 'ollama';
+                document.getElementById('llm-host').value = s.llm.host;
+                document.getElementById('llm-apikey').value = s.llm.apiKey || '';
+                loadLLMModels().then(() => {
+                    const sel = getLLMModelSelect();
+                    sel.value = s.llm.model;
+                    onLLMProviderChange();
+                });
+            }
+            // Auto-start local engines if enabled
+            if (s.llm && s.llm.auto_start && s.llm.provider && ['ollama','lm_studio','llama_cpp','app_llm','omniroute'].includes(s.llm.provider)) {
+                const body = {provider: s.llm.provider};
+                if (s.llm.provider === 'llama_cpp' && s.llm.model) {
+                    const mp = s.llm.models_path || '';
+                    body.model_path = mp ? mp.replace(/\\/g,'/') + '/' + s.llm.model.replace(/\\/g,'/') : s.llm.model;
+                } else if (s.llm.provider === 'app_llm' && s.llm.model) {
+                    body.model_path = s.llm.model;
+                }
+                fetch('/api/llm/start', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                }).then(r => r.json()).then(d => {
+                    if (!d.success) console.warn('Auto-start LLM failed:', d.error);
+                }).catch(() => {});
+            }
+            if (s.comfyui && s.comfyui.auto_start) {
+                fetch('/api/comfyui/start', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: s.comfyui.path || null})
+                }).catch(() => {});
+            }
+        }).catch(() => {});
+
+        async function updateSystemStats() {
+            try {
+                const res = await fetch('/api/system/stats');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('cpu-stat').innerText = data.cpu + '%';
+                    document.getElementById('ram-stat').innerText = data.ram + '%';
+                    document.getElementById('gpu-stat').innerText = data.gpu + '%';
+                    document.getElementById('temp-stat').innerText = data.temp + '°C';
+                    
+                    const updateIndicator = (elId, val) => {
+                        const el = document.getElementById(elId);
+                        if (!el) return;
+                        el.className = 'stat-indicator';
+                        if (val > 85) {
+                            el.classList.add('stat-alert');
+                        } else if (val > 60) {
+                            el.classList.add('stat-warn');
+                        } else {
+                            el.classList.add('stat-ok');
+                        }
+                    };
+                    
+                    updateIndicator('cpu-indicator', data.cpu);
+                    updateIndicator('ram-indicator', data.ram);
+                    updateIndicator('gpu-indicator', data.gpu);
+                }
+            } catch (e) {
+                console.warn('System stats update failed:', e);
+            }
+        }
+        updateSystemStats();
+        setInterval(updateSystemStats, 5000);
+
+        window.addEventListener('beforeunload', function() {
+            if (!currentProject || !currentProject.path) return;
+            if (_saveTimer) clearTimeout(_saveTimer);
+            const state = collectProjectState();
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/projects/' + encodeURIComponent(currentProject.name) + '/state', false);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.send(JSON.stringify({ state, project_path: currentProject.path }));
+            } catch(e) {}
+        });
+
+        async function verifySceneConsistency(sceneIdx, signal = null) {
+            const btn = document.getElementById(`scene-verify-btn-${sceneIdx}`);
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳ Verifying Continuity...';
+            }
+
+            const scene = screenplayData.scenes[sceneIdx];
+            const sceneId = scene.scene_id || scene.scene_number;
+            
+            const validShots = (scene.shots || []).filter(sh => sh._temp_storyboard_image || sh.storyboard_image);
+            if (!validShots.length) {
+                notify('No Images', `Scene ${sceneId} has no generated images to verify.`, '⚠️');
+                if (btn) { btn.disabled = false; btn.textContent = '👁️ Vrfy Scene'; }
+                return;
+            }
+
+            const payload = {
+                scene_id: sceneId,
+                shots: validShots.map(sh => {
+                    // Prefer the officially saved image over the temp image
+                    const img = sh.storyboard_image || sh._temp_storyboard_image;
+                    let path = img;
+                    if (img && !img.includes('/')) {
+                        path = `ComfyUI/output/${img}`;
+                    } else if (img) {
+                        // The image is saved as 'scenes/filename.png', so it's directly in the project path
+                        path = `${currentProject.path}/${img}`;
+                    }
+                    return {
+                        shot_id: sh.shot_id,
+                        image_path: path
+                    };
+                })
+            };
+
+            notify('Checking Visual Consistency', `The Vision AI is now reviewing all ${validShots.length} generated images for Scene ${sceneId}. \n\nIt is actively checking: \n- Character face/body consistency\n- Outfit matching\n- Lighting & Environment continuity\n\nThis may take 1-3 minutes depending on your model!`, '👁️', 0);
+            
+            try {
+                const res = await fetch('/api/orchestrator/verify-scene-consistency', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    signal: signal
+                });
+                const data = await res.json();
+                
+                if (data.success && data.evaluations) {
+                    let passedCount = 0;
+                    
+                    // Sort evaluations by score descending to find golden reference
+                    const sortedEvals = [...data.evaluations].sort((a,b) => b.score - a.score);
+                    const goldenRefShotId = sortedEvals[0]?.shot_id;
+                    const goldenRefShot = validShots.find(sh => sh.shot_id === goldenRefShotId);
+                    const goldenRefPath = goldenRefShot ? (currentProject.path + '/.system/' + (goldenRefShot._temp_storyboard_image || goldenRefShot.storyboard_image)) : '';
+                    
+                    for (const ev of data.evaluations) {
+                        if (signal && signal.aborted) break;
+                        
+                        const shIdx = scene.shots.findIndex(sh => sh.shot_id === ev.shot_id);
+                        if (shIdx !== -1) {
+                            scene.shots[shIdx].consistency_eval = ev;
+                            
+                            const container = document.getElementById(`shot-preview-${sceneIdx}-${shIdx}`);
+                            if (container) {
+                                // Add visual feedback badge
+                                const badge = document.createElement('div');
+                                badge.className = 'consistency-badge';
+                                badge.style.cssText = `position:absolute;top:5px;right:5px;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:bold;z-index:10;background:${ev.passed ? 'rgba(0,180,0,0.8)' : 'rgba(220,0,0,0.8)'};color:white;cursor:help;`;
+                                badge.textContent = `${ev.score}/10 ${ev.passed ? '✅' : '❌'}`;
+                                badge.title = ev.feedback;
+                                container.appendChild(badge);
+                            }
+                            
+                            if (ev.passed) {
+                                passedCount++;
+                            } else {
+                                // Automatically append critical fix feedback to the prompt
+                                const currentPrompt = scene.shots[shIdx].storyboard_prompt || '';
+                                if (!currentPrompt.includes('CRITICAL FIX:')) {
+                                    scene.shots[shIdx].storyboard_prompt = currentPrompt + ' CRITICAL FIX: ' + ev.feedback;
+                                }
+                                // Assign the golden reference if one exists
+                                if (goldenRefPath && ev.shot_id !== goldenRefShotId) {
+                                    scene.shots[shIdx].golden_reference = goldenRefPath;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (passedCount === validShots.length) {
+                        notify('Perfect Consistency', `All ${validShots.length} shots passed the consistency check!`, '🏆');
+                    } else {
+                        notify('Consistency Issues Found', `${validShots.length - passedCount} shots failed verification. Please review the badges manually.`, '⚠️');
+                    }
+                } else {
+                    notify('Verification Failed', data.error || 'Failed to verify scene.', '❌');
+                }
+            } catch (err) {
+                console.error(err);
+                notify('Verification Error', err.message, '❌');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '👁️ Vrfy Scene';
+                }
+            }
+        }
+    
