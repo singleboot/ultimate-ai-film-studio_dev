@@ -8,7 +8,10 @@
       "api_endpoint": "/api/generate",
       "requires_api_key": false,
       "binary": "ollama",
-      "start_cmd": ["ollama", "serve"],
+      "start_cmd": [
+        "ollama",
+        "serve"
+      ],
       "health_endpoint": "/api/tags"
     },
     "lm_studio": {
@@ -27,7 +30,13 @@
       "api_endpoint": "/v1/chat/completions",
       "requires_api_key": false,
       "binary": "llama-server",
-      "start_cmd": ["llama-server", "--host", "0.0.0.0", "--port", "8080"],
+      "start_cmd": [
+        "llama-server",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080"
+      ],
       "health_endpoint": "/v1/models"
     },
     "openai": {
@@ -93,8 +102,38 @@
       "api_endpoint": "/v1/chat/completions",
       "requires_api_key": false,
       "binary": "llama-server",
-      "start_cmd": ["llama-server", "--host", "0.0.0.0", "--port", "8081", "--ctx-size", "32768", "--n-predict", "16384"],
+      "start_cmd": [
+        "llama-server",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8081",
+        "--ctx-size",
+        "32768",
+        "--n-predict",
+        "16384"
+      ],
       "health_endpoint": "/v1/models"
+    },
+    "agnes": {
+      "name": "Agnes AI",
+      "type": "cloud",
+      "host": "https://apihub.agnes-ai.com/v1",
+      "default_model": "agnes-2.5-flash",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": true,
+      "api_key_env": "AGNES_API_KEY",
+      "models_endpoint": "/models"
+    },
+    "omniroute": {
+      "name": "OmniRoute",
+      "type": "cloud",
+      "host": "http://127.0.0.1:20128/api/v1",
+      "default_model": "auto",
+      "api_endpoint": "/chat/completions",
+      "requires_api_key": false,
+      "health_endpoint": "/models",
+      "models_endpoint": "/v1/models"
     }
   }
 }

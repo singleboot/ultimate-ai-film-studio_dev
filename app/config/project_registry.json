@@ -3,60 +3,102 @@
     "name": "test",
     "path": "F:\\000000 test\\00001\\test",
     "registered_at": "2026-05-30T00:06:59.243062",
-    "last_opened": "2026-06-16T22:14:52.701971"
+    "last_opened": "2026-08-30T18:27:58.900284"
   },
   {
     "name": "test02",
     "path": "F:\\000000 test\\00001\\test02",
     "registered_at": "2026-05-30T00:06:59.256487",
-    "last_opened": "2026-06-16T22:14:44.138313"
+    "last_opened": "2026-08-31T23:38:14.025028"
   },
   {
     "name": "MV_test_v1",
     "path": "F:\\000000 test\\MV_Test01\\MV_test_v1",
     "registered_at": "2026-05-30T00:06:59.272158",
-    "last_opened": "2026-06-16T22:14:15.603648"
+    "last_opened": "2026-08-31T23:38:13.838885"
   },
   {
     "name": "MyProject_v1",
     "path": "F:\\000000 test\\MyProject_v1\\MyProject_v1",
     "registered_at": "2026-05-30T00:06:59.285571",
-    "last_opened": "2026-06-16T22:14:39.683267"
+    "last_opened": "2026-08-31T23:38:14.010209"
   },
   {
     "name": "MyProject_v2",
     "path": "F:\\000000 test\\MyProject_v2\\MyProject_v2",
     "registered_at": "2026-05-30T00:06:59.299283",
-    "last_opened": "2026-06-16T22:14:32.035374"
+    "last_opened": "2026-08-31T23:38:13.990851"
   },
   {
     "name": "MyProject_v3",
     "path": "F:\\000000 test\\MyProject_v3\\MyProject_v3",
     "registered_at": "2026-05-30T00:06:59.313667",
-    "last_opened": "2026-06-16T22:14:23.465999"
+    "last_opened": "2026-08-31T23:38:13.971396"
   },
   {
     "name": "MyProject_v4",
     "path": "F:\\000000 test\\MyProject_v4\\MyProject_v4",
     "registered_at": "2026-05-30T00:06:59.321340",
-    "last_opened": "2026-06-16T22:13:58.388554"
+    "last_opened": "2026-08-31T23:38:13.794245"
   },
   {
     "name": "test",
     "path": "F:\\000000 test\\00001",
     "registered_at": "2026-05-30T00:24:02.742194",
-    "last_opened": "2026-06-16T22:14:49.437891"
+    "last_opened": "2026-08-30T21:58:34.484444"
   },
   {
     "name": "test",
     "path": "F:\\MY APP\\ultimate-ai-film-studio-v8\\app\\projects\\test",
     "registered_at": "2026-05-30T00:24:09.246977",
-    "last_opened": "2026-06-16T22:14:54.768202"
+    "last_opened": "2026-08-10T21:33:46.960437"
   },
   {
     "name": "WORLD CUP",
     "path": "F:\\01_PROJECT\\FIFA_V1\\WORLD CUP",
     "registered_at": "2026-06-14T04:26:02.451346",
-    "last_opened": "2026-06-16T22:13:57.073030"
+    "last_opened": "2026-08-31T23:38:13.702316"
+  },
+  {
+    "name": "test03",
+    "path": "F:\\000000 test\\00006\\test03",
+    "registered_at": "2026-08-10T21:34:11.458751",
+    "last_opened": "2026-08-31T23:38:13.598061"
+  },
+  {
+    "name": "__state_fix_test__",
+    "path": "F:\\MY APP\\ULTIMATE AI STUDIO\\ultimate-ai-film-studio-V11\\app\\projects\\__state_fix_test__",
+    "registered_at": "2026-08-10T22:11:07.435914",
+    "last_opened": "2026-08-31T22:18:11.559816"
+  },
+  {
+    "name": "horror 01",
+    "path": "J:\\0002 MY Channels\\Haunted Horror Echoes\\2026\\AI APP PROJECTS\\09 SEP\\horror 01\\horror 01",
+    "registered_at": "2026-08-30T14:21:22.427925",
+    "last_opened": "2026-09-21T22:23:15.203283"
+  },
+  {
+    "name": "My Test Film",
+    "path": "F:\\test_project",
+    "registered_at": "2026-08-30T14:27:27.735153",
+    "last_opened": "2026-08-30T14:28:17.760198"
+  },
+  {
+    "name": "horror 02",
+    "path": "J:\\0002 MY Channels\\Haunted Horror Echoes\\2026\\AI APP PROJECTS\\09 SEP\\horror 01\\horror 02\\horror 02",
+    "registered_at": "2026-08-30T21:59:24.639575",
+    "last_opened": "2026-09-21T22:23:15.114550"
+  },
+  {
+    "name": "MY story 01",
+    "path": "J:\\0002 MY Channels\\0000001\\story01\\MY story 01",
+    "registered_at": "2026-09-21T20:58:36.132042",
+    "last_opened": "2026-09-21T22:23:16.770448"
+  },
+  {
+    "name": "E2E PRESET TEST",
+    "path": "F:\\MY APP\\ULTIMATE AI STUDIO\\ultimate-ai-film-studio-V11\\scratch\\e2e-test-project\\E2E PRESET TEST",
+    "registered_at": "2026-09-21T21:36:45.523678",
+    "last_opened": "2026-09-21T21:36:46.049757"
   }
 ]

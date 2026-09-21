@@ -33,6 +33,11 @@
           "workflow_file": "qwen_image.json",
           "params": ["prompt", "width", "height", "seed"]
         },
+        "krea2_turbo": {
+          "name": "Krea 2 Turbo (LLM Refine)",
+          "workflow_file": "image_krea2_turbo_t2i_v2.json",
+          "params": ["prompt", "width", "height", "seed", "resolution"]
+        },
         "stable_diffusion": {
           "name": "Stable Diffusion",
           "workflow_file": "sd_xl.json",
@@ -76,6 +81,11 @@
               "workflow_file": "ltx2_text_to_video.json",
               "params": ["prompt", "width", "height", "frames", "fps"]
             },
+            "minimax_h3_t2v": {
+              "name": "MiniMax H3 T2V + LTX Upsampler",
+              "workflow_file": "video_minimax_h3_t2v_ltxupsampler.json",
+              "params": ["prompt", "width", "height", "frames", "fps"]
+            },
             "ltx_23_distilled": {
               "name": "LTX 2.3 Distilled",
               "workflow_file": "ltx2_distilled.json",
@@ -99,6 +109,11 @@
             "ltx_23_i2v": {
               "name": "LTX 2.3 I2V",
               "workflow_file": "ltx2_image_to_video.json",
+              "params": ["input_image", "prompt", "frames", "fps"]
+            },
+            "minimax_h3_r2v": {
+              "name": "MiniMax H3 R2V + LTX Upsampler",
+              "workflow_file": "video_minimax_h3_r2v_ltxupsampler.json",
               "params": ["input_image", "prompt", "frames", "fps"]
             },
             "wan_21_i2v": {
