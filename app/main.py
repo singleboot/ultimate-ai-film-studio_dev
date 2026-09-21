@@ -3,11 +3,12 @@ import json
 import shutil
 import platform
 import logging
+import subprocess
 import threading
 import time
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -27,11 +28,14 @@ logger = logging.getLogger("film-studio")
 try:
     from core.template_manager import TemplateManager
     from core.llm_engine import LLMEngine
+    from core.llm_agents import LLMAgentRegistry
     from core.project_manager import ProjectManager
     from core.approval_workflow import ApprovalWorkflow
     from core.image_engine import ImageEngine
     from core.orchestrator import CinematicOrchestrator, load_master_system_prompt
     from core.agent_project_creator import AgentProjectCreator
+    from core.film_agent import FilmAgent
+    from core.film_orchestrator import ExecutiveProducer
     from core.telegram_bot import TelegramBotService
     HAS_LLM = True
 except ImportError:
@@ -44,9 +48,9 @@ async def lifespan(app):
         changed = False
         if "llm" not in settings:
             settings["llm"] = {
-                "provider": "app_llm",
-                "model": "gemma-4-E2B-it-Q4_K_M.gguf",
-                "host": "http://localhost:8081",
+                "provider": "omniroute",
+                "model": "auto",
+                "host": "http://127.0.0.1:20128",
                 "apiKey": "",
                 "auto_start": True,
                 "n_gpu_layers": -1
@@ -55,8 +59,8 @@ async def lifespan(app):
         else:
             llm_settings = settings["llm"]
             if not llm_settings.get("provider"):
-                llm_settings["provider"] = "app_llm"
-                llm_settings["host"] = "http://localhost:8081"
+                llm_settings["provider"] = "omniroute"
+                llm_settings["host"] = "http://127.0.0.1:20128"
                 changed = True
             if "auto_start" not in llm_settings:
                 llm_settings["auto_start"] = True
@@ -87,6 +91,21 @@ async def lifespan(app):
                 cui["port"] = 8188
                 changed = True
 
+        if "omniroute" not in settings:
+            settings["omniroute"] = {
+                "auto_start": True,
+                "port": 20128
+            }
+            changed = True
+        else:
+            or_settings = settings["omniroute"]
+            if "auto_start" not in or_settings:
+                or_settings["auto_start"] = True
+                changed = True
+            if "port" not in or_settings:
+                or_settings["port"] = 20128
+                changed = True
+
         if changed:
             save_settings(settings)
 
@@ -111,6 +130,28 @@ async def lifespan(app):
                     logger.info("ComfyUI already running — skipping auto-start")
             except Exception as e:
                 logger.error(f"Error during ComfyUI auto-start: {e}", exc_info=True)
+
+        # Auto-start OmniRoute gateway if enabled
+        or_settings = settings.get("omniroute", {})
+        if or_settings.get("auto_start", True):
+            try:
+                import shutil as _shutil
+                if _shutil.which("omniroute"):
+                    try:
+                        _resp = requests.get("http://127.0.0.1:20128/api/v1/models", timeout=5)
+                        if _resp.status_code == 200:
+                            logger.info("OmniRoute already running -- skipping auto-start")
+                        else:
+                            raise Exception("not running")
+                    except Exception:
+                        logger.info("Auto-starting OmniRoute gateway...")
+                        or_bin = _shutil.which("omniroute")
+                        subprocess.Popen(
+                            [or_bin, "serve", "--daemon", "--no-open", "--no-tray", "--port", str(or_settings.get("port", 20128))],
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                        )
+            except Exception as e:
+                logger.error(f"Error during OmniRoute auto-start: {e}")
     except Exception as e:
         logger.error(f"Error during startup: {e}", exc_info=True)
     if telegram_bot:
@@ -182,6 +223,7 @@ VISUAL_STYLES_DIR.mkdir(exist_ok=True)
 FILM_AESTHETICS_DIR.mkdir(exist_ok=True)
 
 llm_engine = LLMEngine(settings_path=str(SETTINGS_FILE)) if HAS_LLM else None
+llm_agents = LLMAgentRegistry(llm_engine) if HAS_LLM else None
 project_manager = ProjectManager() if HAS_LLM else None
 approval_workflow = ApprovalWorkflow() if HAS_LLM else None
 agent_creator = AgentProjectCreator(project_manager, llm_engine) if HAS_LLM else None
@@ -193,6 +235,8 @@ from core.comfyui_client import ComfyUIClient
 comfyui_client = ComfyUIClient()
 image_engine = ImageEngine(comfyui_client=comfyui_client, settings_path=str(SETTINGS_FILE)) if HAS_LLM else None
 orchestrator = CinematicOrchestrator(llm_engine=llm_engine) if HAS_LLM else None
+film_agent = FilmAgent(llm_engine=llm_engine, project_manager=project_manager, orchestrator=orchestrator) if HAS_LLM else None
+executive_producer = ExecutiveProducer(llm_engine=llm_engine, project_manager=project_manager, orchestrator=orchestrator) if HAS_LLM else None
 
 class GenerateRequest(BaseModel):
     provider: str
@@ -312,8 +356,8 @@ def generate(request: GenerateRequest):
     if not llm_engine:
         return {"success": False, "error": "LLM engine not available"}
 
-    provider_id = request.provider or request.app_provider or "app_llm"
-    default_model = "gemma-4-E2B-it-Q4_K_M.gguf" if provider_id == "app_llm" else "llama3.1"
+    provider_id = request.provider or request.app_provider or "omniroute"
+    default_model = "auto" if provider_id == "omniroute" else "gemma-4-E2B-it-Q4_K_M.gguf" if provider_id == "app_llm" else "llama3.1"
     model = request.model or default_model
 
     # Cold-start verify/auto-start local LLM subprocess
@@ -363,9 +407,178 @@ async def detect_local_llm(provider: str):
     return llm_engine.detect_local_llm(provider) if llm_engine else {"installed": False, "error": "LLM engine not available"}
 
 @app.get("/api/llm/status")
-async def get_llm_status(provider: str):
-    """Check if a local LLM is running."""
+def get_llm_status(provider: str):
+    """Check if a local LLM is running.
+
+    Sync on purpose: this is polled every few seconds and does blocking network
+    I/O; running it as async would freeze the event loop.
+    """
     return llm_engine.get_local_status(provider) if llm_engine else {"running": False}
+
+@app.get("/api/pick-folder")
+def pick_folder():
+    """Open the native OS folder picker dialog and return the selected path.
+
+    Uses tkinter.filedialog which renders the real Windows Explorer
+    folder picker on Windows, GTK dialog on Linux, etc.
+    Runs in a thread so it doesn't block the event loop.
+    """
+    import threading
+    result = {"path": None, "cancelled": True}
+    lock = threading.Event()
+
+    def _pick():
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            folder = filedialog.askdirectory(
+                title="Select Project Folder",
+                mustexist=True
+            )
+            root.destroy()
+            if folder:
+                result["path"] = folder
+                result["cancelled"] = False
+        except Exception as e:
+            result["error"] = str(e)
+        finally:
+            lock.set()
+
+    t = threading.Thread(target=_pick, daemon=True)
+    t.start()
+    lock.wait(timeout=60)
+    return result
+
+@app.get("/api/browse-directory")
+def browse_directory(path: str = ""):
+    """List subdirectories at the given path for the folder browser UI.
+
+    On Windows with no path, returns drives with labels and free space
+    like Windows Explorer.
+    """
+    import os
+    import shutil
+
+    def _get_drive_info(drive_path: str) -> dict:
+        """Get Windows drive label and space info."""
+        info = {
+            "name": drive_path,
+            "path": drive_path,
+            "is_drive": True,
+            "label": "",
+            "total_bytes": 0,
+            "free_bytes": 0,
+            "used_bytes": 0,
+            "usage_percent": 0,
+        }
+        try:
+            total, used, free = shutil.disk_usage(drive_path)
+            info["total_bytes"] = total
+            info["free_bytes"] = free
+            info["used_bytes"] = used
+            info["usage_percent"] = round((used / total) * 100) if total > 0 else 0
+        except Exception:
+            pass
+        # Try to get drive label via ctypes (Windows only)
+        if os.name == 'nt':
+            try:
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                buf = ctypes.create_unicode_buffer(256)
+                kernel32.GetVolumeInformationW(drive_path, buf, 256, None, None, None, None, 0)
+                if buf.value:
+                    info["label"] = buf.value
+            except Exception:
+                pass
+        return info
+
+    def _format_bytes(size: int) -> str:
+        """Format bytes to human-readable string."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} PB"
+
+    if not path:
+        if os.name == 'nt':
+            import string
+            drives = []
+            for letter in string.ascii_uppercase:
+                drive = f"{letter}:\\\\"
+                if os.path.exists(drive):
+                    info = _get_drive_info(drive)
+                    # Build display name like Explorer: "Local Disk (C:)" or "Data (D:)"
+                    label = info.get("label", "")
+                    free = _format_bytes(info.get("free_bytes", 0))
+                    total = _format_bytes(info.get("total_bytes", 0))
+                    display = f"{label} ({letter}:)" if label else f"Local Disk ({letter}:)"
+                    info["display"] = display
+                    info["free_display"] = f"{free} free of {total}"
+                    drives.append(info)
+            return {"success": True, "current": "", "drives": drives, "entries": []}
+        else:
+            path = os.path.expanduser("~")
+
+    try:
+        path = os.path.normpath(path)
+        if not os.path.isdir(path):
+            return {"success": False, "error": f"Not a directory: {path}"}
+
+        entries = []
+        for name in sorted(os.listdir(path)):
+            full = os.path.join(path, name)
+            if os.path.isdir(full) and not name.startswith('.'):
+                # Count children for folder size hint
+                child_count = 0
+                try:
+                    child_count = len([x for x in os.listdir(full) if os.path.isdir(os.path.join(full, x))])
+                except Exception:
+                    pass
+                entries.append({
+                    "name": name,
+                    "path": full,
+                    "child_count": child_count
+                })
+
+        # Add parent directory link
+        parent = os.path.dirname(path)
+        if parent != path:
+            entries.insert(0, {"name": "..", "path": parent, "is_parent": True})
+
+        return {"success": True, "current": path, "entries": entries, "drives": []}
+    except PermissionError:
+        return {"success": False, "error": "Permission denied"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/omniroute/status")
+def get_omniroute_status():
+    """Check if OmniRoute gateway is running.
+
+    Uses the root endpoint (/) for a fast heartbeat instead of /api/v1/models
+    which loads all 745 models and can be slow under load.
+    """
+    # Quick TCP check first — cheapest way to see if OmniRoute is listening
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(2)
+    try:
+        result = sock.connect_ex(("127.0.0.1", 20128))
+        if result == 0:
+            sock.close()
+            return {"running": True}
+    except Exception:
+        pass
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    return {"running": False}
 
 @app.get("/api/gpu/status")
 async def get_gpu_status():
@@ -375,8 +588,13 @@ async def get_gpu_status():
     return {"gpu_available": False}
 
 @app.get("/api/system/stats")
-async def get_system_stats():
-    """Get system resource usage statistics (CPU, RAM, GPU, GPU Temp)."""
+def get_system_stats():
+    """Get system resource usage statistics (CPU, RAM, GPU, GPU Temp).
+
+    Sync on purpose: this runs blocking subprocess calls (wmic, nvidia-smi) and is
+    polled every few seconds; as async it would freeze the event loop for seconds
+    at a time, stalling every other request.
+    """
     import subprocess
     import os
     cpu_usage = 0
@@ -510,6 +728,32 @@ async def delete_llm_model(filename: str):
     if not llm_engine:
         return {"success": False, "error": "LLM engine not available"}
     return llm_engine.delete_model(filename)
+
+# === LLM Agents ===
+
+@app.get("/api/llm/agents")
+async def list_llm_agents():
+    """List available LLM prompt-engineering agents."""
+    if not llm_agents:
+        return {"success": False, "error": "LLM agents not available"}
+    return {"success": True, "agents": llm_agents.list_agents()}
+
+@app.post("/api/llm/agents/{agent_id}/run")
+async def run_llm_agent(agent_id: str, data: dict):
+    """Run an LLM agent to refine a prompt."""
+    if not llm_agents:
+        return {"success": False, "error": "LLM agents not available"}
+    prompt = data.get("prompt", "")
+    if not prompt:
+        return {"success": False, "error": "No prompt provided"}
+    return llm_agents.run(
+        agent_id,
+        prompt,
+        provider=data.get("provider"),
+        model=data.get("model"),
+        api_key=data.get("api_key"),
+        host=data.get("host"),
+    )
 
 # === ComfyUI Model Management ===
 
@@ -791,12 +1035,61 @@ def generate_turnaround(data: dict):
         _save_orchestrator_state()
     return result
 
+@app.post("/api/orchestrator/describe-character-image")
+def describe_character_image(data: dict):
+    """Use LLM vision to describe a character from their approved image."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    character_id = data.get("character_id", "")
+    image_path = data.get("image_path", "")
+    if not character_id:
+        return {"success": False, "error": "character_id required"}
+    # If no image_path provided, look up from character_assets
+    if not image_path:
+        pg = orchestrator.memory.project_graph
+        assets = pg.get("character_assets", {}).get(character_id, {})
+        image_path = assets.get("approved_image", "")
+    if not image_path:
+        return {"success": False, "error": "No approved image found for this character"}
+    project_path = data.get("project_path", "")
+    # Resolve relative path against project directory
+    if project_path and not image_path.startswith('/') and not image_path.startswith(''):
+        from pathlib import Path as _P
+        full_path = _P(project_path) / image_path
+        if full_path.exists():
+            return orchestrator.describe_character_image(str(full_path))
+    return orchestrator.describe_character_image(image_path)
+
+
+@app.post("/api/orchestrator/describe-location-image")
+def describe_location_image(data: dict):
+    """Use LLM vision to describe a location from their approved image."""
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    location_id = data.get("location_id", "")
+    image_path = data.get("image_path", "")
+    if not location_id:
+        return {"success": False, "error": "location_id required"}
+    if not image_path:
+        pg = orchestrator.memory.project_graph
+        assets = pg.get("location_assets", {}).get(location_id, {})
+        image_path = assets.get("approved_image", "")
+    if not image_path:
+        return {"success": False, "error": "No approved image found for this location"}
+    project_path = data.get("project_path", "")
+    if project_path and not image_path.startswith('/') and not image_path.startswith(''):
+        from pathlib import Path as _P
+        full_path = _P(project_path) / image_path
+        if full_path.exists():
+            return orchestrator.describe_location_image(str(full_path))
+    return orchestrator.describe_location_image(image_path)
+
 @app.get("/api/orchestrator/asset-studio")
-async def get_asset_studio():
+async def get_asset_studio(path: Optional[str] = None):
     """Get full asset studio state (bibles, assets, approvals, locks)."""
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
-    return orchestrator.get_asset_studio_state()
+    return orchestrator.get_asset_studio_state(project_path=path)
 
 @app.post("/api/orchestrator/save-character-sheet")
 def save_character_sheet(data: dict):
@@ -1000,6 +1293,61 @@ def generate_shot_from_scene(data: dict):
     """Generate 3 shot variants from scene context (no existing shot needed)."""
     return orchestrator.generate_shot_from_scene(data)
 
+def _save_cropped_background(host: str, project_path: str, filename: str, subfolder: str,
+                             scene_id: str, pan_angle: int, previous_file: str = None) -> Optional[str]:
+    """Download a cropped 360 background from ComfyUI and store it under
+    <project>/backgrounds/ so the storyboard i2i pipeline can resolve the path.
+
+    Returns the project-relative path (e.g. "backgrounds/scene_1_45_bg.png") or
+    None if the download/save failed. Removes the previous extracted background
+    file when it lives in the same folder (re-extract at a new pan angle).
+    """
+    import re
+    import requests
+    import time
+    url = f"{host}/view?filename={filename}"
+    if subfolder:
+        url += f"&subfolder={subfolder}"
+    url += "&type=output"
+    resp = None
+    last_error = ""
+    for attempt in range(5):
+        try:
+            resp = requests.get(url, timeout=15)
+            if resp.status_code == 200:
+                break
+            last_error = f"HTTP {resp.status_code}"
+        except Exception as e:
+            last_error = str(e)
+        time.sleep(1.0)
+    if not resp or resp.status_code != 200:
+        logger.error("[crop-360] failed to download output %s: %s", filename, last_error)
+        return None
+
+    ext = Path(filename).suffix or ".png"
+    scene = re.sub(r"[^A-Za-z0-9_]+", "_", str(scene_id or "scene")) or "scene"
+    safe_name = f"{scene}_{int(pan_angle or 0)}_bg{ext}"
+    bg_dir = Path(project_path) / "backgrounds"
+    try:
+        bg_dir.mkdir(parents=True, exist_ok=True)
+        dest = bg_dir / safe_name
+        dest.write_bytes(resp.content)
+    except Exception as e:
+        logger.error("[crop-360] failed to save background: %s", e)
+        return None
+
+    if previous_file:
+        try:
+            prev = Path(project_path) / previous_file
+            if prev.exists() and prev.resolve().parent == bg_dir.resolve() and prev != dest:
+                prev.unlink()
+                logger.info("[crop-360] removed previous background %s", previous_file)
+        except Exception as e:
+            logger.warning("[crop-360] could not remove previous background: %s", e)
+
+    return f"backgrounds/{safe_name}"
+
+
 @app.post("/api/orchestrator/crop-360")
 async def crop_360_background(data: dict):
     """Crop a 360 panorama using the crop workflow."""
@@ -1007,6 +1355,8 @@ async def crop_360_background(data: dict):
     location_id = data.get("location_id")
     pan_angle = data.get("pan_angle", 0)  # 0 to 360
     project_path = data.get("project_path")
+    previous_file = data.get("previous_file")
+    scene_id = data.get("scene_id")
     
     if not location_id or not project_path:
         return {"success": False, "error": "Missing location_id or project_path"}
@@ -1069,13 +1419,29 @@ async def crop_360_background(data: dict):
     
     if not res.get("success"):
         return res
-        
-    # The output filename needs to be returned
+
+    # Save the crop into the project so the storyboard i2i pipeline can resolve
+    # it and feed it into the background slot of the char+bg workflow.
+    saved_rel = await loop.run_in_executor(
+        None,
+        _save_cropped_background,
+        client.host, project_path,
+        res.get("filename", ""), res.get("subfolder", ""),
+        scene_id, pan_angle, previous_file
+    )
+    if saved_rel:
+        logger.info("[crop-360] saved background to project: %s", saved_rel)
+        return {
+            "success": True,
+            "filename": saved_rel,
+            "path": str(Path(project_path) / saved_rel),
+            "subfolder": "",
+        }
+
+    # Crop succeeded but the file could not be stored in the project; fall back
+    # to the raw ComfyUI output filename (old behavior).
+    logger.warning("[crop-360] crop OK but could not save into project; returning raw ComfyUI filename")
     return res
-    if not orchestrator:
-        return {"success": False, "error": "Orchestrator not available"}
-    result = orchestrator.generate_shot_from_scene(data)
-    return result
 
 @app.post("/api/orchestrator/generate-scene-shots")
 def generate_scene_shots(data: dict):
@@ -1156,8 +1522,11 @@ async def get_image_progress():
     return image_engine.get_gen_progress()
 
 @app.post("/api/image/interrupt")
-async def interrupt_image_generation():
-    """Interrupt the current ComfyUI generation/queue."""
+def interrupt_image_generation():
+    """Interrupt the current ComfyUI generation/queue.
+
+    Sync on purpose: it does blocking network I/O against ComfyUI.
+    """
     logger.info("POST /api/image/interrupt")
     try:
         success = comfyui_client.interrupt()
@@ -1204,8 +1573,12 @@ def generate_video_endpoint(data: dict):
 # === ComfyUI Subprocess Management ===
 
 @app.get("/api/comfyui/status")
-async def get_comfyui_status():
-    """Check if ComfyUI is running."""
+def get_comfyui_status():
+    """Check if ComfyUI is running.
+
+    Sync on purpose: polled every few seconds and does blocking network I/O;
+    running it as async would freeze the event loop.
+    """
     return comfyui_client.get_comfyui_status()
 
 @app.get("/api/comfyui/categories")
@@ -1219,8 +1592,11 @@ async def test_comfyui():
     return comfyui_client.test_connection()
 
 @app.post("/api/comfyui/interrupt")
-async def interrupt_comfyui():
-    """Interrupt the current ComfyUI generation and clear the queue."""
+def interrupt_comfyui():
+    """Interrupt the current ComfyUI generation and clear the queue.
+
+    Sync on purpose: it does blocking network I/O against ComfyUI.
+    """
     comfyui_client.clear_queue()
     success = comfyui_client.interrupt()
     return {"success": success}
@@ -1253,23 +1629,165 @@ def generate_image(
     result = comfyui_client.generate_image(prompt, model, width, height, seed)
     return result
 
+# Default ComfyUI workflow presets used when Settings has no workflow assigned yet.
+DEFAULT_T2I_WORKFLOW = "image_krea2_turbo_t2i_v2.json"
+DEFAULT_T2V_WORKFLOW = "video_minimax_h3_t2v_ltxupsampler.json"
+DEFAULT_I2V_WORKFLOW = "video_minimax_h3_r2v_ltxupsampler.json"
+
+
+def _refine_prompt_via_agent(agent_id: str, prompt: str, refine: bool) -> str:
+    """Optionally refine a prompt through an LLM agent before ComfyUI dispatch.
+    Falls back to the raw prompt if refinement is disabled, fails, or the LLM is off."""
+    if not refine or not llm_agents:
+        return prompt
+    try:
+        result = llm_agents.run(agent_id, prompt)
+    except Exception as e:
+        logger.warning("LLM agent %s raised: %s — using raw prompt", agent_id, e)
+        return prompt
+    if result.get("success") and result.get("response"):
+        refined = result["response"].strip()
+        logger.info("LLM agent %s refined prompt: %d -> %d chars", agent_id, len(prompt), len(refined))
+        return refined
+    logger.warning("LLM agent %s failed: %s — using raw prompt", agent_id, result.get("error"))
+    return prompt
+
+
 @app.post("/api/comfyui/generate/t2i")
 async def generate_t2i_endpoint(request: Request):
-    """Generate image using T2I workflow from settings."""
+    """Generate image using T2I workflow from settings (defaults to the Krea 2 Turbo preset)."""
     data = await request.json()
     prompt = data.get("prompt", "")
     seed = data.get("seed")
     if not prompt:
         return {"success": False, "error": "No prompt provided"}
     settings = load_settings()
-    workflow_name = data.get("workflow_name") or settings.get("workflows", {}).get("t2i", "")
-    if not workflow_name:
-        return {"success": False, "error": "No T2I workflow assigned in Settings"}
-    logger.info("POST /api/comfyui/generate/t2i — workflow=%s, seed=%s", workflow_name, seed)
+    workflow_name = data.get("workflow_name") or settings.get("workflows", {}).get("t2i", "") or DEFAULT_T2I_WORKFLOW
     resolution = data.get("resolution")
-    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, resolution=resolution)
+    logger.info("POST /api/comfyui/generate/t2i — workflow=%s, seed=%s", workflow_name, seed)
+
+    # Run blocking refinement + generation in a worker thread so the event loop
+    # stays free (progress polling and other requests keep working).
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    def _run_generation():
+        final_prompt = _refine_prompt_via_agent("prompt_engineer_t2i", prompt, data.get("refine", False))
+        return comfyui_client.generate_with_workflow(final_prompt, workflow_name, seed=seed, resolution=resolution)
+
+    return await loop.run_in_executor(None, _run_generation)
+
+
+@app.post("/api/comfyui/generate/t2v")
+async def generate_t2v_endpoint(request: Request):
+    """Generate a video from text using the T2V workflow (defaults to the MiniMax H3 T2V preset)."""
+    data = await request.json()
+    prompt = data.get("prompt", "")
+    seed = data.get("seed")
+    steps = data.get("steps")
+    if not prompt:
+        return {"success": False, "error": "No prompt provided"}
+    settings = load_settings()
+    workflow_name = data.get("workflow_name") or settings.get("workflows", {}).get("t2v", "") or DEFAULT_T2V_WORKFLOW
+    logger.info("POST /api/comfyui/generate/t2v — workflow=%s, seed=%s, steps=%s", workflow_name, seed, steps)
+
+    # Run blocking refinement + generation in a worker thread so the event loop
+    # stays free (progress polling and other requests keep working).
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    def _run_generation():
+        final_prompt = _refine_prompt_via_agent("prompt_engineer_t2v", prompt, data.get("refine", False))
+        return comfyui_client.generate_with_workflow(final_prompt, workflow_name, seed=seed, steps=steps)
+
+    return await loop.run_in_executor(None, _run_generation)
 
 import base64
+
+def _is_krea2_char_bg_workflow(workflow_name: str) -> bool:
+    """True if the workflow is a Krea 2 Edit 'character + background' workflow.
+
+    Detected structurally: it patches the model with source latents
+    (Krea2EditModelPatch) and has at least two image-input nodes, so the
+    storyboard can feed it a dedicated character reference and background.
+    """
+    try:
+        base = Path(__file__).parent / "workflows"
+        path = base / workflow_name
+        if not path.exists():
+            path = base / (workflow_name + ".json")
+        if not path.exists():
+            return False
+        workflow = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    has_patch = False
+    img_count = 0
+    for n in workflow.values():
+        if not isinstance(n, dict):
+            continue
+        ct = n.get("class_type", "")
+        if ct == "Krea2EditModelPatch":
+            has_patch = True
+        elif ct in ("PixaromaLoadImageMini", "LoadImage"):
+            img_count += 1
+    return has_patch and img_count >= 2
+
+
+def _order_char_bg_inputs(workflow_name: str, abs_paths: list, character_image: str = None,
+                          background_image: str = None, project_path: str = None) -> list:
+    """Reorder resolved input images for a Krea 2 Edit 'character + background'
+    workflow so slot 1 is the character reference and slot 2 the background.
+
+    The storyboard sends a flat list (character portraits, location portraits,
+    sheets), so pick by project folder conventions. Explicit character_image /
+    background_image hints (e.g. the previous shot's approved frame used as the
+    character reference) win over folder-based selection. Returns the list
+    unchanged for any other workflow or when fewer than two images resolve.
+    """
+    if not _is_krea2_char_bg_workflow(workflow_name) or len(abs_paths) <= 1:
+        return abs_paths
+
+    def _resolve(p):
+        if not p:
+            return None
+        cp = Path(p)
+        if not cp.is_absolute():
+            cp = Path(project_path or "") / cp
+        if cp.exists():
+            return str(cp)
+        return None
+
+    def _norm(p):
+        return p.replace("\\", "/").lower()
+
+    ordered = []
+    for hint in (character_image, background_image):
+        r = _resolve(hint)
+        if r and r not in ordered:
+            ordered.append(r)
+
+    if len(ordered) < 2:
+        available = [p for p in abs_paths if p not in ordered]
+        char_imgs = [p for p in available if "character" in _norm(p)]
+        # Background candidates: cropped 360 extracts live in <project>/backgrounds/
+        # and should win over the location portrait/sheet, which is why they are
+        # matched too (abs_paths order keeps the extracted bg first).
+        bg_imgs = [p for p in available if ("location" in _norm(p) or "background" in _norm(p))]
+        if len(ordered) < 1 and char_imgs:
+            ordered.append(char_imgs[0])
+        if len(ordered) < 2 and bg_imgs:
+            ordered.append(bg_imgs[0])
+
+    for p in abs_paths:
+        if p not in ordered and len(ordered) < 2:
+            ordered.append(p)
+
+    if ordered:
+        logger.info("[i2i] char+bg workflow inputs: %s", ordered)
+        return ordered
+    return abs_paths
+
 
 @app.post("/api/orchestrator/generate-consistent-shot")
 async def generate_consistent_shot(request: Request):
@@ -1300,8 +1818,27 @@ async def generate_consistent_shot(request: Request):
         if p.exists():
             abs_paths.append(str(p))
 
+    # Krea 2 Edit 'character + background' workflows take exactly two images:
+    # slot 1 = the character reference (optionally the previous shot's approved
+    # frame for continuity), slot 2 = the background.
+    abs_paths = _order_char_bg_inputs(
+        workflow_name, abs_paths,
+        character_image=data.get("character_image"),
+        background_image=data.get("background_image"),
+        project_path=project_path
+    )
+
     # The anchor is the first input image if it exists.
     anchor_path = abs_paths[0] if abs_paths else None
+
+    # Approved portraits (character/location images, not busy sheets) are the
+    # identity references the VLM compares the generated shot against.
+    def _is_portrait_ref(p):
+        parts = p.replace("\\", "/").split("/")
+        return "approved" in parts and "sheets" not in parts
+    portrait_paths = [p for p in abs_paths if _is_portrait_ref(p)]
+
+    eval_info = None  # populated after a successful VLM check; attached to the result
 
     # Helper to download image from ComfyUI
     def _download_from_comfy(filename):
@@ -1373,14 +1910,41 @@ async def generate_consistent_shot(request: Request):
         if not new_img_bytes:
             logger.warning("Failed to download generated image for VLM eval.")
             break
-            
-        with open(anchor_path, "rb") as f:
-            anchor_b64 = base64.b64encode(f.read()).decode('utf-8')
+
+        # Identity references: approved portraits if present, else the first input image
+        ref_paths = portrait_paths or ([anchor_path] if anchor_path else [])
+        anchor_b64s = []
+        for rp in ref_paths:
+            try:
+                with open(rp, "rb") as f:
+                    anchor_b64s.append(base64.b64encode(f.read()).decode('utf-8'))
+            except Exception as e:
+                logger.warning("Failed to read reference image %s: %s", rp, e)
+        if not anchor_b64s:
+            break
         new_img_b64 = base64.b64encode(new_img_bytes).decode('utf-8')
-        
-        eval_res = await loop.run_in_executor(None, lambda: orchestrator.evaluate_vision_consistency(anchor_b64, new_img_b64))
+
+        # Get rubric criteria from project state
+        _rubric_criteria = []
+        _scene_context = data.get("scene_context", {})
+        try:
+            _pg = orchestrator.memory.project_graph if orchestrator else {}
+            _rubric = _pg.get("qc_rubric", {})
+            _rubric_criteria = _rubric.get("criteria", []) if isinstance(_rubric, dict) else []
+        except Exception:
+            pass
+        eval_res = await loop.run_in_executor(None, lambda: orchestrator.evaluate_vision_consistency(anchor_b64s, new_img_b64, shot_prompt=current_prompt, rubric_criteria=_rubric_criteria, scene_context=_scene_context))
         
         if eval_res.get("success"):
+            eval_info = {
+                "score": eval_res.get("score", 10 if eval_res.get("consistent") else 4),
+                "passed": eval_res.get("passed", False),
+                "feedback": eval_res.get("feedback", ""),
+                "consistent": eval_res.get("consistent", False),
+                "sub_scores": eval_res.get("sub_scores", {}),
+                "attempts": attempt + 1,
+                "retried": attempt > 0,
+            }
             if eval_res.get("consistent"):
                 logger.info(f"VLM: Shot is consistent on attempt {attempt+1}.")
                 break
@@ -1400,6 +1964,8 @@ async def generate_consistent_shot(request: Request):
 
     if image_engine:
         image_engine._update_gen_progress(0, "idle", "")
+    if best_result and eval_info:
+        best_result["consistency_eval"] = eval_info
     return best_result
 
 @app.post("/api/comfyui/generate/i2i")
@@ -1431,6 +1997,12 @@ async def generate_i2i_endpoint(request: Request):
             abs_paths.append(str(p))
         else:
             logger.warning("[I2I] Image NOT FOUND: %s", p)
+    abs_paths = _order_char_bg_inputs(
+        workflow_name, abs_paths,
+        character_image=data.get("character_image"),
+        background_image=data.get("background_image"),
+        project_path=project_path
+    )
     logger.info("POST /api/comfyui/generate/i2i — workflow=%s, %d/%d images resolved, seed=%s, steps=%s",
                  workflow_name, len(abs_paths), len(input_images), seed, steps)
 
@@ -1523,9 +2095,7 @@ async def generate_i2v_endpoint(request: Request):
     if not prompt:
         return {"success": False, "error": "No prompt provided"}
     settings = load_settings()
-    workflow_name = settings.get("workflows", {}).get("i2v", "")
-    if not workflow_name:
-        return {"success": False, "error": "No I2V workflow assigned in Settings"}
+    workflow_name = settings.get("workflows", {}).get("i2v", "") or DEFAULT_I2V_WORKFLOW
     abs_image = None
     if input_image:
         p = Path(input_image)
@@ -1568,12 +2138,28 @@ async def generate_i2v_endpoint(request: Request):
                     logger.info("[I2V] Auto-discovered first scene image: %s", abs_image)
     if not abs_image:
         return {"success": False, "error": "Scene image not found. Make sure you approved the storyboard image first."}
-    return comfyui_client.generate_with_workflow(prompt, workflow_name, seed=seed, steps=steps, input_images=[abs_image] if abs_image else None)
+
+    # Run blocking refinement + generation in a worker thread so the event loop
+    # stays free (progress polling and other requests keep working).
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    def _run_generation():
+        final_prompt = _refine_prompt_via_agent("prompt_engineer_i2v", prompt, data.get("refine", False))
+        return comfyui_client.generate_with_workflow(
+            final_prompt, workflow_name, seed=seed, steps=steps,
+            input_images=[abs_image] if abs_image else None
+        )
+
+    return await loop.run_in_executor(None, _run_generation)
 
 @app.post("/api/projects/save-image")
-async def save_project_image(request: Request):
-    """Save a generated image to project folder."""
-    data = await request.json()
+def save_project_image(data: dict = Body(...)):
+    """Save a generated image to project folder.
+
+    Sync on purpose: the ComfyUI download retry loop (with sleeps) must run in
+    the threadpool, not on the event loop.
+    """
     logger.info("POST /api/projects/save-image — stage=%s, card_name=%s", data.get("stage"), data.get("card_name"))
     stage = data.get("stage", "")
     filename = data.get("filename", "")
@@ -2156,7 +2742,15 @@ async def load_project_state(name: str, path: str = None):
     if result is None:
         if orchestrator:
             orchestrator.reset()
-        return {"success": False, "state": None}
+        # A missing state file is normal for a new/never-saved project — benign, not an error.
+        # Only a state file that exists but fails to load is a real problem worth warning about.
+        if path:
+            state_file = Path(path) / "project_state.json"
+        else:
+            state_file = Path(project_manager.projects_dir) / name / "project_state.json"
+        if state_file.exists():
+            return {"success": False, "state": None, "error": "Project state file exists but could not be loaded (corrupt or unreadable)."}
+        return {"success": True, "state": None, "empty": True}
 
     # Restore orchestrator continuity memory from saved state
     if orchestrator:
@@ -3207,7 +3801,7 @@ async def save_settings_endpoint(data: dict):
         data["image_gen"] = existing.get("image_gen", {"provider": "comfyui", "model": "", "host": "http://localhost:8188", "apiKey": ""})
     # Ensure llm auto_start flag
     if "llm" not in data:
-        data["llm"] = existing.get("llm", {"provider": "app_llm", "model": "gemma-4-E2B-it-Q4_K_M.gguf", "host": "http://localhost:8081", "apiKey": "", "auto_start": True})
+        data["llm"] = existing.get("llm", {"provider": "omniroute", "model": "auto", "host": "http://127.0.0.1:20128", "apiKey": "", "auto_start": True})
     # Ensure comfyui auto_start flag
     if "comfyui" not in data:
         data["comfyui"] = existing.get("comfyui", {"auto_start": True, "host": "http://localhost:8188", "port": 8188, "use_sage_attention": True, "path": "", "models_path": ""})
@@ -3587,6 +4181,221 @@ async def agent_wizard_status(chat_id: str = "web_session"):
         "progress": session.progress_status,
         "current_approval": session.data.get("current_approval")
     }
+
+# === Film-Making Agent API ===
+
+class FilmAgentChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = "web_session"
+    project_path: Optional[str] = None
+
+@app.post("/api/film-agent/chat")
+async def film_agent_chat(request: FilmAgentChatRequest):
+    """Chat with the Film-Making Agent — an LLM-powered agent with professional film-making skills."""
+    if not film_agent:
+        raise HTTPException(status_code=500, detail="Film Agent not available — LLM engine not loaded")
+
+    # Build project context if path provided
+    project_context = None
+    if request.project_path:
+        state_file = Path(request.project_path) / "project_state.json"
+        if state_file.exists():
+            try:
+                with open(state_file, "r", encoding="utf-8") as f:
+                    project_context = json.load(f)
+            except Exception:
+                pass
+
+    res = film_agent.handle_message(
+        session_id=request.session_id,
+        message=request.message,
+        project_context=project_context
+    )
+
+    return {
+        "success": True,
+        "response": res["response"],
+        "tools_used": res.get("tools_used", []),
+        "session_id": res["session_id"],
+        "message_count": res["message_count"]
+    }
+
+@app.get("/api/film-agent/session/{session_id}")
+async def film_agent_session_info(session_id: str):
+    """Get film agent session info."""
+    if not film_agent:
+        raise HTTPException(status_code=500, detail="Film Agent not available")
+    return film_agent.get_session_info(session_id)
+
+@app.post("/api/film-agent/reset/{session_id}")
+async def film_agent_reset(session_id: str):
+    """Reset a film agent conversation session."""
+    if not film_agent:
+        raise HTTPException(status_code=500, detail="Film Agent not available")
+    film_agent.reset_session(session_id)
+    return {"success": True, "message": f"Session {session_id} reset"}
+
+# === Executive Producer API ===
+
+class EPChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = "ep_session"
+    project_path: Optional[str] = None
+
+@app.post("/api/executive-producer/chat")
+async def executive_producer_chat(request: EPChatRequest):
+    """Chat with the Executive Producer — orchestrates multiple sub-agents."""
+    if not executive_producer:
+        raise HTTPException(status_code=500, detail="Executive Producer not available — LLM engine not loaded")
+
+    project_context = None
+    if request.project_path:
+        state_file = Path(request.project_path) / "project_state.json"
+        if state_file.exists():
+            try:
+                with open(state_file, "r", encoding="utf-8") as f:
+                    project_context = json.load(f)
+            except Exception:
+                pass
+
+    res = executive_producer.handle_message(
+        session_id=request.session_id,
+        message=request.message,
+        project_context=project_context
+    )
+
+    return {
+        "success": True,
+        "response": res["response"],
+        "delegations": res.get("delegations", []),
+        "phase": res.get("phase", "vision"),
+        "completed_phases": res.get("completed_phases", []),
+        "session_id": res["session_id"]
+    }
+
+@app.get("/api/executive-producer/status/{session_id}")
+async def executive_producer_status(session_id: str):
+    """Get EP session status."""
+    if not executive_producer:
+        raise HTTPException(status_code=500, detail="Executive Producer not available")
+    return executive_producer.get_session_status(session_id)
+
+# === Production Package Parser API ===
+
+class ParsePackageRequest(BaseModel):
+    ep_output: str
+    project_name: Optional[str] = None
+    project_path: Optional[str] = None
+
+@app.post("/api/production-package/parse")
+async def parse_production_package(request: ParsePackageRequest):
+    """Parse EP markdown output into structured screenplay, characters, locations, prompts."""
+    from core.production_package_parser import parse_production_package, package_to_project_state
+    try:
+        package = parse_production_package(request.ep_output)
+        state = package_to_project_state(package)
+        return {
+            "success": True,
+            "package": package,
+            "state": state,
+            "summary": {
+                "title": package.get("title", ""),
+                "scenes": len(package.get("screenplay", {}).get("scenes", [])),
+                "characters": len(package.get("characters", [])),
+                "locations": len(package.get("locations", [])),
+                "shots": sum(len(s.get('shots', [])) for s in package.get('screenplay', {}).get('scenes', [])),
+                "prompts": len(package.get("ai_prompts", [])),
+                "concepts": len(package.get("concepts", [])),
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to parse production package: {e}")
+        raise HTTPException(status_code=500, detail=f"Parse failed: {str(e)}")
+
+class SavePackageRequest(BaseModel):
+    ep_output: str
+    project_name: str
+    project_path: str
+    merge: Optional[bool] = True  # merge with existing state or replace
+
+@app.post("/api/production-package/save")
+async def save_production_package(request: SavePackageRequest):
+    """Parse EP output and save to project_state.json."""
+    from core.production_package_parser import parse_production_package, package_to_project_state
+    try:
+        package = parse_production_package(request.ep_output)
+        new_state = package_to_project_state(package)
+        
+        project_path = Path(request.project_path)
+        state_file = project_path / "project_state.json"
+        
+        # Merge with existing state if requested
+        existing_state = {}
+        if request.merge and state_file.exists():
+            try:
+                with open(state_file, "r", encoding="utf-8") as f:
+                    existing_state = json.load(f)
+            except Exception:
+                pass
+        
+        # Merge: new data overwrites existing, but keeps fields not in new_state
+        merged = {**existing_state, **new_state}
+        
+        # Also save raw EP output as a reference file
+        ep_dir = project_path / "production_packages"
+        ep_dir.mkdir(exist_ok=True)
+        import hashlib
+        short_hash = hashlib.md5(request.ep_output[:200].encode()).hexdigest()[:8]
+        ep_file = ep_dir / f"ep_package_{short_hash}.md"
+        with open(ep_file, "w", encoding="utf-8") as f:
+            f.write(request.ep_output)
+        
+        # Save merged state
+        with open(state_file, "w", encoding="utf-8") as f:
+            json.dump(merged, f, indent=2, default=str)
+        
+        # Also push character/location data to orchestrator so Asset Studio page works
+        if orchestrator and package.get("characters"):
+            pg = orchestrator.memory.project_graph
+            pg["character_bible"] = package["characters"]
+            pg["location_bible"] = package.get("locations", [])
+            if package.get("screenplay"):
+                pg["screenplay"] = package["screenplay"]
+            logger.info("Pushed %d chars, %d locs to orchestrator",
+                       len(package["characters"]), len(package.get("locations", [])))
+        
+        return {
+            "success": True,
+            "state": merged,
+            "summary": {
+                "title": package.get("title", ""),
+                "scenes": len(package.get("screenplay", {}).get("scenes", [])),
+                "characters": len(package.get("characters", [])),
+                "locations": len(package.get("locations", [])),
+                "shots": sum(len(s.get('shots', [])) for s in package.get('screenplay', {}).get('scenes', [])),
+                "prompts": len(package.get("ai_prompts", [])),
+            },
+            "saved_to": str(state_file),
+            "ep_archive": str(ep_file),
+        }
+    except Exception as e:
+        logger.error(f"Failed to save production package: {e}")
+        raise HTTPException(status_code=500, detail=f"Save failed: {str(e)}")
+
+@app.get("/api/film-agent/skills")
+async def film_agent_skills():
+    """List all available film-making skills/tools."""
+    from core.film_agent import FILM_SKILLS
+    skills = []
+    for tool in FILM_SKILLS:
+        func = tool.get("function", {})
+        skills.append({
+            "name": func.get("name"),
+            "description": func.get("description"),
+            "parameters": func.get("parameters", {}).get("properties", {})
+        })
+    return {"success": True, "skills": skills, "count": len(skills)}
+
 
 def get_default_html() -> str:
     """Get default HTML if templates not available."""
