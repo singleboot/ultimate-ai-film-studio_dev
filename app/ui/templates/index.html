@@ -11775,7 +11775,13 @@ Project visual language: ${projVL}`;
         let sbTlPlayheadSec = 0;
         let sbTlProbing = {};
         let sbTlProbeRenderTimer = null;
+        let sbTlPersistTimer = null;
         let sbTlCacheProject = null;
+
+        function sbTlSchedulePersist() {
+            clearTimeout(sbTlPersistTimer);
+            sbTlPersistTimer = setTimeout(() => { if (typeof persistShotOrder === 'function') persistShotOrder(); }, 1500);
+        }
 
         function sbTlFmtTime(sec) {
             sec = Math.max(0, sec || 0);
@@ -11785,8 +11791,14 @@ Project visual language: ${projVL}`;
             return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + '.' + String(c).padStart(2, '0');
         }
 
+        function sbTlShotMediaName(sh) {
+            return sh ? (sh.video_clip || sh._temp_video_clip || '') : '';
+        }
+
         function sbTlShotDuration(sh, key) {
             if (sh && sh._duration_override !== undefined) return Math.max(0.5, Math.min(120, sh._duration_override));
+            // Persisted probed duration — only valid while it belongs to the shot's current media file
+            if (sh && sh._duration_sec !== undefined && sh._duration_src === sbTlShotMediaName(sh)) return Math.max(0.5, Math.min(120, sh._duration_sec));
             if (sbTlDurationCache[key] !== undefined) return sbTlDurationCache[key];
             return 4;
         }
@@ -11812,6 +11824,13 @@ Project visual language: ${projVL}`;
                     const d = Math.min(Math.max(v.duration || 4, 0.5), 120);
                     sbTlDurationCache[ent.key] = d;
                     delete sbTlProbing[ent.key];
+                    // Persist onto the shot so future opens skip probing — unless the media changed meanwhile
+                    const sh = screenplayData?.scenes?.[ent.sceneIdx]?.shots?.[ent.shotIdx];
+                    if (sh && (sh.video_clip || sh._temp_video_clip || '') === ent.media) {
+                        sh._duration_sec = d;
+                        sh._duration_src = ent.media;
+                        sbTlSchedulePersist();
+                    }
                     // Debounced re-render: batch bursts of metadata so scrolling/panning isn't interrupted
                     clearTimeout(sbTlProbeRenderTimer);
                     sbTlProbeRenderTimer = setTimeout(() => {
@@ -12083,7 +12102,11 @@ Project visual language: ${projVL}`;
                     if (!useRange || (spanEnd > rin && cursor < rout)) {
                         let changed = false;
                         if (sh._duration_override !== undefined) { delete sh._duration_override; changed = true; }
-                        if ((sh.video_clip || sh._temp_video_clip) && sbTlDurationCache[si + '_' + hi] !== undefined) { delete sbTlDurationCache[si + '_' + hi]; changed = true; }
+                        if (sh.video_clip || sh._temp_video_clip) {
+                            // Re-measure on next render: clear session cache AND persisted duration
+                            if (sbTlDurationCache[si + '_' + hi] !== undefined) { delete sbTlDurationCache[si + '_' + hi]; changed = true; }
+                            if (sh._duration_sec !== undefined) { delete sh._duration_sec; delete sh._duration_src; changed = true; }
+                        }
                         if (changed) affected++;
                     }
                     cursor = spanEnd;
@@ -12172,7 +12195,8 @@ Project visual language: ${projVL}`;
                         : tempVid
                             ? `/api/comfyui/view?filename=${encodeURIComponent(tempVid)}${tempSub ? '&subfolder=' + encodeURIComponent(tempSub) : ''}`
                             : null;
-                    if (videoUrl && sh._duration_override === undefined && sbTlDurationCache[shotKey] === undefined) probeList.push({ key: shotKey, url: videoUrl });
+                    const hasPersistedDur = sh._duration_sec !== undefined && sh._duration_src === (sh.video_clip || sh._temp_video_clip || '');
+                    if (videoUrl && sh._duration_override === undefined && !hasPersistedDur && sbTlDurationCache[shotKey] === undefined) probeList.push({ key: shotKey, url: videoUrl, sceneIdx, shotIdx, media: (sh.video_clip || sh._temp_video_clip || '') });
                     const hasVideo = !!(savedVid || tempVid);
                     const hasImage = !!(savedImg || tempImg);
                     const imgStatus = sh.storyboard_status || 'pending';
