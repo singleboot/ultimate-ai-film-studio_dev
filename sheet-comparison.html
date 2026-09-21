@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CHAR_001 Sheet — Klein vs Qwen vs Krea2</title>
+<style>
+  body { background:#18181c; color:#e8e8ea; font-family:Segoe UI, Arial, sans-serif; margin:0; padding:24px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:#9a9aa2; font-size:13px; margin-bottom:18px; }
+  .row { display:flex; gap:20px; flex-wrap:wrap; justify-content:center; }
+  .card { background:#222228; border-radius:10px; padding:14px; max-width:640px; }
+  .card img { width:100%; height:auto; border-radius:6px; display:block; }
+  .card h2 { font-size:15px; margin:10px 0 4px; }
+  .card .meta { font-size:12px; color:#9a9aa2; }
+  .card.klein h2 { color:#78dc9e; }
+  .card.qwen h2 { color:#96bef8; }
+  .card.krea2 h2 { color:#ffbe78; }
+  .cmp { margin-top:24px; text-align:center; }
+  .cmp img { max-width:100%; border-radius:6px; }
+</style>
+</head>
+<body>
+  <h1>CHAR_001 — Dr. Elara Voss — Turnaround Sheet</h1>
+  <div class="sub">Identical prompt (1781 chars), same seed 42424242, same approved input image · generated 17:24 IST</div>
+
+  <div class="row">
+    <div class="card klein">
+      <img src="http://127.0.0.1:7860/api/projects/test03/saved-image/character_sheets/CHAR_001_klein_42424242.png?path=F:%5C000000%20test%5C00006%5Ctest03" alt="Klein sheet">
+      <h2>Flux2 Klein (9B fp8)</h2>
+      <div class="meta">1024×576 · 4 steps · ReferenceLatent identity · 88s</div>
+    </div>
+    <div class="card qwen">
+      <img src="http://127.0.0.1:7860/api/projects/test03/saved-image/character_sheets/CHAR_001_qwen_42424242.png?path=F:%5C000000%20test%5C00006%5Ctest03" alt="Qwen sheet">
+      <h2>Qwen-Image-Edit 2511 (24B)</h2>
+      <div class="meta">1280×720 · 4 steps · prompt-based edit · 220s</div>
+    </div>
+    <div class="card krea2">
+      <img src="http://127.0.0.1:7860/api/projects/test03/saved-image/character_sheets/CHAR_001_krea2_42424242.png?path=F:%5C000000%20test%5C00006%5Ctest03" alt="Krea2 sheet">
+      <h2>Krea2 Identity Edit (Turbo w4a8)</h2>
+      <div class="meta">1360×768 · 8 steps · Krea2EditGroundedEncode identity · 78s</div>
+    </div>
+  </div>
+
+  <div class="cmp">
+    <img src="http://127.0.0.1:7860/api/projects/test03/saved-image/exports/CHAR_001_three_way.png?path=F:%5C000000%20test%5C00006%5Ctest03" alt="Three way side by side">
+  </div>
+</body>
+</html>
