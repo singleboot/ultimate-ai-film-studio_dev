@@ -214,224 +214,146 @@ class CinematicOrchestrator:
 
         return "\n".join(parts)
 
-    def _call_llm(self, prompt: str, system_suffix: str = "", json_output: bool = True, **kwargs) -> Dict:
-        """Call the LLM with the master system prompt plus any stage-specific suffix."""
+    def _call_llm(self, prompt, system_suffix="", json_output=True, use_master=True, **kwargs):
         if not self.llm_engine:
             return {"success": False, "error": "LLM engine not available"}
-
-        system_prompt = self._master_system_prompt
+        system_prompt = self._master_system_prompt if use_master else ""
         if system_suffix:
-            system_prompt = system_prompt + "\n\n" + system_suffix
-
-        # Resolve provider/model/host: project_info → global settings → auto-detect → defaults
+            system_prompt = (system_prompt + "\n\n" if system_prompt else "") + system_suffix
         provider = self.memory.project_info.get("llm_provider", "")
         model = self.memory.project_info.get("llm_model", "")
         host = ""
+        fallback_chain = []
         try:
-            sp = getattr(self.llm_engine, '_settings_path', None)
+            sp = getattr(self.llm_engine, "_settings_path", None)
             if sp and sp.exists():
                 import json
-                gs = json.loads(sp.read_text(encoding='utf-8'))
+                gs = json.loads(sp.read_text(encoding="utf-8"))
                 llm_cfg = gs.get("llm", {})
-                if not provider:
-                    provider = llm_cfg.get("provider", "app_llm")
-                if not model:
-                    model = llm_cfg.get("model", "")
+                if not provider: provider = llm_cfg.get("provider", "omniroute")
+                if not model: model = llm_cfg.get("model", "")
                 host = llm_cfg.get("host", "")
-        except Exception:
-            pass
-        if host:
-            host = host.replace("localhost", "127.0.0.1")
-        if not provider:
-            provider = "app_llm"
+                fallback_chain = llm_cfg.get("fallback_chain", [])
+        except Exception: pass
+        if host: host = host.replace("localhost", "127.0.0.1")
+        if not provider: provider = "omniroute"
         if not model:
-            if provider == "app_llm":
-                model = "gemma-4-E2B-it-Q4_K_M.gguf"
+            if provider == "app_llm": model = "gemma-4-E2B-it-Q4_K_M.gguf"
+            elif provider == "omniroute": model = "auto"
+            elif provider in ("auto", ""):
+                model = "auto"
             else:
                 try:
                     oh = host or "http://localhost:11434"
                     r = requests.get(f"{oh}/api/tags", timeout=5)
                     if r.status_code == 200:
                         tags = r.json().get("models", [])
-                        if tags:
-                            model = tags[0].get("name", "llama3.1")
-                except Exception:
-                    model = "llama3.1"
-
-        # Pre-flight check: Verify if local provider is online, and try auto-start if configured
-        if provider in ("app_llm", "llama_cpp", "ollama", "lm_studio"):
-            status = self.llm_engine.get_local_status(provider)
-            
-            # Check if we can reach the health endpoint
-            is_healthy = False
-            prov_cfg = self.llm_engine.config.get("providers", {}).get(provider, {})
-            health_ep = prov_cfg.get("health_endpoint", "")
-            prov_host = host or prov_cfg.get("host", "")
-            
-            if prov_host and health_ep:
-                try:
-                    resp = requests.get(f"{prov_host}{health_ep}", timeout=2)
-                    if resp.status_code == 200:
-                        is_healthy = True
-                except Exception as e:
-                    logger.warning("Pre-flight quick health check failed for %s: %s", f"{prov_host}{health_ep}", e)
-            else:
-                is_healthy = status.get("running", False)
-
-            if not is_healthy:
-                # If not running as a process, trigger auto-start
-                if not status.get("running"):
-                    try:
-                        sp = getattr(self.llm_engine, '_settings_path', None)
-                        if sp and sp.exists():
-                            import json
-                            gs = json.loads(sp.read_text(encoding='utf-8'))
-                            if gs.get("llm", {}).get("auto_start", True):
-                                self.llm_engine.launch_local_llm(provider, model)
-                    except Exception:
-                        pass
-                
-                # Poll health endpoint up to 30 attempts (30 seconds) to allow model loading (cold-start)
-                if prov_host and health_ep:
-                    self.set_progress(5, "Starting LLM server...", "Initializing model weights (this may take up to 30 seconds)...")
-                    for attempt in range(30):
-                        try:
-                            resp = requests.get(f"{prov_host}{health_ep}", timeout=2)
-                            if resp.status_code == 200:
-                                is_healthy = True
-                                break
-                        except Exception as e:
-                            logger.warning("Pre-flight poll health check failed for %s: %s", f"{prov_host}{health_ep}", e)
-                        time.sleep(1)
-                else:
-                    is_healthy = self.llm_engine.get_local_status(provider).get("running", False)
-                
-                if not is_healthy:
-                    err_msg = f"LLM server '{provider}' is currently offline/unreachable or still loading. Please check settings/logs."
-                    self.set_progress(0, "Failed", err_msg)
-                    return {"success": False, "error": err_msg}
-
-        # Console output for visibility of query starting
-        title = self._progress.get("title", "Processing")
-        print("\n" + "=" * 60)
-        print(f"[LLM QUERY]: {provider}/{model}")
-        print(f"[STAGE]: {title}")
-        print(f"[Prompt Length]: {len(prompt)} chars")
+                        if tags: model = tags[0].get("name", "llama3.1")
+                except Exception: model = "llama3.1"
+        if provider in ("auto", "") and fallback_chain:
+            provider_list = list(fallback_chain)
+        elif provider in ("auto", "") and not fallback_chain:
+            provider_list = ["omniroute", "agnes", "app_llm"]
+        else:
+            provider_list = [provider]
+            for p in (fallback_chain or ["omniroute", "agnes", "app_llm"]):
+                if p != provider: provider_list.append(p)
         import re
-        genres_match = re.search(r"GENRES:\s*(.*?)\n", prompt)
-        style_match = re.search(r"VISUAL_STYLE:\s*(.*?)\n", prompt)
-        custom_match = re.search(r"CUSTOM_STORY_INPUT:\s*(.*?)\n", prompt)
-        if genres_match and genres_match.group(1).strip() != "None":
-            print(f"[Genres]: {genres_match.group(1).strip()}")
-        if style_match and style_match.group(1).strip() != "None":
-            print(f"[Visual Style]: {style_match.group(1).strip()}")
-        if custom_match and custom_match.group(1).strip() != "None":
-            print(f"[Custom Input]: {custom_match.group(1).strip()[:100]}...")
-        if not (genres_match or style_match or custom_match):
-            preview = prompt[:120].strip().replace('\n', ' ')
-            print(f"[Prompt Preview]: {preview}...")
-        print("=" * 60 + "\n")
-
-        # Start a background thread to animate progress and count elapsed seconds
-        stop_event = threading.Event()
-        base_pct = self._progress["pct"]
-        
-        def animate():
-            start_time = time.time()
-            # Estimate total time based on provider and stage
+        title = self._progress.get("title", "Processing")
+        arrow = " -> "
+        print(chr(10) + "=" * 60)
+        print("[LLM QUERY]: " + provider_list[0] + "/" + model)
+        print("[STAGE]: " + title)
+        print("[Fallback Chain]: " + arrow.join(provider_list))
+        print("=" * 60 + chr(10))
+        last_error = None
+        for attempt_idx, prov in enumerate(provider_list):
+            prov_model = model; prov_host = host
+            if attempt_idx > 0:
+                prov_cfg = self.llm_engine.config.get("providers", {}).get(prov, {})
+                prov_host = prov_cfg.get("host", "").replace("localhost", "127.0.0.1")
+                if not prov_model or prov_model == model:
+                    if prov == "app_llm": prov_model = "gemma-4-E2B-it-Q4_K_M.gguf"
+                    elif prov == "omniroute": prov_model = "auto"
+                    elif prov == "agnes": prov_model = "agnes-2.5-flash"
+                    else: prov_model = prov_cfg.get("default_model", "")
+                print(chr(10) + "[FALLBACK] Trying: " + prov + "/" + prov_model)
+                logger.info("Fallback to %s/%s (attempt %d)", prov, prov_model, attempt_idx + 1)
+                self.set_progress(self._progress.get("pct", 0), "Fallback: " + prov, prov_model)
+            if not self.llm_engine._is_cloud_provider(prov):
+                if not self._preflight_local_provider(prov, prov_model, prov_host):
+                    last_error = "LLM server offline: " + prov; continue
+            stop_event = threading.Event()
             is_screenplay = "screenplay" in title.lower()
-            if provider == "app_llm":
-                estimated_total = 1800 if is_screenplay else 600  # 30m for screenplay, 10m for ideas
-            elif provider in ("llama_cpp", "lm_studio", "ollama"):
-                estimated_total = 120 if is_screenplay else 60
-            else:
-                estimated_total = 60 if is_screenplay else 30
-
-            while not stop_event.is_set():
-                elapsed = int(time.time() - start_time)
-                remaining = max(1, estimated_total - elapsed)
-                
-                # Smoothly interpolate progress pct from base_pct to max_pct (base_pct + 35, max 95)
-                max_pct = min(95, base_pct + 35)
-                fraction = min(1.0, elapsed / estimated_total)
-                current_pct = int(base_pct + (max_pct - base_pct) * fraction)
-                
-                # Format remaining time nicely
-                if remaining >= 60:
-                    rem_str = f"{remaining // 60}m {remaining % 60}s remaining"
-                else:
-                    rem_str = f"{remaining}s remaining"
-                
-                subtext = f"Waiting for LLM response... ({elapsed}s elapsed, est. {rem_str})"
-                self.set_progress(current_pct, title, subtext)
-                stop_event.wait(1.0)
-
-        animator_thread = threading.Thread(target=animate, daemon=True)
-        animator_thread.start()
-
-        start_time = time.time()
-        try:
-            result = self.llm_engine.generate(
-                provider_id=provider,
-                model=model,
-                prompt=prompt,
-                system_prompt=system_prompt,
-                host=host or None,
-                **kwargs
-            )
-        finally:
-            stop_event.set()
-            animator_thread.join(timeout=1.0)
-
-        elapsed = int(time.time() - start_time)
-
-        # Offload local LLM process immediately if it was launched as a local subprocess to save resources
-        if provider in ("app_llm", "llama_cpp"):
-            try:
-                logger.info(f"Offloading/stopping local LLM provider '{provider}' to free memory...")
-                self.llm_engine.stop_local_llm(provider)
-            except Exception as offload_err:
-                logger.warning(f"Error offloading local LLM provider: {offload_err}")
-
-        if result.get("success"):
-            text = result["response"]
-            
-            # Console output for visibility of query completion
-            print("\n" + "=" * 60)
-            print(f"[LLM RESPONSE RECEIVED]: {provider}/{model}")
-            print(f"[Time elapsed]: {elapsed}s")
-            print(f"[Response Length]: {len(text)} chars")
-            json_data = self._extract_json(text)
-            if json_data is not None:
-                if isinstance(json_data, list) and len(json_data) > 0:
-                    print(f"[Extracted {len(json_data)} items]:")
-                    for idx, item in enumerate(json_data):
-                        if isinstance(item, dict):
-                            print(f"   {idx+1}. {item.get('title', 'Untitled')} - {item.get('logline', '')[:80]}...")
-                        else:
-                            print(f"   {idx+1}. {str(item)[:80]}...")
-                elif isinstance(json_data, dict):
-                    print(f"[Extracted JSON keys]: {list(json_data.keys())}")
-            else:
+            def _estimate(p):
+                if p == "app_llm": return 1800 if is_screenplay else 600
+                elif p in ("llama_cpp", "lm_studio", "ollama"): return 120 if is_screenplay else 60
+                else: return 60 if is_screenplay else 30
+            est = _estimate(prov)
+            def animate():
+                st = time.time()
+                while not stop_event.is_set():
+                    el = int(time.time() - st); b = self._progress.get("pct", 10)
+                    fr = min(1.0, el / est); cp = int(b + min(35, 95 - b) * fr)
+                    self.set_progress(cp, title, "Waiting for " + prov + "... " + str(el) + "s elapsed")
+                    stop_event.wait(1.0)
+            animator = threading.Thread(target=animate, daemon=True); animator.start()
+            st = time.time()
+            # When images are present, use a vision-capable model for OmniRoute/Agnes
+            vision_model = prov_model
+            if kwargs.get("images") and prov in ("omniroute", "agnes"):
+                vision_model = "gemini-2.5-flash"  # reliable vision model
+            try: result = self.llm_engine.generate(provider_id=prov, model=vision_model, prompt=prompt, system_prompt=system_prompt, host=prov_host or None, **kwargs)
+            finally: stop_event.set(); animator.join(timeout=1.0)
+            el = int(time.time() - st)
+            if not self.llm_engine._is_cloud_provider(prov):
+                try: self.llm_engine.stop_local_llm(prov)
+                except: pass
+            if result.get("success"):
+                text = result["response"]
+                print(chr(10) + "[LLM OK]: " + prov + "/" + prov_model + " (" + str(el) + "s, " + str(len(text)) + " chars)")
+                json_data = self._extract_json(text)
                 if json_output:
-                    print(f"[Warning]: Could not extract JSON from response")
-                print(f"[Response Preview]: {text[:200].strip().replace('\n', ' ')}...")
-            print("=" * 60 + "\n")
+                    if json_data is not None: return {"success": True, "data": json_data, "raw": text}
+                    return {"success": True, "data": None, "raw": text, "warning": "Could not extract JSON"}
+                return {"success": True, "data": text, "raw": text}
+            else:
+                last_error = result.get("error", "Unknown error")
+                print(chr(10) + "[LLM FAILED]: " + prov + "/" + prov_model + " -- " + last_error)
+                logger.warning("LLM failed %s/%s: %s", prov, prov_model, last_error); continue
+        return {"success": False, "error": "All providers failed: " + str(last_error)}
 
-            if json_output:
-                if json_data is not None:
-                    return {"success": True, "data": json_data, "raw": text}
-                return {"success": True, "data": None, "raw": text, "warning": "Could not extract JSON from response"}
-            return {"success": True, "data": text, "raw": text}
+    def _preflight_local_provider(self, provider, model, host=""):
+        status = self.llm_engine.get_local_status(provider)
+        prov_cfg = self.llm_engine.config.get("providers", {}).get(provider, {})
+        health_ep = prov_cfg.get("health_endpoint", "")
+        prov_host = host or prov_cfg.get("host", "").replace("localhost", "127.0.0.1")
+        is_healthy = False
+        if prov_host and health_ep:
+            try:
+                resp = requests.get(f"{prov_host}{health_ep}", timeout=2)
+                if resp.status_code == 200: is_healthy = True
+            except: pass
+        else: is_healthy = status.get("running", False)
+        if is_healthy: return True
+        if not status.get("running") and provider in ("app_llm", "llama_cpp"):
+            try:
+                sp = getattr(self.llm_engine, "_settings_path", None)
+                if sp and sp.exists():
+                    import json
+                    gs = json.loads(sp.read_text(encoding="utf-8"))
+                    if gs.get("llm", {}).get("auto_start", True):
+                        self.llm_engine.launch_local_llm(provider, model)
+            except: pass
+            if prov_host and health_ep:
+                for _ in range(20):
+                    try:
+                        resp = requests.get(f"{prov_host}{health_ep}", timeout=2)
+                        if resp.status_code == 200: return True
+                    except: pass
+                    time.sleep(1)
+        return is_healthy
 
-        # Console output for visibility of failure
-        print("\n" + "x" * 30)
-        print(f"[LLM QUERY FAILED]: {provider}/{model}")
-        print(f"[Time elapsed]: {elapsed}s")
-        print(f"[Error]: {result.get('error', 'Unknown error')}")
-        print("x" * 30 + "\n")
-
-        return result
 
     def _extract_json(self, text: str) -> Optional[Any]:
         """Extract JSON from LLM response, handling markdown code fences and reasoning tags."""
@@ -447,14 +369,42 @@ class CinematicOrchestrator:
                 return json.loads(match.group(1).strip())
             except json.JSONDecodeError:
                 pass
-        # Try finding a standalone JSON array or object
-        for pattern in [r"(\[.*?\])", r"(\{.*?\})"]:
-            match = re.search(pattern, text, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group(1).strip())
-                except json.JSONDecodeError:
-                    pass
+        # Scan for the outermost balanced JSON value ([...] or {...}), ignoring any prose
+        # before/after it. A naive regex can't do this: non-greedy patterns truncate at the
+        # first inner ]/} of nested arrays/objects, and greedy ones overrun trailing text.
+        # Try the earliest-opening bracket first so the outermost structure wins (a dict
+        # wrapper is not short-circuited into one of its inner arrays).
+        openings = [(text.find(o), o) for o in ("[", "{")]
+        openings = sorted((i, o) for i, o in openings if i != -1)
+        for _, opener in openings:
+            closer = "]" if opener == "[" else "}"
+            start = text.find(opener)
+            while start != -1:
+                depth = 0
+                in_str = False
+                esc = False
+                for i in range(start, len(text)):
+                    ch = text[i]
+                    if in_str:
+                        if esc:
+                            esc = False
+                        elif ch == "\\":
+                            esc = True
+                        elif ch == '"':
+                            in_str = False
+                        continue
+                    if ch == '"':
+                        in_str = True
+                    elif ch == opener:
+                        depth += 1
+                    elif ch == closer:
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                return json.loads(text[start:i + 1].strip())
+                            except json.JSONDecodeError:
+                                break
+                start = text.find(opener, start + 1)
         return None
 
     # === PIPELINE STAGES ===
@@ -1185,7 +1135,9 @@ Format:
 Example format:
 {"SHOT_001": {"shot_id": "SHOT_001", "storyboard_prompt": "...", "video_prompt": "...", ...}}"""
 
-            result_b = self._call_llm(enrich_prompt, system_suffix=enrich_suffix)
+            # Mechanical JSON transformation — skip the large master system prompt to keep
+            # the per-batch prompt small and local decode fast.
+            result_b = self._call_llm(enrich_prompt, system_suffix=enrich_suffix, use_master=False)
 
             if result_b.get("success") and result_b.get("data") and isinstance(result_b["data"], dict):
                 enriched_map.update(result_b["data"])
@@ -1247,7 +1199,7 @@ Example format:
                 sp = getattr(self.llm_engine, '_settings_path', None)
                 if sp and sp.exists():
                     gs = json.loads(sp.read_text(encoding='utf-8'))
-                    provider = gs.get("llm", {}).get("provider", "app_llm")
+                    provider = gs.get("llm", {}).get("provider", "omniroute")
             if not provider:
                 provider = "app_llm"
             if provider in ("app_llm", "llama_cpp", "ollama", "lm_studio"):
@@ -2105,9 +2057,100 @@ Each variant must be meaningfully different from the original and from each othe
         """Get current approval state."""
         return {"success": True, "approvals": self.memory.project_graph.get("approvals", {})}
 
+    def describe_character_image(self, image_path: str) -> Dict:
+        """Use LLM vision to produce a detailed visual description of a character image."""
+        import base64 as b64mod, mimetypes
+        from pathlib import Path as _Path
+
+        p = _Path(image_path)
+        if not p.is_absolute():
+            from core.project_manager import ProjectManager
+            pm = ProjectManager()
+            proj_path = pm.get_current_project_path()
+            if proj_path:
+                p = proj_path / image_path
+        if not p.exists():
+            return {"success": False, "error": f"Image not found: {image_path}"}
+
+        with open(p, "rb") as f:
+            b64 = b64mod.b64encode(f.read()).decode()
+
+        describe_prompt = """Analyze this character reference image and produce a PRECISE, DETAILED visual description for use in generating a 6-view character turnaround sheet. Output ONLY a single paragraph (no headers, no bullets, no markdown) covering:
+
+1. EXACT facial features: face shape, eyes (color, shape, size), nose, lips, jawline, cheekbones, skin tone, any facial hair, wrinkles, or distinguishing marks
+2. EXACT hairstyle: color, length, volume, texture, parting, bangs, any accessories in hair
+3. EXACT body: build, height impression, proportions, posture
+4. EXACT clothing: every garment from head to toe with colors, materials, textures, patterns, fit, layers
+5. EXACT accessories: jewelry, glasses, bags, weapons, tools, etc.
+6. EXACT environment/background visible in the image: setting, colors, lighting direction, mood, atmosphere, shadows, depth
+7. EXACT color palette: dominant colors, accent colors, overall tone
+8. EXACT rendering/visual style: realistic, painterly, cinematic, anime, etc.
+
+Be extremely specific. Use concrete color names. Use exact material descriptions. This description will be used as the SOLE reference for multi-angle generation."""
+
+        system_msg = "You are a professional visual analyst for film production. Given a character reference image, produce an exact, detailed visual description. Be precise about colors, materials, proportions, and lighting. Output only the description paragraph."
+
+        result = self._call_llm(
+            prompt=describe_prompt,
+            system_suffix=system_msg,
+            json_output=False,
+            images=[b64],
+            use_master=False,
+        )
+        description = result.get("text", "") if isinstance(result, dict) else str(result)
+        if not description:
+            description = result.get("response", "") if isinstance(result, dict) else ""
+        return {"success": True, "description": description.strip()}
+    def describe_location_image(self, image_path: str) -> Dict:
+        """Use LLM vision to produce a detailed visual description of a location image."""
+        import base64 as b64mod, mimetypes
+        from pathlib import Path as _Path
+
+        p = _Path(image_path)
+        if not p.is_absolute():
+            from core.project_manager import ProjectManager
+            pm = ProjectManager()
+            proj_path = pm.get_current_project_path()
+            if proj_path:
+                p = proj_path / image_path
+        if not p.exists():
+            return {"success": False, "error": f"Image not found: {image_path}"}
+
+        with open(p, "rb") as f:
+            b64 = b64mod.b64encode(f.read()).decode()
+
+        describe_prompt = """Analyze this location reference image and produce a PRECISE, DETAILED visual description for use in generating a 360-degree location reference board. Output ONLY a single paragraph covering:
+
+1. EXACT environment type and setting
+2. EXACT spatial layout and depth
+3. EXACT architectural details
+4. EXACT lighting direction, intensity, color temperature
+5. EXACT color palette and overall tone
+6. EXACT atmosphere and mood
+7. EXACT materials and textures
+8. EXACT props and details
+9. EXACT weather/time of day if outdoor
+10. EXACT visual/rendering style
+
+Be extremely specific. This will be the SOLE reference for multi-angle generation."""
+
+        system_msg = "You are a professional visual analyst for film production. Given a location reference image, produce an exact, detailed visual description. Be precise about colors, materials, lighting, and spatial layout. Output only the description paragraph."
+
+        result = self._call_llm(
+            prompt=describe_prompt,
+            system_suffix=system_msg,
+            json_output=False,
+            images=[b64],
+            use_master=False,
+        )
+        description = result.get("text", "") if isinstance(result, dict) else str(result)
+        if not description:
+            description = result.get("response", "") if isinstance(result, dict) else ""
+        return {"success": True, "description": description.strip()}
     def generate_turnaround(self, params: Dict) -> Dict:
-        """Generate a turnaround sheet for an approved character (ZImage Turbo)."""
+        """Generate a turnaround sheet for an approved character."""
         character_id = params.get("character_id", "")
+        image_description = params.get("image_description", "")
         if not character_id:
             return {"success": False, "error": "character_id required"}
 
@@ -2116,7 +2159,6 @@ Each variant must be meaningfully different from the original and from each othe
         if not approvals.get("characters_approved", False):
             return {"success": False, "error": "Characters must be approved before generating turnaround sheets"}
 
-        # Find character in bible
         bible = pg.get("character_bible", [])
         character = None
         for ch in bible:
@@ -2129,29 +2171,59 @@ Each variant must be meaningfully different from the original and from each othe
             return {"success": False, "error": f"Character {character_id} not found in bible"}
 
         name = character.get("full_name", character.get("character_name", ""))
-        appearance = character.get("physical_appearance", "")
-        clothing = character.get("clothing", "")
-        traits = character.get("distinctive_traits", character.get("personality_traits", ""))
-        prompt = f"{name} — {appearance}, wearing {clothing}"
-        if traits:
-            prompt += f", with {traits}"
-        prompt += ". Full turnaround reference sheet rendered in a clean studio style. The composition shows four consistently-lit panels arranged in a professional layout: front view, three-quarter view, side profile view, and back view of the full body. Every panel maintains perfectly identical facial features, hairstyle, body proportions, and costume details across all angles. The subject stands naturally with relaxed posture and neutral expression. Neutral gray background with soft wraparound studio lighting from above-left creating gentle form-defining shadows. Professional character design sheet presentation, clean composition with balanced spacing between panels, crisp focus, highly detailed realistic rendering."
+
+        # Build prompt: prefer LLM vision description over text bible data
+        if image_description:
+            prompt = image_description
+        else:
+            appearance = character.get("physical_appearance", "")
+            clothing = character.get("clothing", "")
+            traits = character.get("distinctive_traits", character.get("personality_traits", ""))
+            prompt = f"{name} — {appearance}, wearing {clothing}"
+            if traits:
+                prompt += f", with {traits}"
+
         return {
             "success": True,
             "turnaround_request": {
                 "character_id": character_id,
                 "character_name": name,
                 "prompt": prompt,
+                "has_vision_description": bool(image_description),
             }
         }
-
-    def get_asset_studio_state(self) -> Dict:
+    def get_asset_studio_state(self, project_path: str = None) -> Dict:
         """Get full asset studio state for frontend."""
         pg = self.memory.project_graph
+        cb = pg.get("character_bible", [])
+        lb = pg.get("location_bible", [])
+        # Fallback: if in-memory is empty, try loading from project_state.json on disk
+        if not cb or not lb:
+            try:
+                from pathlib import Path as _Path
+                import json as _json
+                p = _Path(project_path) if project_path else None
+                if not p or not p.exists():
+                    from core.project_manager import ProjectManager
+                    pm = ProjectManager()
+                    p = pm.get_current_project_path()
+                if p:
+                    state_file = p / "project_state.json"
+                    if state_file.exists():
+                        with open(state_file, 'r', encoding='utf-8') as f:
+                            disk_state = _json.load(f)
+                        if not cb and disk_state.get("charData"):
+                            cb = disk_state["charData"]
+                            pg["character_bible"] = cb
+                        if not lb and disk_state.get("locationData"):
+                            lb = disk_state["locationData"]
+                            pg["location_bible"] = lb
+            except Exception:
+                pass
         return {
             "success": True,
-            "character_bible": pg.get("character_bible", []),
-            "location_bible": pg.get("location_bible", []),
+            "character_bible": cb,
+            "location_bible": lb,
             "character_assets": pg.get("character_assets", {}),
             "location_assets": pg.get("location_assets", {}),
             "character_sheets": pg.get("character_sheets", {}),
@@ -2319,6 +2391,192 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
                     break
         return {"success": True, "shot": shot}
 
+    def get_qc_dashboard(self) -> Dict:
+        """Get all shots with QC status for the dashboard."""
+        pg = self.memory.project_graph
+        shots_dict = pg.get("shots", {})
+        scene_graph = pg.get("scene_graph", [])
+
+        # Build scene lookup
+        scene_map = {}
+        for s in scene_graph:
+            sid = s.get("scene_id", "")
+            scene_map[sid] = {
+                "scene_id": sid,
+                "scene_title": s.get("scene_title", ""),
+                "location_id": s.get("location_id", ""),
+                "emotional_tone": s.get("emotional_tone", ""),
+            }
+
+        # Build shot list with QC info
+        all_shots = []
+        for shot_id, shot in shots_dict.items():
+            scene_id = shot.get("scene_id", "")
+            scene_info = scene_map.get(scene_id, {})
+
+            # Get storyboard image path
+            storyboards = pg.get("storyboards", {})
+            enrichment = storyboards.get(shot_id, {})
+            generated_image = shot.get("generated_image", "") or enrichment.get("generated_image", "")
+
+            # Get QC evaluation
+            qc_eval = pg.get("qc_evaluations", {}).get(shot_id, {})
+
+            all_shots.append({
+                "shot_id": shot_id,
+                "scene_id": scene_id,
+                "scene_title": scene_info.get("scene_title", "Unknown Scene"),
+                "shot_type": shot.get("shot_type", shot.get("camera_language", "")),
+                "description": shot.get("description", shot.get("action", "")),
+                "storyboard_status": shot.get("storyboard_status", "pending"),
+                "approved": shot.get("approved", False),
+                "generated_image": generated_image,
+                "storyboard_prompt": enrichment.get("storyboard_prompt", shot.get("storyboard_prompt", "")),
+                # QC fields
+                "qc_score": qc_eval.get("score", 0),
+                "qc_passed": qc_eval.get("passed", False),
+                "qc_feedback": qc_eval.get("feedback", ""),
+                "qc_consistent": qc_eval.get("consistent", None),
+                "qc_inconsistencies": qc_eval.get("inconsistencies", []),
+                "qc_sub_scores": qc_eval.get("sub_scores", {}),
+            })
+
+        # Sort by scene then shot
+        all_shots.sort(key=lambda s: (s["scene_id"], s["shot_id"]))
+
+        # Stats
+        total = len(all_shots)
+        approved = sum(1 for s in all_shots if s["approved"])
+        pending = sum(1 for s in all_shots if s["storyboard_status"] == "pending")
+        enriched = sum(1 for s in all_shots if s["storyboard_status"] == "enriched")
+        qc_passed = sum(1 for s in all_shots if s["qc_passed"])
+        qc_failed = sum(1 for s in all_shots if s["qc_score"] > 0 and not s["qc_passed"])
+
+        stats = {
+            "total": total,
+            "approved": approved,
+            "pending": pending,
+            "enriched": enriched,
+            "qc_passed": qc_passed,
+            "qc_failed": qc_failed,
+            "completion_pct": int((approved / total * 100)) if total > 0 else 0,
+        }
+
+        # Pipeline status
+        cb = pg.get("character_bible", []) or []
+        lb = pg.get("location_bible", []) or []
+        screenplay = pg.get("screenplay", "") or pg.get("screenplay_text", "")
+        scenes_list = pg.get("scene_graph", [])
+
+        pipeline = {
+            "ideas": bool(pg.get("selected_idea") or pg.get("ideas")),
+            "screenplay": bool(screenplay and len(screenplay) > 50),
+            "characters": len(cb),
+            "locations": len(lb),
+            "scenes": len(scenes_list),
+            "shots_total": total,
+            "shots_generated": sum(1 for s in all_shots if s["storyboard_status"] in ("enriched", "approved")),
+            "shots_approved": approved,
+        }
+
+        # QC scoring rubric
+        rubric = pg.get("qc_rubric", {
+            "criteria": [
+                {"id": "prompt", "label": "Prompt Adherence", "weight": 25, "enabled": True, "desc": "Image content matches the generation prompt — camera angle, action, scene description, props"},
+                {"id": "face", "label": "Face / Identity Match", "weight": 20, "enabled": True, "desc": "Character face, hair, skin tone match the approved reference"},
+                {"id": "costume", "label": "Costume / Outfit", "weight": 15, "enabled": True, "desc": "Clothing, colors, accessories match the character bible"},
+                {"id": "lighting", "label": "Lighting Consistency", "weight": 15, "enabled": True, "desc": "Light direction, intensity, color temperature match the scene"},
+                {"id": "background", "label": "Background / Environment", "weight": 10, "enabled": True, "desc": "Location, props, atmospheric elements match the reference"},
+                {"id": "composition", "label": "Composition / Framing", "weight": 8, "enabled": True, "desc": "Shot type, camera angle, framing matches the storyboard"},
+                {"id": "mood", "label": "Mood / Atmosphere", "weight": 5, "enabled": True, "desc": "Emotional tone and atmosphere match the scene direction"},
+                {"id": "quality", "label": "Image Quality", "weight": 2, "enabled": True, "desc": "Resolution, sharpness, no artifacts or glitches"}
+            ],
+            "pass_threshold": 7,
+            "auto_retry": True,
+            "max_retries": 3
+        })
+
+        return {
+            "success": True,
+            "shots": all_shots,
+            "scenes": list(scene_map.values()),
+            "stats": stats,
+            "pipeline": pipeline,
+            "rubric": rubric,
+        }
+
+    def update_shot_qc(self, params: Dict) -> Dict:
+        """Update shot QC status: approve, reject, or request regeneration."""
+        shot_id = params.get("shot_id", "")
+        action = params.get("action", "")  # approve, reject, regenerate
+        feedback = params.get("feedback", "")
+        score = params.get("score", 0)
+
+        if not shot_id:
+            return {"success": False, "error": "shot_id required"}
+
+        pg = self.memory.project_graph
+        shot = pg.get("shots", {}).get(shot_id)
+        if not shot:
+            return {"success": False, "error": f"Shot {shot_id} not found"}
+
+        # Store QC evaluation
+        if "qc_evaluations" not in pg:
+            pg["qc_evaluations"] = {}
+
+        if action == "approve":
+            shot["storyboard_status"] = "approved"
+            shot["approved"] = True
+            pg["qc_evaluations"][shot_id] = {
+                "score": score or 10,
+                "passed": True,
+                "consistent": True,
+                "feedback": feedback or "Manually approved",
+                "inconsistencies": [],
+                "manual": True,
+            }
+            # Update scene_graph too
+            for s in pg.get("scene_graph", []):
+                for i, sh in enumerate(s.get("shots", [])):
+                    if sh.get("shot_id") == shot_id:
+                        s["shots"][i]["storyboard_status"] = "approved"
+                        s["shots"][i]["approved"] = True
+                        break
+
+        elif action == "reject":
+            shot["storyboard_status"] = "rejected"
+            shot["approved"] = False
+            pg["qc_evaluations"][shot_id] = {
+                "score": score or 0,
+                "passed": False,
+                "consistent": False,
+                "feedback": feedback or "Manually rejected",
+                "inconsistencies": [feedback] if feedback else [],
+                "manual": True,
+            }
+            for s in pg.get("scene_graph", []):
+                for i, sh in enumerate(s.get("shots", [])):
+                    if sh.get("shot_id") == shot_id:
+                        s["shots"][i]["storyboard_status"] = "rejected"
+                        s["shots"][i]["approved"] = False
+                        break
+
+        elif action == "regenerate":
+            shot["storyboard_status"] = "pending"
+            shot["approved"] = False
+            if feedback:
+                pg["qc_evaluations"][shot_id] = {
+                    "score": 0,
+                    "passed": False,
+                    "consistent": None,
+                    "feedback": f"Regeneration requested: {feedback}",
+                    "inconsistencies": [feedback],
+                    "manual": True,
+                }
+
+        pg["shots"][shot_id] = shot
+        return {"success": True, "shot": shot, "action": action}
+
     def generate_shot_image(self, params: Dict) -> Dict:
         """Generate storyboard image prompt for a shot (Flux2 Klein). Returns the prompt for frontend to execute."""
         shot_id = params.get("shot_id", "")
@@ -2418,16 +2676,36 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
             
             self.set_progress(50 + int((i/len(valid_shots))*40), f"Analyzing shots {i+1} to {i+len(chunk_shots)} with Vision LLM...")
             
+            # Gather shot prompts for prompt adherence checking
+            storyboards = pg.get("storyboards", {})
+            shots_dict = pg.get("shots", {})
+            prompt_lines = []
+            for sid in chunk_shots:
+                enrichment = storyboards.get(sid, {})
+                shot = shots_dict.get(sid, {})
+                sp = enrichment.get("storyboard_prompt", shot.get("storyboard_prompt", ""))
+                prompt_lines.append(f"{sid}: {sp[:200] if sp else '(no prompt)'}")
+            prompt_block = "\n".join(prompt_lines)
+
             prompt = f"""You are an expert AI Art Director. Review these {len(chunk_shots)} consecutive shots for Scene {scene_id}.
+
 CHARACTER BIBLE REFERENCE:
 {char_bible}
 
-Do the characters, clothing, lighting, and style perfectly match across all frames? 
+GENERATION PROMPTS FOR EACH SHOT:
+{prompt_block}
+
+For each shot, evaluate:
+1. Does the image match the generation prompt (camera angle, action, props, scene)?
+2. Do the characters, clothing, lighting, and style match across all frames?
+3. Does each shot match its described camera language, lighting, and action?
+
 Provide a JSON response with exactly one key "evaluations" containing an array of objects.
 Each object must have:
 - "shot_id": the shot id corresponding to the image (in order: {', '.join(chunk_shots)})
-- "score": 1-10 integer
-- "passed": boolean (true if score >= 8, false otherwise)
+- "score": 1-10 integer (weighted: prompt adherence 25%, identity 20%, costume 15%, lighting 15%, background 10%, composition 8%, mood 5%, quality 2%)
+- "passed": boolean (true if score >= 7, false otherwise)
+- "sub_scores": object with scores per criterion (face, prompt, costume, lighting, background, composition, mood, quality)
 - "feedback": string detailing exactly what is inconsistent or "Perfect" if passed.
 """
             system_suffix = "Output ONLY valid JSON."
@@ -2454,41 +2732,107 @@ Each object must have:
         self.set_progress(100, "Consistency check complete!")
         return {"success": True, "evaluations": evaluations_total}
 
-    def evaluate_vision_consistency(self, anchor_b64: str, new_img_b64: str) -> Dict:
-        """Evaluate if the new generated image matches the anchor image continuously."""
-        prompt = """You are an expert film continuity supervisor. 
-Compare Image 1 (the established Scene Anchor) and Image 2 (the newly generated Shot).
-Does Image 2 maintain strict visual consistency with Image 1 in terms of character appearance, lighting, environment, and overall aesthetic?
+    def evaluate_vision_consistency(self, anchor_b64s: List[str], new_img_b64: str, shot_prompt: str = "", rubric_criteria: list = None, scene_context: dict = None) -> Dict:
+        """Evaluate if a newly generated shot matches the approved reference images,
+        the generation prompt, AND the screenplay narrative context.
+        Uses the configured vision LLM."""
+        if not anchor_b64s:
+            return {"success": False, "error": "No reference images provided"}
+        n = len(anchor_b64s)
 
-Provide a JSON response with the following keys:
-- "consistent": boolean (true if it perfectly matches, false if there are noticeable continuity errors)
-- "inconsistencies": array of strings detailing the issues (empty if consistent)
-- "correction_prompt": a short string suggesting prompt additions to fix the issues (e.g. "make sure the jacket is leather", or "" if consistent)
+        # Build evaluation criteria from rubric
+        criteria_block = ""
+        if rubric_criteria:
+            enabled = [c for c in rubric_criteria if c.get("enabled", True)]
+            criteria_lines = []
+            for c in enabled:
+                criteria_lines.append(f"- {c['label']} (weight {c.get('weight',10)}%): {c.get('desc', '')}")
+            criteria_block = "\n".join(criteria_lines)
+        else:
+            criteria_block = """- Face / Identity Match: Character face, hair, skin tone match the approved reference
+- Costume / Outfit: Clothing, colors, accessories match the character bible
+- Prompt Adherence: Image content matches the generation prompt — camera angle, action, scene description, props
+- Lighting Consistency: Light direction, intensity, color temperature match the scene
+- Background / Environment: Location, props, atmospheric elements match the reference
+- Composition / Framing: Shot type, camera angle, framing matches the storyboard"""
+
+        prompt_block = ""
+        if shot_prompt:
+            prompt_block = "\n\nThe GENERATION PROMPT that was used to create this shot is:\n" + shot_prompt + "\n\nYou MUST evaluate whether the generated image matches this prompt:\n- Does the image show what the prompt describes?\n- Are the camera angle and framing correct per the prompt?\n- Are the described actions/poses present?\n- Are the described props, set dressing, and environment elements present?\n- Does the mood/lighting described in the prompt match the image?"
+
+        # Build screenplay narrative context
+        story_block = ""
+        if scene_context:
+            parts = []
+            if scene_context.get("scene_synopsis"):
+                parts.append(f"SCENE SYNOPSIS: {scene_context['scene_synopsis']}")
+            if scene_context.get("emotional_tone"):
+                parts.append(f"EMOTIONAL TONE: {scene_context['emotional_tone']}")
+            if scene_context.get("location"):
+                parts.append(f"LOCATION: {scene_context['location']}")
+            if scene_context.get("characters_present"):
+                parts.append(f"CHARACTERS IN SCENE: {', '.join(scene_context['characters_present'])}")
+            if scene_context.get("previous_shot_action"):
+                parts.append(f"PREVIOUS SHOT: {scene_context['previous_shot_action']}")
+            if scene_context.get("screenplay_excerpt"):
+                parts.append(f"SCREENPLAY EXCERPT:\n{scene_context['screenplay_excerpt']}")
+            if parts:
+                story_block = ("\n\nSCREENPLAY / NARRATIVE CONTEXT (this shot is part of the story):\n"
+                    + "\n".join(parts) + "\n\nYou MUST also evaluate whether this shot fits the narrative:\n"
+                    "- Does the shot convey the right emotional beat for this point in the story?\n"
+                    "- Would this shot feel natural if placed after the previous shot?\n"
+                    "- Do the characters' expressions, postures, and actions match what the screenplay describes at this moment?\n"
+                    "- Does the overall mood of the image match the scene's emotional tone?")
+
+        prompt = f"""You are an expert film art director and continuity supervisor.
+The first {n} image(s) are the APPROVED REFERENCE image(s): {'character portraits and location establishing images' if n > 1 else 'the approved character portrait / location image'}.
+The LAST image is the newly generated shot.
+
+{prompt_block}
+{story_block}
+
+EVALUATE the generated shot against these criteria (weighted by importance):
+{criteria_block}
+
+For each enabled criterion, give a sub-score of 1-10.
+Compute the FINAL WEIGHTED SCORE by applying the weights: (sum of sub_score * weight) / (sum of enabled weights).
+
+Provide a JSON response with exactly these keys:
+- "consistent": boolean (true if weighted score >= 7, false otherwise)
+- "score": integer 1-10 (the weighted final score)
+- "passed": boolean (true if score >= 7)
+- "sub_scores": object mapping criterion ID to its 1-10 score (e.g. {{"face": 8, "prompt": 6, ...}})
+- "inconsistencies": array of strings detailing the issues (empty if all pass)
+- "feedback": a short verdict string for a UI badge (e.g. "Prompt matches well but wrong hair color")
+- "correction_prompt": a short string suggesting prompt additions to fix the issues (e.g. "add 'brown wavy hair' to the prompt", or "" if consistent)
 """
         system_suffix = "Output ONLY valid JSON."
-        # Temporarily force the model to the requested VLM if not set globally
-        old_model = self.memory.project_info.get("llm_model")
-        self.memory.project_info["llm_model"] = "gemma4-vision"
-        
-        result = self._call_llm(prompt, system_suffix=system_suffix, json_output=True, images=[anchor_b64, new_img_b64])
-        
-        # Restore the old model setting
-        if old_model:
-            self.memory.project_info["llm_model"] = old_model
-        else:
-            self.memory.project_info.pop("llm_model", None)
-            
+        # Use the configured LLM (Qwen3VL-8B, vision-capable). Do NOT force a
+        # hardcoded model name here: "gemma4-vision" is not loaded on the local
+        # server, which made every consistency call fail silently.
+        result = self._call_llm(prompt, system_suffix=system_suffix, json_output=True,
+                                images=[*anchor_b64s, new_img_b64])
         if not result.get("success"):
             return result
-            
+
         data = result.get("data", {})
         if isinstance(data, list):
             data = data[0] if len(data) > 0 else {}
-            
+        consistent = bool(data.get("consistent", False))
+        try:
+            score = int(data.get("score", 10 if consistent else 4))
+        except (TypeError, ValueError):
+            score = 10 if consistent else 4
+        score = max(1, min(10, score))
+        passed = bool(data.get("passed", score >= 7))
         return {
             "success": True,
-            "consistent": data.get("consistent", False),
+            "consistent": consistent,
+            "score": score,
+            "passed": passed,
+            "sub_scores": data.get("sub_scores", {}),
             "inconsistencies": data.get("inconsistencies", []),
+            "feedback": data.get("feedback", ""),
             "correction_prompt": data.get("correction_prompt", "")
         }
 
