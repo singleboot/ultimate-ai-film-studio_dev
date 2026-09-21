@@ -3197,6 +3197,45 @@ async def get_saved_project_audio(name: str, filename: str, path: str = None):
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
+
+@app.post("/api/projects/{name}/upload-audio")
+async def upload_project_audio(name: str, request: Request, path: str = None):
+    """Upload an audio file into the project's audio/ directory for the timeline overlay track."""
+    from fastapi import UploadFile, File
+    try:
+        form = await request.form()
+        file = form.get("file")
+        if file is None or not getattr(file, "filename", None):
+            return JSONResponse(status_code=400, content={"success": False, "error": "No file provided"})
+
+        safe_name = Path(file.filename).name.replace(" ", "_")
+        if not safe_name:
+            return JSONResponse(status_code=400, content={"success": False, "error": "Invalid filename"})
+
+        if path:
+            audio_dir = Path(path) / "audio"
+        else:
+            audio_dir = project_manager.get_project_path(name) / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+
+        target = audio_dir / safe_name
+        counter = 1
+        while target.exists():
+            stem, ext = Path(safe_name).stem, Path(safe_name).suffix
+            target = audio_dir / f"{stem}_{counter}{ext}"
+            counter += 1
+
+        content = await file.read()
+        if len(content) > 200 * 1024 * 1024:
+            return JSONResponse(status_code=413, content={"success": False, "error": "File too large (max 200 MB)"})
+        with open(target, "wb") as f:
+            f.write(content)
+
+        return {"success": True, "filename": target.name, "path": f"audio/{target.name}"}
+    except Exception as e:
+        logger.error("Audio upload failed for %s: %s", name, e)
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
 @app.post("/api/projects/{name}/extend-video")
 async def extend_video(name: str, request: Request):
     """Extract the last frame of a video and use ComfyUI i2v workflow to extend it by 2-4 seconds."""

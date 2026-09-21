@@ -11452,7 +11452,7 @@ Project visual language: ${projVL}`;
             let pan = null;
             root.addEventListener('mousedown', (ev) => {
                 if (ev.button !== 0) return;
-                if (ev.target.closest('[data-tl-shot],button,input,select,#sb-tl-ruler,#sb-tl-playhead')) return;
+                if (ev.target.closest('[data-tl-shot],button,input,select,#sb-tl-ruler,#sb-tl-playhead,#sb-tl-audio-row')) return;
                 pan = { x: ev.clientX, sl: root.scrollLeft };
                 root.style.cursor = 'grabbing';
                 ev.preventDefault();
@@ -11474,6 +11474,7 @@ Project visual language: ${projVL}`;
                 const typing = aTag === 'INPUT' || aTag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable);
                 if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'i' || ev.key === 'I')) { ev.preventDefault(); sbTlSetRangePoint('in'); return; }
                 if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'o' || ev.key === 'O')) { ev.preventDefault(); sbTlSetRangePoint('out'); return; }
+                if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'Delete' || ev.key === 'Backspace') && typeof sbTlSelectedAudio !== 'undefined' && sbTlSelectedAudio) { ev.preventDefault(); sbTlDeleteAudio(sbTlSelectedAudio); return; }
                 const cur = document.activeElement && document.activeElement.closest ? document.activeElement.closest('[data-tl-shot]') : null;
                 if ((ev.altKey || ev.metaKey) && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && cur) {
                     ev.preventDefault();
@@ -11537,9 +11538,13 @@ Project visual language: ${projVL}`;
             try {
                 fetch('/api/orchestrator/sync-shots', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ screenplay: screenplayData })
+                body: JSON.stringify({ screenplay: screenplayData })
                 }).catch(() => {});
             } catch(e) {}
+        }
+
+        function sbTlSaveAudioClips() {
+            scheduleSaveState();
         }
 
         function moveStoryboardShot(srcKey, dstKey, insertAfter) {
@@ -11601,6 +11606,188 @@ Project visual language: ${projVL}`;
                 .forEach(el => el.classList.remove('sb-dragging', 'sb-drop-before', 'sb-drop-after'));
         }
 
+        // ================= Audio / music overlay track =================
+        let sbTlAudioClips = null;
+        let sbTlSelectedAudio = null;
+        let sbTlAudioDrag = null;
+        let sbTlAudioElement = null;
+
+        function sbTlAudioList() {
+            if (!screenplayData) return [];
+            if (!Array.isArray(screenplayData.audio_clips)) screenplayData.audio_clips = [];
+            return screenplayData.audio_clips;
+        }
+
+        function sbTlAudioUrl(c) {
+            if (c.url) return c.url;
+            if (c.src === 'project') return `/api/projects/${encodeURIComponent(currentProject?.name || '')}/saved-audio/${encodeURIComponent(c.file)}${currentProject?.path ? '?path=' + encodeURIComponent(currentProject.path) : ''}`;
+            return null;
+        }
+
+        function sbTlProbeAudio(entries) {
+            for (const ent of entries) {
+                if (sbTlDurationCache[ent.key] !== undefined || sbTlProbing[ent.key]) continue;
+                sbTlProbing[ent.key] = true;
+                const a = document.createElement('audio');
+                a.preload = 'metadata';
+                a.onloadedmetadata = () => {
+                    const d = Math.min(Math.max(a.duration || 2, 0.2), 600);
+                    sbTlDurationCache[ent.key] = d;
+                    delete sbTlProbing[ent.key];
+                    const clip = sbTlAudioList().find(c => c.id === ent.clipId);
+                    if (clip && sbTlAudioFileOf(clip) === ent.media) {
+                        clip.duration = d;
+                        sbTlSaveAudioClips();
+                    }
+                    clearTimeout(sbTlProbeRenderTimer);
+                    sbTlProbeRenderTimer = setTimeout(() => {
+                        const cont = document.getElementById('storyboard-container');
+                        if (cont && document.getElementById('sb-timeline-root')) renderStoryboardTimeline(cont);
+                    }, 500);
+                };
+                a.onerror = () => { delete sbTlProbing[ent.key]; };
+                a.src = ent.url;
+            }
+        }
+
+        function sbTlAudioFileOf(c) { return c.file || c.url || ''; }
+
+        function sbTlAudioCount() { return sbTlAudioList().length; }
+
+        function sbTlAddAudio() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'audio/*';
+            input.multiple = true;
+            input.onchange = () => {
+                const files = [...(input.files || [])];
+                if (!files.length) return;
+                const name = currentProject?.name || '';
+                const pathQ = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
+                (async () => {
+                    for (const file of files) {
+                        const fd = new FormData();
+                        fd.append('file', file);
+                        try {
+                            const res = await fetch(`/api/projects/${encodeURIComponent(name)}/upload-audio${pathQ}`, { method: 'POST', body: fd });
+                            const data = await res.json();
+                            if (data.success && data.filename) {
+                                sbTlAudioList().push({ id: 'aud_' + Date.now() + '_' + Math.floor(Math.random() * 1e5), file: data.filename, start: sbTlPlayheadSec, duration: 4, name: file.name, src: 'project' });
+                            } else {
+                                if (typeof notify === 'function') notify('Upload Failed', data.error || file.name, '❌');
+                            }
+                        } catch (e) {
+                            if (typeof notify === 'function') notify('Upload Failed', file.name, '❌');
+                        }
+                    }
+                    sbTlSaveAudioClips();
+                    const cont = document.getElementById('storyboard-container');
+                    if (cont && document.getElementById('sb-timeline-root')) renderStoryboardTimeline(cont);
+                })();
+            };
+            input.click();
+        }
+
+        function sbTlSelectAudio(id, ev) {
+            if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+            sbTlSelectedAudio = id;
+            const cont = document.getElementById('storyboard-container');
+            if (cont && document.getElementById('sb-timeline-root')) renderStoryboardTimeline(cont);
+        }
+
+        function sbTlDeleteAudio(id, ev) {
+            if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+            const list = sbTlAudioList();
+            const i = list.findIndex(c => c.id === id);
+            if (i >= 0) { list.splice(i, 1); if (sbTlSelectedAudio === id) sbTlSelectedAudio = null; sbTlSaveAudioClips(); }
+            const cont = document.getElementById('storyboard-container');
+            if (cont && document.getElementById('sb-timeline-root')) renderStoryboardTimeline(cont);
+        }
+
+        function sbTlToggleAudioPlay(ev) {
+            if (ev) ev.stopPropagation();
+            if (!sbTlAudioElement) sbTlAudioElement = new Audio();
+            const c = sbTlAudioList().find(x => x.id === sbTlSelectedAudio) || sbTlAudioList()[0];
+            if (!c) return;
+            const url = sbTlAudioUrl(c);
+            if (!url) return;
+            if (sbTlAudioElement.src !== location.origin + url && sbTlAudioElement.src !== url) {
+                sbTlAudioElement.src = url;
+                sbTlAudioElement.currentTime = Math.max(0, sbTlPlayheadSec - (c.start || 0));
+            }
+            if (sbTlAudioElement.paused) { sbTlAudioElement.play().catch(() => {}); } else { sbTlAudioElement.pause(); }
+        }
+
+        function sbTlAudioDragStart(ev, id, mode) {
+            ev.stopPropagation();
+            ev.dataTransfer.setData('text/plain', 'audio:' + mode + ':' + id);
+            ev.dataTransfer.effectAllowed = 'move';
+            sbTlAudioDrag = { id, mode, startX: ev.clientX, orig: null };
+            const c = sbTlAudioList().find(x => x.id === id);
+            if (c) sbTlAudioDrag.orig = { start: c.start || 0, duration: c.duration || 4 };
+        }
+
+        function sbTlAudioDragOver(ev) {
+            const txt = ev.dataTransfer.types && [...ev.dataTransfer.types].includes('text/plain');
+            if (!txt) return;
+            ev.preventDefault();
+            ev.stopPropagation();
+            ev.dataTransfer.dropEffect = 'move';
+        }
+
+        function sbTlAudioDrop(ev) {
+            const txt = (ev.dataTransfer.getData('text/plain') || '');
+            if (!txt.startsWith('audio:')) return;
+            ev.preventDefault();
+            ev.stopPropagation();
+            const [, mode, id] = txt.split(':');
+            const c = sbTlAudioList().find(x => x.id === id);
+            const root = document.getElementById('sb-timeline-root');
+            if (!c || !root) return;
+            const pps = sbTlGetPxPerSec();
+            const rect = root.getBoundingClientRect();
+            const t = Math.max(0, (ev.clientX - rect.left + root.scrollLeft) / pps);
+            if (mode === 'move') {
+                const grabOffset = (sbTlAudioDrag && sbTlAudioDrag.orig) ? Math.min(2, (sbTlAudioDrag.startX - rect.left + root.scrollLeft) / pps - sbTlAudioDrag.orig.start) : 0;
+                c.start = Math.max(0, +(t - Math.max(0, grabOffset)).toFixed(2));
+            } else if (mode === 'resize-l') {
+                const end = (c.start || 0) + (c.duration || 4);
+                c.start = Math.max(0, Math.min(end - 0.2, +t.toFixed(2)));
+                c.duration = +(end - c.start).toFixed(2);
+            } else if (mode === 'resize-r') {
+                c.duration = Math.max(0.2, +(t - (c.start || 0)).toFixed(2));
+            }
+            sbTlSaveAudioClips();
+            const cont = document.getElementById('storyboard-container');
+            if (cont && document.getElementById('sb-timeline-root')) renderStoryboardTimeline(cont);
+        }
+
+        function sbTlAudioRowHtml(totalSec, pps) {
+            const clips = sbTlAudioList();
+            const rowW = Math.max(totalSec * pps + 40, 100);
+            let clipHtml = '';
+            for (const c of clips) {
+                const dur = c.duration || 4;
+                const sel = sbTlSelectedAudio === c.id;
+                clipHtml += `
+                <div data-tl-audio="${c.id}" draggable="true" title="${escapeHtml(c.name || c.file || 'audio clip')} — drag to move, edges to trim"
+                    ondragstart="sbTlAudioDragStart(event, '${c.id}', 'move')" onclick="sbTlSelectAudio('${c.id}', event)" ondblclick="sbTlToggleAudioPlay(event)"
+                    style="position:absolute;left:${((c.start || 0) * pps).toFixed(1)}px;top:4px;width:${Math.max(dur * pps, 24).toFixed(1)}px;height:28px;background:${sel ? 'linear-gradient(180deg,#7e57c2,#5e35b1)' : 'linear-gradient(180deg,#5e35b1,#4527a0)'};border:1px solid ${sel ? '#b39ddb' : '#7e57c2'};border-radius:4px;color:#fff;font-size:0.55rem;display:flex;align-items:center;gap:3px;padding:0 4px;overflow:hidden;cursor:grab;user-select:none;box-shadow:${sel ? '0 0 0 2px rgba(179,157,219,0.5)' : 'none'};">
+                    <span style="flex-shrink:0;">♪</span>
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml((c.name || c.file || 'clip').replace(/\.[^.]+$/, ''))}</span>
+                    <span onclick="sbTlDeleteAudio('${c.id}', event)" title="Remove clip" style="margin-left:auto;flex-shrink:0;cursor:pointer;opacity:0.8;padding:0 2px;">✕</span>
+                    <div draggable="true" ondragstart="sbTlAudioDragStart(event, '${c.id}', 'resize-l')" style="position:absolute;left:0;top:0;width:6px;height:100%;cursor:ew-resize;background:rgba(255,255,255,0.15);"></div>
+                    <div draggable="true" ondragstart="sbTlAudioDragStart(event, '${c.id}', 'resize-r')" style="position:absolute;right:0;top:0;width:6px;height:100%;cursor:ew-resize;background:rgba(255,255,255,0.15);"></div>
+                </div>`;
+            }
+            return `
+            <div id="sb-tl-audio-row" style="position:relative;height:38px;background:rgba(94,53,177,0.08);border-top:1px solid var(--border-color);width:${rowW}px;flex-shrink:0;"
+                ondragover="sbTlAudioDragOver(event)" ondrop="sbTlAudioDrop(event)" onclick="sbTlSelectAudio(null, event)">
+                <span style="position:absolute;left:6px;top:2px;font-size:0.5rem;color:var(--text-secondary);pointer-events:none;">♪ AUDIO</span>
+                ${clipHtml}
+            </div>`;
+        }
+
         function renderStoryboardTimeline(container) {
             const projName = currentProject?.name || '';
             const projectPathQuery = currentProject?.path ? `?path=${encodeURIComponent(currentProject.path)}` : '';
@@ -11608,7 +11795,7 @@ Project visual language: ${projVL}`;
             const prevScroll = document.getElementById('sb-timeline-root')?.scrollLeft || 0;
 
             // Duration cache is per-project: keys are sceneIdx_shotIdx, so reset on project switch
-            if (sbTlCacheProject !== projName) { sbTlDurationCache = {}; sbTlCacheProject = projName; sbTlPlayheadSec = 0; sbTlRangeSec = { in: null, out: null }; }
+            if (sbTlCacheProject !== projName) { sbTlDurationCache = {}; sbTlCacheProject = projName; sbTlPlayheadSec = 0; sbTlRangeSec = { in: null, out: null }; sbTlSelectedAudio = null; }
 
             if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.some(s => s.shots && s.shots.length)) {
                 container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">No shots to show on the timeline.</div>';
@@ -11696,6 +11883,13 @@ Project visual language: ${projVL}`;
 
             const rulerHtml = sbTlBuildRuler(totalSec, pps);
             const laneWidth = Math.max(totalSec * pps + 40, 100);
+            const audioProbeList = [];
+            for (const c of sbTlAudioList()) {
+                const key = 'aud_' + c.id;
+                const url = sbTlAudioUrl(c);
+                if (url && c.duration === undefined && sbTlDurationCache[key] !== undefined) { c.duration = sbTlDurationCache[key]; }
+                if (url && c.duration === undefined && !sbTlProbing[key]) audioProbeList.push({ key, clipId: c.id, url, media: sbTlAudioFileOf(c) });
+            }
             const rIn = sbTlRangeSec.in, rOut = sbTlRangeSec.out;
             const rangeLabel = (rIn !== null || rOut !== null) ? ` · Range ${rIn !== null ? sbTlFmtTime(rIn) : '·'} – ${rOut !== null ? sbTlFmtTime(rOut) : '·'}` : '';
 
@@ -11711,6 +11905,7 @@ Project visual language: ${projVL}`;
                     <button class="btn ${rOut !== null ? 'btn-primary' : 'btn-secondary'}" onclick="sbTlSetRangePoint('out')" style="padding:2px 8px;font-size:0.65rem;" title="Set range end at playhead — snaps to the nearest shot edge (O)">Out · O</button>
                     <button class="btn btn-secondary" onclick="sbTlClearRange()" style="padding:2px 8px;font-size:0.65rem;" title="Clear the In/Out range">⨯</button>
                     <button class="btn btn-secondary" onclick="sbTlCloseGaps()" style="padding:2px 8px;font-size:0.65rem;" title="Snap every shot in range (or the whole timeline) to its real media length — clears duration overrides and stale timings">⇥ Close Gaps</button>
+                    <button class="btn btn-secondary" onclick="sbTlAddAudio()" style="padding:2px 8px;font-size:0.65rem;" title="Add a music or audio clip to the overlay track">♪ Add Audio</button>
                     <span style="color:var(--text-secondary);font-size:0.7rem;">Zoom</span>
                     <input type="range" min="20" max="200" step="5" value="${pps}" oninput="storyboardTimelineZoomLive(this.value)" onchange="storyboardTimelineZoom(this.value)" style="width:110px;">
                 </span>
@@ -11719,6 +11914,7 @@ Project visual language: ${projVL}`;
                 <div id="sb-tl-scroll-inner" style="position:relative;width:${laneWidth}px;">
                     ${rulerHtml}
                     <div id="sb-tl-lane" style="display:flex;height:118px;width:${laneWidth}px;">${laneHtml}</div>
+                    ${sbTlAudioRowHtml(totalSec, pps)}
                     ${sbTlRangeOverlayHtml(totalSec, pps)}
                     <div id="sb-tl-playhead" style="position:absolute;top:0;left:${(sbTlPlayheadSec * pps).toFixed(1)}px;width:2px;height:100%;background:#ff5252;pointer-events:none;z-index:20;box-shadow:0 0 4px rgba(255,82,82,0.8);"><div style="position:absolute;top:0;left:-4px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #ff5252;"></div></div>
                 </div>
@@ -11729,6 +11925,7 @@ Project visual language: ${projVL}`;
             tlRoot.scrollLeft = prevScroll;
             sbTlUpdatePlayhead();
             sbTlProbeVideoDurations(probeList.slice(0, 24));
+            sbTlProbeAudio(audioProbeList.slice(0, 16));
         }
 
         function storyboardTimelineFit() {
