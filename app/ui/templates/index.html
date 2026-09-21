@@ -578,6 +578,7 @@
             <button class="sidebar-rail-btn" onclick="switchSidebarPanel('sheets')" id="rail-sheets">
                 📋<span class="rail-label">Sheets</span>
             </button>
+
             <div class="sidebar-rail-spacer"></div>
             <div class="sidebar-rail-bottom">
                 <button class="sidebar-rail-btn" onclick="clearAllAssets()" title="Clear all">
@@ -776,20 +777,20 @@
             <!-- AI PRODUCER CO-PILOT CHAT WIDGET -->
             <div style="border-top:1px solid var(--border-color);padding-top:25px;margin-top:15px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-                    <div class="section-title" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:3px;color:#fff;margin:0;font-weight:800;border-bottom:2px solid var(--accent-primary);padding-bottom:8px;display:inline-block;">🤖 AI Producer Co-Pilot</div>
-                    <div style="display:flex;gap:10px;align-items:center;">
-                        <span style="font-size:0.75rem;color:var(--text-secondary);font-family:'Space Grotesk',sans-serif;">Mode:</span>
-                        <select id="agent-mode-select" class="form-select" style="width:140px;font-size:0.75rem;padding:4px 8px;">
-                            <option value="semi_automated">Semi-Automated</option>
-                            <option value="automated">Fully Automated</option>
-                        </select>
+                    <div class="section-title" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:3px;color:#fff;margin:0;font-weight:800;border-bottom:2px solid var(--accent-primary);padding-bottom:8px;display:inline-block;">🎬 Film Agent</div>
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(255,51,51,0.15);border:1px solid rgba(255,51,51,0.3);border-radius:3px;color:#ff6b6b;">🎬 Screenplay</span>
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.3);border-radius:3px;color:#00d4ff;">🎞️ Montage</span>
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(255,193,7,0.15);border:1px solid rgba(255,193,7,0.3);border-radius:3px;color:#ffc107;">📷 Shots</span>
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(138,43,226,0.15);border:1px solid rgba(138,43,226,0.3);border-radius:3px;color:#8a2be2;">👤 Characters</span>
+                        <span style="font-size:0.6rem;padding:2px 6px;background:rgba(46,204,113,0.15);border:1px solid rgba(46,204,113,0.3);border-radius:3px;color:#2ecc71;">🎨 Color</span>
                     </div>
                 </div>
                 <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;display:flex;flex-direction:column;height:250px;">
                     <!-- Chat Messages list -->
                     <div id="agent-chat-messages" style="flex:1;overflow-y:auto;padding:12px;font-size:0.85rem;display:flex;flex-direction:column;gap:10px;font-family:'Space Grotesk',sans-serif;">
                         <div style="background:var(--bg-tertiary);border-left:2px solid var(--accent-primary);padding:8px 12px;border-radius:2px;max-width:85%;align-self:flex-start;color:var(--text-primary);">
-                            Hi! I am your AI Film Producer Assistant. Type a title or story idea to build a new cinematic project together.
+                            Hi! I am your **Film Agent** 🎬 — an AI-powered film director, cinematographer, editor, and screenwriter. I can write screenplays, design montages, plan shots, design characters, advise on color grading, and generate ComfyUI prompts. What would you like to create?
                         </div>
                     </div>
                     <!-- Typing status / progress status -->
@@ -818,6 +819,88 @@
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
                 <button class="btn btn-secondary" onclick="goHome()" style="padding:6px 14px;font-size:0.8rem;">← Home</button>
                 <h2 style="color:var(--accent-primary);margin:0;">📝 Story Settings & Ideas</h2>
+            </div>
+
+            <!-- 🎬 FILM AGENT WELCOME BANNER (shown after project creation) -->
+            <div id="agent-welcome-banner" style="display:none;background:linear-gradient(135deg, rgba(255,51,51,0.08), rgba(0,212,255,0.05));border:1px solid rgba(255,51,51,0.25);border-radius:8px;padding:20px 24px;margin-bottom:20px;position:relative;overflow:hidden;">
+                <div style="position:absolute;top:-10px;right:-10px;width:60px;height:60px;background:repeating-linear-gradient(45deg, var(--accent-primary) 0, var(--accent-primary) 2px, transparent 0, transparent 8px);transform:rotate(15deg);opacity:0.3;pointer-events:none;"></div>
+                <div style="display:flex;align-items:flex-start;gap:14px;">
+                    <div style="font-size:2rem;filter:drop-shadow(0 0 8px rgba(255,51,51,0.4));">🎬</div>
+                    <div style="flex:1;">
+                        <div id="agent-welcome-text" style="font-size:0.95rem;color:#fff;margin-bottom:10px;line-height:1.5;"></div>
+                        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                            <button class="btn btn-primary" onclick="agentAutoGenerate()" style="font-size:0.8rem;padding:8px 16px;display:flex;align-items:center;gap:6px;">
+                                ⚡ Auto-Generate Everything
+                            </button>
+                            <button class="btn btn-secondary" onclick="agentWriteScreenplay()" style="font-size:0.8rem;padding:8px 16px;display:flex;align-items:center;gap:6px;">
+                                📜 Write Screenplay First
+                            </button>
+                            <button class="btn btn-secondary" onclick="agentDesignCharacters()" style="font-size:0.8rem;padding:8px 16px;display:flex;align-items:center;gap:6px;">
+                                👤 Design Characters
+                            </button>
+                            <button class="btn btn-secondary" onclick="agentStepByStep()" style="font-size:0.8rem;padding:8px 16px;display:flex;align-items:center;gap:6px;">
+                                🎯 Step-by-Step Guide
+                            </button>
+                        </div>
+                        <div style="font-size:0.75rem;color:var(--text-secondary);">Or type anything below — I can write screenplays, design montages, plan shots, create characters, advise on color, and more.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 🎬 FILM AGENT CHAT (on Ideas page) -->
+            <div id="ideas-agent-panel" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;margin-bottom:20px;overflow:hidden;transition:all 0.3s ease;">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border-color);">
+                    <div style="font-size:0.8rem;font-weight:800;color:#fff;display:flex;align-items:center;gap:6px;">🎬 <span style="border-bottom:2px solid var(--accent-primary);padding-bottom:2px;">Film Agent</span></div>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                            <span style="font-size:0.55rem;padding:2px 5px;background:rgba(255,51,51,0.12);border:1px solid rgba(255,51,51,0.25);border-radius:3px;color:#ff6b6b;">🎬 Screenplay</span>
+                            <span style="font-size:0.55rem;padding:2px 5px;background:rgba(0,212,255,0.12);border:1px solid rgba(0,212,255,0.25);border-radius:3px;color:#00d4ff;">🎞️ Montage</span>
+                            <span style="font-size:0.55rem;padding:2px 5px;background:rgba(255,193,7,0.12);border:1px solid rgba(255,193,7,0.25);border-radius:3px;color:#ffc107;">📷 Shots</span>
+                            <span style="font-size:0.55rem;padding:2px 5px;background:rgba(138,43,226,0.12);border:1px solid rgba(138,43,226,0.25);border-radius:3px;color:#8a2be2;">👤 Characters</span>
+                        </div>
+                        <button onclick="toggleAgentFullscreen()" title="Fullscreen" style="background:none;border:1px solid var(--border-color);color:var(--text-secondary);cursor:pointer;padding:4px 8px;border-radius:4px;font-size:0.85rem;transition:all 0.15s;line-height:1;" onmouseenter="this.style.color='#fff';this.style.borderColor='var(--accent-primary)'" onmouseleave="this.style.color='var(--text-secondary)';this.style.borderColor='var(--border-color)'">&#x26F6;</button>
+                    </div>
+                </div>
+                <div id="ideas-agent-messages" style="max-height:180px;overflow-y:auto;padding:10px 16px;font-size:0.85rem;display:flex;flex-direction:column;gap:8px;font-family:'Space Grotesk',sans-serif;">
+                    <div style="background:var(--bg-tertiary);border-left:2px solid var(--accent-primary);padding:8px 12px;border-radius:2px;max-width:90%;color:var(--text-primary);line-height:1.5;font-size:0.83rem;">
+                        👋 Hey! I'm your **Film Agent**. Ask me anything about your project — screenplay, shots, characters, montage, color grading, or sound design.
+                    </div>
+                </div>
+                <div id="ideas-agent-status" style="font-size:0.7rem;color:var(--accent-primary);padding:4px 16px;font-weight:600;height:22px;overflow:hidden;display:flex;align-items:center;gap:8px;background:rgba(255,51,51,0.05);border-top:1px solid rgba(255,51,51,0.1);">
+                    <div id="ideas-agent-progress" style="display:none;width:100%;height:3px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;">
+                        <div id="ideas-agent-progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg, var(--accent-primary), #00d4ff);border-radius:2px;transition:width 0.5s ease;"></div>
+                    </div>
+                </div>
+                <div style="display:flex;border-top:1px solid var(--border-color);padding:8px 12px;background:var(--bg-tertiary);gap:8px;">
+                    <input type="text" id="ideas-agent-input" class="form-input" placeholder="Ask the Film Agent anything..." style="flex:1;font-size:0.8rem;padding:6px 12px;" onkeypress="if(event.key==='Enter') sendIdeasAgentMessage()">
+                    <button class="btn btn-primary" onclick="sendIdeasAgentMessage()" style="font-size:0.75rem;padding:6px 14px;">Send</button>
+                </div>
+            </div>
+
+            <!-- 🎬 FILM AGENT FULLSCREEN OVERLAY -->
+            <div id="agent-fullscreen-overlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:var(--bg-primary);z-index:10000;flex-direction:column;">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border-color);background:var(--bg-secondary);flex-shrink:0;">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span style="font-size:1.2rem;">🎬</span>
+                        <span style="font-size:1rem;font-weight:800;color:#fff;">Film Agent</span>
+                        <span id="fs-agent-project" style="font-size:0.75rem;color:var(--text-secondary);background:var(--bg-tertiary);padding:3px 8px;border-radius:4px;"></span>
+                        <div style="display:flex;gap:4px;margin-left:8px;">
+                            <span style="font-size:0.55rem;padding:2px 5px;background:rgba(255,51,51,0.12);border:1px solid rgba(255,51,51,0.25);border-radius:3px;color:#ff6b6b;">🎬 Screenplay</span>
+                            <span style="font-size:0.55rem;padding:2px 5px;background:rgba(0,212,255,0.12);border:1px solid rgba(0,212,255,0.25);border-radius:3px;color:#00d4ff;">🎞️ Montage</span>
+                            <span style="font-size:0.55rem;padding:2px 5px;background:rgba(255,193,7,0.12);border:1px solid rgba(255,193,7,0.25);border-radius:3px;color:#ffc107;">📷 Shots</span>
+                            <span style="font-size:0.55rem;padding:2px 5px;background:rgba(138,43,226,0.12);border:1px solid rgba(138,43,226,0.25);border-radius:3px;color:#8a2be2;">👤 Characters</span>
+                            <span style="font-size:0.55rem;padding:2px 5px;background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.25);border-radius:3px;color:#2ecc71;">🎨 Color</span>
+                        </div>
+                    </div>
+                    <button onclick="toggleAgentFullscreen()" title="Exit fullscreen" style="background:none;border:1px solid var(--border-color);color:var(--text-secondary);cursor:pointer;padding:6px 12px;border-radius:4px;font-size:0.85rem;transition:all 0.15s;" onmouseenter="this.style.color='#fff';this.style.borderColor='var(--accent-primary)'" onmouseleave="this.style.color='var(--text-secondary)';this.style.borderColor='var(--border-color)'">&#x2715; Exit</button>
+                </div>
+                <div id="fs-agent-messages" style="flex:1;overflow-y:auto;padding:16px 24px;font-size:0.9rem;display:flex;flex-direction:column;gap:10px;font-family:'Space Grotesk',sans-serif;">
+                </div>
+                <div id="fs-agent-status" style="font-size:0.75rem;color:var(--accent-primary);padding:4px 24px;font-weight:600;height:22px;overflow:hidden;border-top:1px solid rgba(255,255,255,0.05);"></div>
+                <div style="display:flex;border-top:1px solid var(--border-color);padding:12px 20px;background:var(--bg-secondary);gap:10px;flex-shrink:0;">
+                    <input type="text" id="fs-agent-input" class="form-input" placeholder="Ask the Film Agent anything — screenplay, montage, shots, characters, color, sound..." style="flex:1;font-size:0.9rem;padding:10px 16px;" onkeypress="if(event.key==='Enter') sendFsAgentMessage()">
+                    <button class="btn btn-primary" onclick="sendFsAgentMessage()" style="font-size:0.85rem;padding:10px 20px;">Send</button>
+                </div>
             </div>
 
             <!-- Settings Grid: Genre, Visual Style, Film Aesthetic -->
@@ -1284,6 +1367,8 @@
         </div>
     </div>
 
+
+
     <!-- Asset Studio Expand Modal -->
     <div class="modal-overlay" id="asset-expand-modal" style="display:none;">
         <div class="modal" id="asset-expand-modal-inner" style="max-width:90vw;width:1200px;height:85vh;display:flex;flex-direction:column;">
@@ -1291,6 +1376,7 @@
                 <h3 style="margin:0;" id="asset-expand-title">Asset</h3>
                 <div style="display:flex;gap:6px;">
                     <button class="btn btn-secondary" onclick="toggleAssetFullscreen()" id="asset-fullscreen-btn" style="padding:4px 10px;font-size:0.75rem;">⛶ Fullscreen</button>
+                    <button class="btn btn-secondary" onclick="toggle360Viewer()" id="asset-360-btn" style="padding:4px 10px;font-size:0.75rem;display:none;" title="Inspect this sheet as a draggable 360° equirectangular panorama">🌀 360°</button>
                     <button class="btn btn-secondary" onclick="closeAssetExpand()" style="padding:4px 12px;">✕</button>
                 </div>
             </div>
@@ -1463,9 +1549,10 @@
 
             <!-- Header Controls (bigger text buttons) -->
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;background:var(--bg-secondary);padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);flex-wrap:wrap;">
-                <span style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap;margin-right:auto;" id="sb-description-container"><span id="storyboard-count-label">0</span> shots</span>
+                <span style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap;margin-right:auto;" id="sb-description-container"><span id="storyboard-count-label">0</span> shots <span id="sb-cost-summary" style="font-size:0.65rem;color:var(--text-secondary);margin-left:8px;"></span></span>
                 <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all images">🎨 Gen Img</button>
                 <button class="btn btn-secondary" type="button" onclick="storyboardUpscaleAll()" style="padding:4px 8px;font-size:0.7rem;" title="Upscale all images to 4K">🔍 4K All</button>
+                <button class="btn btn-secondary" type="button" onclick="regenerateAllInconsistent()" style="padding:4px 8px;font-size:0.7rem;color:#f59e0b;" title="Regenerate all shots that failed QC (score < 7)">🔄 Regen Failed</button>
                 <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:4px 8px;font-size:0.7rem;" title="Approve all images">✅ App Img</button>
                 <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:4px 8px;font-size:0.7rem;opacity:0.4;pointer-events:none;" title="Generate all videos">🎥 Gen Vid</button>
                 <button class="btn btn-success" type="button" onclick="approveAllVideos()" style="padding:4px 8px;font-size:0.7rem;opacity:0.4;pointer-events:none;" title="Approve all videos" id="sb-approve-all-videos-btn">✔️ App Vid</button>
@@ -1482,8 +1569,14 @@
                 <input type="number" id="sb-global-steps" style="width:40px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" value="8" min="1" max="150" step="1">
                 <label style="color:var(--text-secondary);">Seed</label>
                 <input type="number" id="sb-global-seed" style="width:75px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" placeholder="rnd" min="0" step="1">
+                <label style="color:var(--text-secondary);" title="Video sampling steps (MiniMax H3) — 8: turbo ⚡, 20: higher quality">Vid St</label>
+                <input type="number" id="sb-global-video-steps" style="width:40px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" value="8" min="1" max="50" step="1">
+                <label style="color:var(--text-secondary);display:flex;align-items:center;gap:3px;cursor:pointer;" title="Refine prompts with the LLM agent before generation"><input type="checkbox" id="sb-llm-enhance" style="width:auto;margin:0;accent-color:var(--accent-primary);"> ✨ LLM</label>
+                <select id="sb-ref-type" style="background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.65rem;" title="Choose what character reference to use for storyboard generation"><option value="portrait">Portrait</option><option value="sheet">Sheet</option><option value="both" selected>Both</option></select>
+
+                <label style="color:var(--text-secondary);display:flex;align-items:center;gap:3px;cursor:pointer;" title="Use the previous shot's approved frame as the character reference (Krea 2 char+bg workflow) so the character stays consistent across consecutive shots"><input type="checkbox" id="sb-prev-frame-ref" style="width:auto;margin:0;accent-color:var(--accent-primary);"> ↩ Prev</label>
                 <button class="btn btn-secondary" onclick="storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">📥 Apply</button>
-                <button class="btn btn-secondary" onclick="document.getElementById('sb-global-cfg').value='1.0';document.getElementById('sb-global-steps').value='8';document.getElementById('sb-global-seed').value='';storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">↺ Reset</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('sb-global-cfg').value='1.0';document.getElementById('sb-global-steps').value='8';document.getElementById('sb-global-video-steps').value='8';document.getElementById('sb-global-seed').value='';storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">↺ Reset</button>
             </div>
 
             <!-- Container for Scene Rows -->
@@ -1514,8 +1607,22 @@
             </div>
             <div class="form-group">
                 <label class="form-label">Save Location</label>
-                <input type="text" class="form-input" id="project-path-input" placeholder="D:\My Projects" value="">
+                <div style="display:flex;gap:8px;">
+                    <input type="text" class="form-input" id="project-path-input" placeholder="D:\My Projects" value="" style="flex:1;">
+                    <button class="btn btn-secondary" onclick="openFolderBrowser('project-path-input')" style="white-space:nowrap;padding:6px 14px;">📁 Browse</button>
+                </div>
                 <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:6px;">Leave empty to use app default</div>
+            </div>
+            <div id="new-folder-browser" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;margin:8px 0;overflow:hidden;">
+                <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg-tertiary);border-bottom:1px solid var(--border-color);">
+                    <span style="font-size:0.7rem;color:var(--text-secondary);">Address:</span>
+                    <div id="new-folder-browser-path" style="flex:1;padding:3px 8px;font-size:0.75rem;color:var(--accent-primary);font-family:'Cascadia Code','Consolas',monospace;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+                </div>
+                <div id="new-folder-browser-list" style="max-height:220px;overflow-y:auto;"></div>
+                <div style="padding:8px 10px;border-top:1px solid var(--border-color);display:flex;gap:8px;">
+                    <button class="btn btn-primary" onclick="_browserUseSelected()" style="flex:1;font-size:0.8rem;padding:6px;">✅ Select This Folder</button>
+                    <button class="btn btn-secondary" onclick="_getBrowserEls().browser.style.display='none'" style="font-size:0.8rem;padding:6px;">Cancel</button>
+                </div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-primary" onclick="createProject()" style="flex:1">Create Project</button>
@@ -1526,11 +1633,25 @@
 
     <!-- Open Project Modal -->
     <div class="modal-overlay" id="open-project-modal">
-        <div class="modal">
+        <div class="modal" style="max-width:600px;">
             <h2>📂 Open Project</h2>
             <div class="form-group">
                 <label class="form-label">Project Path</label>
-                <input type="text" class="form-input" id="open-project-path" placeholder="D:\My Projects\MyFilm" oninput="checkProjectPath(this.value)">
+                <div style="display:flex;gap:8px;">
+                    <input type="text" class="form-input" id="open-project-path" placeholder="D:\My Projects\MyFilm" oninput="checkProjectPath(this.value)" style="flex:1;">
+                    <button class="btn btn-secondary" onclick="openFolderBrowser('open-project-path')" style="white-space:nowrap;padding:6px 14px;">📁 Browse</button>
+                </div>
+            </div>
+            <div id="open-folder-browser" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;margin:8px 0;overflow:hidden;">
+                <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg-tertiary);border-bottom:1px solid var(--border-color);">
+                    <span style="font-size:0.7rem;color:var(--text-secondary);">Address:</span>
+                    <div id="folder-browser-path" style="flex:1;padding:3px 8px;font-size:0.75rem;color:var(--accent-primary);font-family:'Cascadia Code','Consolas',monospace;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+                </div>
+                <div id="folder-browser-list" style="max-height:220px;overflow-y:auto;"></div>
+                <div style="padding:8px 10px;border-top:1px solid var(--border-color);display:flex;gap:8px;">
+                    <button class="btn btn-primary" onclick="_browserUseSelected()" style="flex:1;font-size:0.8rem;padding:6px;">✅ Select This Folder</button>
+                    <button class="btn btn-secondary" onclick="_getBrowserEls().browser.style.display='none'" style="font-size:0.8rem;padding:6px;">Cancel</button>
+                </div>
             </div>
             <div id="open-project-details" style="display:none;">
                 <div style="background:var(--bg-tertiary);padding:15px;border-radius:8px;margin:10px 0;">
@@ -1572,6 +1693,17 @@
                                     <option value="gemini">Gemini</option>
                                 </select>
                             </div>
+
+                            <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
+                                <label class="form-label" style="margin-bottom:6px;">🔄 Fallback Chain <span style="font-size:0.65rem;color:var(--text-secondary);">(tried in order when provider is "Auto")</span></label>
+                                <div id="fallback-chain-list" style="display:flex;flex-direction:column;gap:4px;">
+                                </div>
+                                <div style="display:flex;gap:6px;margin-top:6px;">
+                                    <button class="btn btn-secondary" onclick="addFallbackProvider()" style="padding:3px 8px;font-size:0.7rem;">+ Add</button>
+                                    <button class="btn btn-secondary" onclick="resetFallbackChain()" style="padding:3px 8px;font-size:0.7rem;">↺ Reset</button>
+                                </div>
+                            </div>
+
                             <div id="llm-local-fields">
                                 <div class="form-group" id="llm-host-group">
                                     <label class="form-label">Host</label>
@@ -2285,6 +2417,8 @@
             <span>LLM: <span class="status-dot" id="llm-dot">●</span> <span id="llm-model-name">—</span></span>
             <span>|</span>
             <span>ComfyUI: <span class="status-dot" id="comfyui-dot">●</span> <span id="comfyui-status-text">—</span></span>
+            <span>|</span>
+            <span>OmniRoute: <span class="status-dot" id="omniroute-dot">●</span> <span id="omniroute-status-text">—</span></span>
         </span>
     </footer>
 
@@ -2394,6 +2528,8 @@
         }
 
          function showPage(page) {
+            // Mandatory project guard — block all pages except home
+            if (page !== 'home' && !requireProject()) return;
             scheduleSaveState();
             document.querySelectorAll('.page').forEach(p => {
                 p.classList.remove('active');
@@ -2476,6 +2612,424 @@
             }).catch(() => {});
             showPage('ideas');
             loadProjectState();
+            // Show Film Agent welcome banner
+            setTimeout(() => showAgentWelcome(name), 600);
+        }
+
+        // === FILM AGENT WELCOME + QUICK ACTIONS ===
+        let _ideasAgentSession = 'ep_ideas_session';
+        const _EP_MODE = true; // Use Executive Producer for Ideas page
+
+        function showAgentWelcome(projectName) {
+            const banner = document.getElementById('agent-welcome-banner');
+            if (!banner) return;
+            const textEl = document.getElementById('agent-welcome-text');
+            textEl.innerHTML = `<b>Welcome to "${projectName}"!</b> 🎬<br><span style="color:var(--text-secondary);font-size:0.85rem;">I'm your Film Agent — I can handle the entire production pipeline or guide you step by step. What would you like to do?</span>`;
+            banner.style.display = 'block';
+            // Clear any old messages in the Ideas agent chat
+            const msgBox = document.getElementById('ideas-agent-messages');
+            if (msgBox) {
+                msgBox.innerHTML = `<div style="background:var(--bg-tertiary);border-left:2px solid var(--accent-primary);padding:8px 12px;border-radius:2px;max-width:90%;color:var(--text-primary);line-height:1.5;font-size:0.83rem;">
+                    👋 Hey! I'm your **Film Agent**. Ask me anything about <b>${projectName}</b> — screenplay, shots, characters, montage, color grading, or sound design.
+                </div>`;
+            }
+        }
+
+        async function _sendAgentQuickAction(message) {
+            // Route to fullscreen or inline based on current mode
+            if (_agentFullscreen) { sendFsAgentMessage(message); return; }
+            const msgBox = document.getElementById('ideas-agent-messages');
+            const statusEl = document.getElementById('ideas-agent-status');
+            if (!msgBox) return;
+            // Show user message
+            const userMsg = document.createElement('div');
+            userMsg.style.cssText = 'padding:6px 10px;border-radius:2px;max-width:85%;align-self:flex-end;background:rgba(255,51,51,0.1);border-right:2px solid var(--accent-primary);color:#fff;font-size:0.83rem;';
+            userMsg.textContent = message;
+            msgBox.appendChild(userMsg);
+            msgBox.scrollTop = msgBox.scrollHeight;
+            // Show animated progress phases + progress bar
+            const phases = ['🎬 EP analyzing vision...', '📜 Story Architect working...', '🎥 Visual Director planning...', '👤 Character Designer creating...', '✂️ Editor designing rhythm...', '🖼️ Prompt Engineer optimizing...'];
+            let phaseIdx = 0;
+            const progressBar = document.getElementById('ideas-agent-progress');
+            const progressFill = document.getElementById('ideas-agent-progress-bar');
+            if (progressBar) progressBar.style.display = 'block';
+            const phaseInterval = setInterval(() => {
+                statusEl.textContent = phases[phaseIdx % phases.length];
+                if (progressFill) progressFill.style.width = Math.min(90, (phaseIdx + 1) * 15) + '%';
+                phaseIdx++;
+            }, 5000);
+            statusEl.textContent = phases[0];
+            if (progressFill) progressFill.style.width = '10%';
+            try {
+                const epUrl = _EP_MODE ? '/api/executive-producer/chat' : '/api/film-agent/chat';
+                const res = await fetch(epUrl, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message, session_id: _ideasAgentSession, project_path: currentProject?.path || null })
+                });
+                clearInterval(phaseInterval);
+                const data = await res.json();
+                if (progressFill) { progressFill.style.width = '100%'; setTimeout(() => { progressBar.style.display = 'none'; progressFill.style.width = '0%'; }, 1500); }
+                const deptCount = data.delegations?.length || 0;
+                statusEl.textContent = deptCount > 0 ? `✅ Pipeline complete — ${deptCount} departments contributed` : '✅ Done';
+                setTimeout(() => { statusEl.textContent = ''; }, 8000);
+                if (data.success) {
+                    // Show delegations if EP mode
+                    if (_EP_MODE && data.delegations && data.delegations.length > 0) {
+                        const agentNames = data.delegations.map(d => {
+                            const map = {story_architect:'📜 Story', visual_director:'🎥 Visual', character_designer:'👤 Character', sound_designer:'🔊 Sound', editor:'✂️ Editor', prompt_engineer:'🖼️ Prompts'};
+                            return map[d.agent] || d.agent;
+                        });
+                        const ti = document.createElement('div');
+                        ti.style.cssText = 'font-size:0.6rem;color:var(--accent-secondary);padding:2px 10px;font-style:italic;opacity:0.7;';
+                        ti.textContent = `EP delegated to: ${agentNames.join(', ')}`;
+                    } else if (data.tools_used && data.tools_used.length > 0) {
+                        const toolNames = data.tools_used.map(t => t.name.replace(/_/g, ' ')).join(' → ');
+                        const ti = document.createElement('div');
+                        ti.style.cssText = 'font-size:0.6rem;color:var(--accent-secondary);padding:2px 10px;font-style:italic;opacity:0.7;';
+                        ti.textContent = `Used: ${toolNames}`;
+                        msgBox.appendChild(ti);
+                    }
+                    const agentMsg = document.createElement('div');
+                    agentMsg.style.cssText = 'background:var(--bg-tertiary);border-left:2px solid var(--accent-primary);padding:8px 12px;border-radius:2px;max-width:90%;color:var(--text-primary);line-height:1.5;font-size:0.83rem;';
+                    agentMsg.innerHTML = data.response.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+                    msgBox.appendChild(agentMsg);
+                    // Detect production package and add Save button
+                    const isPackage = (/PHASE\s+[12345]/.test(data.response) || (/(?:INT\.|EXT\.)\s+/g.test(data.response) && /ELENA|MARCUS|[A-Z]{3,}/.test(data.response))) && data.response.length > 1500;
+                    if (isPackage) {
+                        const saveBar = document.createElement('div');
+                        saveBar.style.cssText = 'display:flex;gap:8px;padding:4px 10px;align-items:center;flex-wrap:wrap;';
+                        saveBar.innerHTML = `
+                            <button class="btn btn-primary" onclick="saveProductionPackage(this)" style="font-size:0.7rem;padding:4px 12px;display:flex;align-items:center;gap:4px;">
+                                💾 Save Production Package to Project
+                            </button>
+                            <button class="btn btn-secondary" onclick="previewProductionPackage(this)" style="font-size:0.7rem;padding:4px 12px;">
+                                👁 Preview Parsed Data
+                            </button>
+                            <span class="pkg-status" style="font-size:0.65rem;color:var(--text-secondary);"></span>
+                        `;
+                        saveBar.dataset.epOutput = data.response;
+                        msgBox.appendChild(saveBar);
+                    }
+                    msgBox.scrollTop = msgBox.scrollHeight;
+                }
+            } catch(e) {
+                statusEl.textContent = '';
+            }
+        }
+
+        // === Production Package Save/Load ===
+        let _lastParsedPackage = null;
+
+        async function saveProductionPackage(btnEl) {
+            const saveBar = btnEl.closest('[data-ep-output]');
+            const epOutput = saveBar?.dataset?.epOutput;
+            if (!epOutput || !currentProject) {
+                notify('Error', 'No project open or no EP output found', '❌');
+                return;
+            }
+            const statusSpan = saveBar.querySelector('.pkg-status');
+            btnEl.disabled = true;
+            btnEl.textContent = '⏳ Parsing...';
+            if (statusSpan) statusSpan.textContent = 'Parsing production package...';
+            try {
+                const res = await fetch('/api/production-package/save', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        ep_output: epOutput,
+                        project_name: currentProject.name,
+                        project_path: currentProject.path,
+                        merge: true
+                    })
+                });
+                const data = await res.json();
+                if (data.success && data.state) {
+                    _applyProductionPackageState(data.state);
+                    btnEl.textContent = '✅ Saved!';
+                    btnEl.style.background = '#2e7d32';
+                    if (statusSpan) {
+                        const s = data.summary;
+                        statusSpan.textContent = `Saved: ${s.scenes} scenes, ${s.characters} chars, ${s.locations} locs, ${s.shots} shots, ${s.prompts} prompts`;
+                        statusSpan.style.color = '#4caf50';
+                    }
+                    notify('✅ Saved', `Production package saved to ${currentProject.name}`, '💾');
+                    scheduleSaveState();
+                } else {
+                    btnEl.textContent = '❌ Failed';
+                    if (statusSpan) statusSpan.textContent = data.error || 'Save failed';
+                }
+            } catch(e) {
+                btnEl.textContent = '❌ Error';
+                if (statusSpan) statusSpan.textContent = e.message;
+            }
+        }
+
+        async function previewProductionPackage(btnEl) {
+            const saveBar = btnEl.closest('[data-ep-output]');
+            const epOutput = saveBar?.dataset?.epOutput;
+            if (!epOutput) return;
+            try {
+                const res = await fetch('/api/production-package/parse', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ep_output: epOutput })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    _lastParsedPackage = data;
+                    const overlay = document.createElement('div');
+                    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
+                    const panel = document.createElement('div');
+                    panel.style.cssText = 'background:var(--bg-primary);border:1px solid var(--accent-primary);border-radius:12px;max-width:700px;width:100%;max-height:80vh;overflow-y:auto;padding:24px;color:var(--text-primary);';
+                    const s = data.summary;
+                    let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><h3 style="color:var(--accent-primary);margin:0;">📋 Parsed Production Package</h3><button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer;">✕</button></div>`;
+                    html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.scenes}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Scenes</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.characters}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Characters</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.locations}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Locations</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.shots}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Shots</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.prompts}</div><div style="font-size:0.7rem;color:var(--text-secondary);">AI Prompts</div></div>`;
+                    html += `<div style="background:var(--bg-secondary);padding:10px;border-radius:6px;text-align:center;"><div style="font-size:1.4rem;font-weight:700;color:var(--accent-primary);">${s.concepts}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Concepts</div></div>`;
+                    html += `</div>`;
+                    if (data.package.concepts.length) {
+                        html += `<h4 style="color:var(--accent-secondary);margin:12px 0 6px;">Concepts</h4>`;
+                        data.package.concepts.forEach(c => {
+                            const sel = c.selected ? ' 🏆 SELECTED' : '';
+                            html += `<div style="background:var(--bg-secondary);padding:8px 12px;border-radius:6px;margin-bottom:6px;border-left:3px solid ${c.selected ? 'var(--accent-primary)' : 'var(--border-color)'};"><b>${c.title}</b>${sel}<br><span style="font-size:0.75rem;color:var(--text-secondary);">${c.logline}</span></div>`;
+                        });
+                    }
+                    if (data.package.characters.length) {
+                        html += `<h4 style="color:var(--accent-secondary);margin:12px 0 6px;">Characters</h4>`;
+                        data.package.characters.forEach(c => {
+                            html += `<div style="background:var(--bg-secondary);padding:8px 12px;border-radius:6px;margin-bottom:6px;border-left:3px solid #e91e63;"><b>${c.character_name}</b> <span style="color:var(--text-secondary);font-size:0.75rem;">(${c.role})</span><br><span style="font-size:0.75rem;color:var(--text-secondary);">${(c.physical_appearance || '').substring(0, 120)}</span></div>`;
+                        });
+                    }
+                    panel.innerHTML = html;
+                    overlay.appendChild(panel);
+                    document.body.appendChild(overlay);
+                    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+                }
+            } catch(e) {
+                notify('Parse Error', e.message, '❌');
+            }
+        }
+
+        function _applyProductionPackageState(state) {
+            if (state.screenplayData) {
+                screenplayData = state.screenplayData;
+                if (typeof renderScreenplay === 'function') renderScreenplay();
+            }
+            if (state.charData && state.charData.length) {
+                charData = state.charData;
+            }
+            if (state.locationData && state.locationData.length) {
+                locationData = state.locationData;
+            }
+            if (state.topicIdeas && state.topicIdeas.length) {
+                topicIdeas = state.topicIdeas;
+                if (typeof state.selectedIdeaIndex !== 'undefined') {
+                    selectedIdeaIndex = state.selectedIdeaIndex;
+                }
+                if (typeof renderIdeas === 'function') renderIdeas();
+            }
+            if (state.imagePromptData && state.imagePromptData.length) {
+                imagePromptData = state.imagePromptData;
+            }
+            // Populate _assetStudioData so the Asset Studio page works
+            if (state.charData && state.charData.length) {
+                _assetStudioData.character_bible = state.charData.map(ch => ({
+                    character_id: ch.character_id || 'CHAR_' + (Math.random()*1000|0),
+                    full_name: ch.full_name || ch.character_name || ch.name || '',
+                    character_name: ch.character_name || ch.full_name || '',
+                    role: ch.role || '',
+                    physical_appearance: ch.physical_appearance || ch.description || '',
+                    personality: ch.personality || '',
+                    visual_identity: ch.visual_identity || '',
+                    ai_prompt: ch.ai_prompt || '',
+                }));
+            }
+            if (state.locationData && state.locationData.length) {
+                _assetStudioData.location_bible = state.locationData.map(loc => ({
+                    location_id: loc.location_id || 'LOC_' + (Math.random()*1000|0),
+                    location_name: loc.location_name || loc.name || '',
+                    environment_type: loc.environment_type || '',
+                    mood: loc.mood || '',
+                    description: loc.description || '',
+                }));
+            }
+            if (typeof renderAssetStudio === 'function') renderAssetStudio();
+            window.scenesCount = state.screenplayData?.scenes?.length || 0;
+            window.charactersCount = state.charData?.length || 0;
+            const contBtn = document.getElementById('continue-to-screenplay-btn');
+            if (contBtn) contBtn.style.display = 'inline-block';
+            const astBtn = document.getElementById('proceed-to-asset-studio-btn');
+            if (astBtn) astBtn.style.display = 'inline-block';
+            notify('🎬 Pipeline Loaded', `Screenplay + ${charData.length} characters + ${locationData.length} locations populated`, '✅');
+        }
+
+        function agentAutoGenerate() {
+            const name = currentProject?.name || 'this project';
+            // Get current settings from the page
+            const genres = (typeof selectedGenres !== 'undefined' && selectedGenres.length) ? selectedGenres.join(', ') : 'not set';
+            const style = document.getElementById('selected-visual-style')?.textContent?.trim() || 'not set';
+            const aesthetic = document.getElementById('selected-film-aesthetic')?.textContent?.trim() || 'not set';
+            const scenes = document.querySelector('[id*="scenes"] input, input[value="10"]')?.value || '10';
+            const chars = document.querySelector('input[value="3"]')?.value || '3';
+            const shots = document.querySelector('input[value="30"]')?.value || '30';
+            const ratio = document.querySelector('.btn-primary[style*="16:9"]')?.textContent || '16:9';
+
+            _sendAgentQuickAction(`Run the COMPLETE production pipeline for "${name}". Do NOT stop and wait for me. Execute ALL of these phases in order, one after another, in this single response:
+
+**PHASE 1 — CONCEPT**: Generate 5 cinematic story ideas. Then pick THE BEST ONE yourself based on visual potential and emotional impact.
+
+**PHASE 2 — SCREENPLAY**: Write the full screenplay for your chosen concept. Include scene headings, action lines, dialogue, and beat breakdowns for ALL scenes. Use the story scale settings (scenes: ${scenes}, characters: ${chars}, shots: ${shots}).
+
+**PHASE 3 — CHARACTERS**: Design ALL characters with full visual descriptions, personality profiles, costume details, and AI image generation prompts.
+
+**PHASE 4 — VISUAL DIRECTION**: Plan the shot list for key scenes. Include camera angles, lens choices, lighting, and color grading notes.
+
+**PHASE 5 — AI PROMPTS**: Generate optimized ComfyUI prompts for the hero shots — the key images that define the film's look.
+
+Project Settings:
+- Genre: ${genres}
+- Visual Style: ${style}
+- Film Aesthetic: ${aesthetic}
+- Aspect Ratio: ${ratio}
+- Scenes: ${scenes} | Characters: ${chars} | Shots: ${shots}
+
+Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline NOW and give me the complete production package.`);
+            document.getElementById('agent-welcome-banner').style.display = 'none';
+        }
+
+        function agentWriteScreenplay() {
+            const name = currentProject?.name || 'this project';
+            _sendAgentQuickAction(`Help me write a screenplay for "${name}". I'll provide the story concept — guide me through the scene structure, characters, and dialogue.`);
+            document.getElementById('agent-welcome-banner').style.display = 'none';
+        }
+
+        function agentDesignCharacters() {
+            const name = currentProject?.name || 'this project';
+            _sendAgentQuickAction(`I need to design the characters for "${name}". Help me create detailed character profiles with visual descriptions, personalities, costumes, and AI image generation prompts.`);
+            document.getElementById('agent-welcome-banner').style.display = 'none';
+        }
+
+        function agentStepByStep() {
+            const name = currentProject?.name || 'this project';
+            _sendAgentQuickAction(`Guide me step-by-step through making "${name}". Start by explaining what we need to do first, and walk me through each phase: ideas → screenplay → characters → locations → storyboard → video.`);
+            document.getElementById('agent-welcome-banner').style.display = 'none';
+        }
+
+        async function sendIdeasAgentMessage() {
+            const inputEl = document.getElementById('ideas-agent-input');
+            const msg = inputEl.value.trim();
+            if (!msg) return;
+            inputEl.value = '';
+            if (document.getElementById('agent-fullscreen-overlay').style.display === 'flex') {
+                sendFsAgentMessage(msg);
+            } else {
+                _sendAgentQuickAction(msg);
+            }
+        }
+
+        // === FULLSCREEN AGENT ===
+        let _agentFullscreen = false;
+
+        function toggleAgentFullscreen() {
+            _agentFullscreen = !_agentFullscreen;
+            const overlay = document.getElementById('agent-fullscreen-overlay');
+            const panel = document.getElementById('ideas-agent-panel');
+            const fsMsgs = document.getElementById('fs-agent-messages');
+            const inlineMsgs = document.getElementById('ideas-agent-messages');
+
+            if (_agentFullscreen) {
+                // Show fullscreen overlay
+                overlay.style.display = 'flex';
+                // Copy messages from inline to fullscreen
+                fsMsgs.innerHTML = inlineMsgs.innerHTML;
+                // Set project name
+                document.getElementById('fs-agent-project').textContent = currentProject?.name || '';
+                // Focus input
+                setTimeout(() => document.getElementById('fs-agent-input').focus(), 100);
+                // Scroll to bottom
+                fsMsgs.scrollTop = fsMsgs.scrollHeight;
+            } else {
+                // Hide fullscreen, sync back
+                overlay.style.display = 'none';
+                // Copy messages from fullscreen back to inline
+                inlineMsgs.innerHTML = fsMsgs.innerHTML;
+                inlineMsgs.scrollTop = inlineMsgs.scrollHeight;
+            }
+        }
+
+        async function sendFsAgentMessage(msg) {
+            if (!msg) {
+                const inputEl = document.getElementById('fs-agent-input');
+                msg = inputEl.value.trim();
+                if (!msg) return;
+                inputEl.value = '';
+            }
+            const msgBox = document.getElementById('fs-agent-messages');
+            const statusEl = document.getElementById('fs-agent-status');
+            // Show user message
+            const userMsg = document.createElement('div');
+            userMsg.style.cssText = 'padding:8px 14px;border-radius:4px;max-width:80%;align-self:flex-end;background:rgba(255,51,51,0.1);border-right:2px solid var(--accent-primary);color:#fff;font-size:0.9rem;line-height:1.5;';
+            userMsg.textContent = msg;
+            msgBox.appendChild(userMsg);
+            msgBox.scrollTop = msgBox.scrollHeight;
+            statusEl.textContent = '🎬 Executive Producer coordinating...';
+            try {
+                const epUrl = _EP_MODE ? '/api/executive-producer/chat' : '/api/film-agent/chat';
+                const res = await fetch(epUrl, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message: msg, session_id: _ideasAgentSession, project_path: currentProject?.path || null })
+                });
+                const data = await res.json();
+                statusEl.textContent = '';
+                if (data.success) {
+                    // Show delegations
+                    if (data.delegations && data.delegations.length > 0) {
+                        const agentMap = {story_architect:'📜 Story Architect', visual_director:'🎥 Visual Director', character_designer:'👤 Character Designer', sound_designer:'🔊 Sound Designer', editor:'✂️ Editor', prompt_engineer:'🖼️ Prompt Engineer'};
+                        for (const d of data.delegations) {
+                            const ti = document.createElement('div');
+                            ti.style.cssText = 'font-size:0.65rem;color:var(--accent-secondary);padding:4px 14px;background:rgba(0,212,255,0.05);border-radius:3px;border-left:2px solid var(--accent-secondary);opacity:0.85;';
+                            ti.textContent = `${agentMap[d.agent] || d.agent} → ${d.task.substring(0, 120)}...`;
+                            msgBox.appendChild(ti);
+                        }
+                    } else if (data.tools_used && data.tools_used.length > 0) {
+                        const toolNames = data.tools_used.map(t => t.name.replace(/_/g, ' ')).join(' → ');
+                        const ti = document.createElement('div');
+                        ti.style.cssText = 'font-size:0.65rem;color:var(--accent-secondary);padding:2px 14px;font-style:italic;opacity:0.7;';
+                        ti.textContent = `Used: ${toolNames}`;
+                        msgBox.appendChild(ti);
+                    }
+                    const agentMsg = document.createElement('div');
+                    agentMsg.style.cssText = 'background:var(--bg-tertiary);border-left:2px solid var(--accent-primary);padding:10px 14px;border-radius:4px;max-width:85%;color:var(--text-primary);line-height:1.6;font-size:0.9rem;';
+                    agentMsg.innerHTML = data.response.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+                    msgBox.appendChild(agentMsg);
+                    // Detect production package in fullscreen mode too
+                    const isPkgFs = /PHASE\s+[12345]/.test(data.response) && data.response.length > 2000;
+                    if (isPkgFs) {
+                        const saveBarFs = document.createElement('div');
+                        saveBarFs.style.cssText = 'display:flex;gap:8px;padding:6px 14px;align-items:center;flex-wrap:wrap;';
+                        saveBarFs.innerHTML = `
+                            <button class="btn btn-primary" onclick="saveProductionPackage(this)" style="font-size:0.75rem;padding:6px 16px;display:flex;align-items:center;gap:4px;">
+                                💾 Save Production Package to Project
+                            </button>
+                            <button class="btn btn-secondary" onclick="previewProductionPackage(this)" style="font-size:0.75rem;padding:6px 16px;">
+                                👁 Preview Parsed Data
+                            </button>
+                            <span class="pkg-status" style="font-size:0.7rem;color:var(--text-secondary);"></span>
+                        `;
+                        saveBarFs.dataset.epOutput = data.response;
+                        msgBox.appendChild(saveBarFs);
+                    }
+                    msgBox.scrollTop = msgBox.scrollHeight;
+                }
+            } catch(e) {
+                statusEl.textContent = '';
+            }
         }
 
         // === PROJECT STATE PERSISTENCE ===
@@ -2650,7 +3204,7 @@
                 
                 // Ensure sheet prompts are initialized on settings if missing/empty
                 if (!s.character_sheet_prompt || !s.character_sheet_prompt.trim()) {
-                    s.character_sheet_prompt = 'Professional character turnaround reference sheet on a neutral studio background featuring the character prominently across all panels. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits from front and back. The subject stands naturally with relaxed posture and neutral expression. All panels must maintain perfectly consistent identity with identical facial features, hairstyle, body proportions, clothing details, and material textures across every view. Soft wraparound studio lighting from above-left with gentle shadows that define form while keeping the subject clearly readable. Crisp focus, highly detailed realistic rendering, modern studio presentation with clean balanced spacing between panels.';
+                    s.character_sheet_prompt = 'Preserve the character exactly as shown in the reference image: same face, same clothing, same accessories, same dark atmospheric background with flickering screens and analog equipment, same lighting, same color palette. The character must look identical to the reference with the same environment and mood.';
                 }
                 if (!s.location_sheet_prompt || !s.location_sheet_prompt.trim()) {
                     s.location_sheet_prompt = 'Professional location concept art featuring a single, ultra-wide cinematic establishing shot capturing the full scope and atmosphere of the environment. High-end studio quality, perfect composition, rich lighting, single image only, no borders, no grid.';
@@ -2675,6 +3229,32 @@
             }
             if (typeof populateResolveMediaPool === 'function') {
                 populateResolveMediaPool();
+            }
+            // Migrate stale ComfyUI temp filenames to proper scene paths
+            if (screenplayData && screenplayData.scenes) {
+                let migrated = 0;
+                screenplayData.scenes.forEach((sc, si) => {
+                    if (!sc.shots) return;
+                    sc.shots.forEach((sh, shi) => {
+                        // Clear stale ComfyUI temp filenames from all image fields
+                        const staleCheck = (v) => v && typeof v === 'string' && v.startsWith('ComfyUI_');
+                        if (staleCheck(sh._temp_storyboard_image)) {
+                            sh._temp_storyboard_image = null;
+                            sh.storyboard_status = 'pending';
+                            migrated++;
+                        }
+                        if (staleCheck(sh.storyboard_image)) {
+                            sh.storyboard_image = null;
+                            sh.storyboard_status = 'pending';
+                            migrated++;
+                        }
+                        if (staleCheck(sh._temp_upscaled_file)) {
+                            sh._temp_upscaled_file = null;
+                            migrated++;
+                        }
+                    });
+                });
+                if (migrated > 0) console.log(`[Migration] Cleared ${migrated} stale ComfyUI temp filenames`);
             }
             if (state.sidebarExpanded !== undefined) {
                 const sidebar = document.getElementById('sidebar');
@@ -2740,10 +3320,11 @@
                             });
                         } catch(e) {}
                     }
+                } else if (data.success) {
+                    // No saved state yet — normal for a new or never-saved project. Nothing to restore.
                 } else {
-                    console.error("loadProjectState: success was false or state was empty");
-                    notify('Load Warning', 'Project state was empty on the server.', '⚠️');
-                    clearProjectState();
+                    console.error("loadProjectState: " + (data.error || "failed to load project state"));
+                    notify('Load Warning', data.error || 'Failed to load project state from the server.', '⚠️');
                 }
             } catch(e) {
                 console.error("loadProjectState catch block triggered:", e);
@@ -2770,6 +3351,146 @@
         }
         function closeOpenProject() {
             document.getElementById('open-project-modal').classList.remove('active');
+            document.getElementById('open-folder-browser').style.display = 'none';
+        }
+
+        // === FOLDER BROWSER ===
+        let _browserTargetInput = null;
+        let _browserCurrentPath = '';
+
+        function _formatBytes(size) {
+            if (!size) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            let s = size;
+            while (s >= 1024 && i < units.length - 1) { s /= 1024; i++; }
+            return s.toFixed(1) + ' ' + units[i];
+        }
+
+        function _getBrowserEls() {
+            const isOpen = _browserTargetInput === 'open-project-path';
+            return {
+                browser: document.getElementById(isOpen ? 'open-folder-browser' : 'new-folder-browser'),
+                path: document.getElementById(isOpen ? 'folder-browser-path' : 'new-folder-browser-path'),
+                list: document.getElementById(isOpen ? 'folder-browser-list' : 'new-folder-browser-list'),
+                isOpen
+            };
+        }
+
+        async function openFolderBrowser(targetInputId) {
+            _browserTargetInput = targetInputId;
+            // Try native OS folder picker first
+            try {
+                const res = await fetch('/api/pick-folder', { method: 'GET' });
+                const data = await res.json();
+                if (data.path && !data.cancelled) {
+                    document.getElementById(targetInputId).value = data.path;
+                    if (targetInputId === 'open-project-path') {
+                        checkProjectPath(data.path);
+                    }
+                    return;
+                }
+            } catch(e) {
+                // Native picker failed — fall back to in-app browser
+                console.log('Native folder picker unavailable, using in-app browser');
+            }
+            // Fallback: in-app folder browser
+            const els = _getBrowserEls();
+            const currentVal = document.getElementById(targetInputId)?.value?.trim() || '';
+            _browserCurrentPath = currentVal;
+            els.browser.style.display = 'block';
+            _loadBrowserDir(_browserCurrentPath, els.path, els.list);
+        }
+
+        async function _loadBrowserDir(path, pathEl, listEl) {
+            listEl.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:0.8rem;text-align:center;">Loading...</div>';
+            pathEl.textContent = path || 'This PC';
+            try {
+                const res = await fetch('/api/browse-directory?path=' + encodeURIComponent(path));
+                const data = await res.json();
+                if (!data.success) {
+                    listEl.innerHTML = `<div style="padding:16px;color:#f87171;font-size:0.8rem;">${data.error || 'Error'}</div>`;
+                    return;
+                }
+                _browserCurrentPath = data.current || '';
+                pathEl.textContent = data.current || 'This PC';
+
+                // === DRIVES VIEW (Windows Explorer style) ===
+                if (data.drives && data.drives.length > 0) {
+                    let html = '<div style="padding:10px;display:flex;flex-wrap:wrap;gap:8px;">';
+                    for (const d of data.drives) {
+                        const pct = d.usage_percent || 0;
+                        const barColor = pct > 90 ? '#f87171' : pct > 70 ? '#facc15' : '#4ade80';
+                        const label = d.display || d.name;
+                        const free = d.free_display || (_formatBytes(d.free_bytes) + ' free');
+                        html += `
+                            <div onclick="_browserSelect('${d.path.replace(/\\/g, '\\\\')}')" style="width:140px;padding:10px;background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:4px;cursor:pointer;transition:all 0.15s;flex-shrink:0;" onmouseenter="this.style.borderColor='var(--accent-primary)';this.style.background='rgba(255,255,255,0.06)'" onmouseleave="this.style.borderColor='var(--border-color)';this.style.background='rgba(255,255,255,0.03)'">
+                                <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+                                    <span style="font-size:1.4rem;">💽</span>
+                                    <span style="font-size:0.75rem;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>
+                                </div>
+                                <div style="width:100%;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;margin-bottom:4px;">
+                                    <div style="width:${pct}%;height:100%;background:${barColor};border-radius:2px;transition:width 0.3s;"></div>
+                                </div>
+                                <div style="font-size:0.65rem;color:var(--text-secondary);">${free}</div>
+                            </div>`;
+                    }
+                    html += '</div>';
+                    listEl.innerHTML = html;
+                    return;
+                }
+
+                // === FOLDER LIST VIEW (Explorer detail style) ===
+                if (!data.entries || data.entries.length === 0) {
+                    listEl.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-size:0.8rem;text-align:center;">This folder is empty</div>';
+                    return;
+                }
+
+                let html = '';
+                for (const entry of data.entries) {
+                    const escPath = entry.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    if (entry.is_parent) {
+                        html += `<div class="fb-row" onclick="_browserSelect('${escPath}')" style="display:flex;align-items:center;gap:10px;padding:5px 12px;cursor:pointer;font-size:0.8rem;border-bottom:1px solid rgba(255,255,255,0.04);transition:background 0.1s;">
+                            <span style="width:20px;text-align:center;font-size:0.9rem;">⬆️</span>
+                            <span style="flex:1;color:var(--text-secondary);font-style:italic;">..</span>
+                        </div>`;
+                    } else {
+                        const count = entry.child_count > 0 ? `<span style="color:var(--text-secondary);font-size:0.7rem;">${entry.child_count} subfolders</span>` : '';
+                        html += `<div class="fb-row" onclick="_browserSelect('${escPath}')" style="display:flex;align-items:center;gap:10px;padding:5px 12px;cursor:pointer;font-size:0.8rem;border-bottom:1px solid rgba(255,255,255,0.04);transition:background 0.1s;">
+                            <span style="width:20px;text-align:center;font-size:0.9rem;">📁</span>
+                            <span style="flex:1;color:var(--text-primary);">${entry.name}</span>
+                            ${count}
+                        </div>`;
+                    }
+                }
+                listEl.innerHTML = html;
+
+                // Hover effects
+                listEl.querySelectorAll('.fb-row').forEach(row => {
+                    row.addEventListener('mouseenter', () => row.style.background = 'rgba(255,255,255,0.05)');
+                    row.addEventListener('mouseleave', () => row.style.background = '');
+                });
+            } catch(e) {
+                listEl.innerHTML = `<div style="padding:16px;color:#f87171;font-size:0.8rem;">${e.message}</div>`;
+            }
+        }
+
+        function _browserSelect(path) {
+            const els = _getBrowserEls();
+            _loadBrowserDir(path, els.path, els.list);
+            document.getElementById(_browserTargetInput).value = path;
+            if (_browserTargetInput === 'open-project-path') {
+                checkProjectPath(path);
+            }
+        }
+
+        function _browserUseSelected() {
+            document.getElementById(_browserTargetInput).value = _browserCurrentPath;
+            const els = _getBrowserEls();
+            els.browser.style.display = 'none';
+            if (_browserTargetInput === 'open-project-path') {
+                checkProjectPath(_browserCurrentPath);
+            }
         }
 
         let checkTimeout;
@@ -3785,12 +4506,13 @@
                 const res = await fetch('/api/settings');
                 const s = await res.json();
                 if (s.llm) {
-                    safeSetValue('llm-provider', s.llm.provider || 'app_llm');
+                    safeSetValue('llm-provider', s.llm.provider || 'omniroute');
                     safeSetValue('llm-host', s.llm.host || 'http://localhost:8081');
                     safeSetValue('llm-apikey', s.llm.apiKey);
                     safeSetChecked('llm-auto-start', s.llm.auto_start);
                     safeSetValue('llm-models-path', s.llm.models_path);
                     safeSetValue('llm-gpu-layers', s.llm.n_gpu_layers ?? -1);
+                    initFallbackChain(s.llm.fallback_chain, s.llm.fallback_disabled);
                 }
                 if (s.comfyui) {
                     safeSetValue('comfyui-url', s.comfyui.url || 'http://localhost:8188');
@@ -3843,6 +4565,101 @@
             }
         }
 
+
+        // === FALLBACK CHAIN MANAGEMENT ===
+        const ALL_PROVIDERS = [
+            {id: 'omniroute', name: 'OmniRoute (Free Cloud)', icon: '🌐'},
+            {id: 'agnes', name: 'Agnes AI (Free Cloud)', icon: '🤖'},
+            {id: 'openai', name: 'OpenAI', icon: '🟢'},
+            {id: 'claude', name: 'Claude (Anthropic)', icon: '🟣'},
+            {id: 'openrouter', name: 'OpenRouter', icon: '🔀'},
+            {id: 'opencode_zen', name: 'OpenCode Zen', icon: '💎'},
+            {id: 'nvidia_nim', name: 'NVIDIA NIM', icon: '💚'},
+            {id: 'gemini', name: 'Gemini', icon: '🔵'},
+            {id: 'app_llm', name: 'App LLM (Local)', icon: '🏠'},
+            {id: 'ollama', name: 'Ollama (Local)', icon: '🦙'},
+            {id: 'lm_studio', name: 'LM Studio (Local)', icon: '🎭'},
+            {id: 'llama_cpp', name: 'llama.cpp (Local)', icon: '⚡'}
+        ];
+        let fallbackChain = [];
+        let fallbackDisabled = {};
+
+        function initFallbackChain(chain, disabled) {
+            fallbackChain = chain || ['omniroute', 'agnes', 'app_llm'];
+            fallbackDisabled = disabled || {};
+            renderFallbackChain();
+        }
+
+        function renderFallbackChain() {
+            const container = document.getElementById('fallback-chain-list');
+            if (!container) return;
+            container.innerHTML = '';
+            fallbackChain.forEach((provId, idx) => {
+                const prov = ALL_PROVIDERS.find(p => p.id === provId);
+                if (!prov) return;
+                const isDisabled = fallbackDisabled[provId];
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg-secondary);border-radius:4px;border:1px solid var(--border-color);' + (isDisabled ? 'opacity:0.5;' : '');
+                row.innerHTML = `
+                    <span style="cursor:grab;font-size:0.7rem;color:var(--text-secondary);">⠿</span>
+                    <span style="font-size:0.8rem;">${prov.icon}</span>
+                    <span style="flex:1;font-size:0.8rem;${isDisabled ? 'text-decoration:line-through;' : ''}">${prov.name}</span>
+                    <button onclick="moveFallback(${idx},-1)" title="Move up" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.7rem;${idx===0?'visibility:hidden;':''}">▲</button>
+                    <button onclick="moveFallback(${idx},1)" title="Move down" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.7rem;${idx===fallbackChain.length-1?'visibility:hidden;':''}">▼</button>
+                    <button onclick="toggleFallback(${idx})" title="${isDisabled?'Enable':'Disable'}" style="background:none;border:none;cursor:pointer;font-size:0.8rem;">${isDisabled?'◻':'◼'}</button>
+                    <button onclick="removeFallback(${idx})" title="Remove" style="background:none;border:none;color:var(--accent-primary);cursor:pointer;font-size:0.8rem;">✕</button>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function moveFallback(idx, dir) {
+            const newIdx = idx + dir;
+            if (newIdx < 0 || newIdx >= fallbackChain.length) return;
+            [fallbackChain[idx], fallbackChain[newIdx]] = [fallbackChain[newIdx], fallbackChain[idx]];
+            renderFallbackChain();
+        }
+
+        function toggleFallback(idx) {
+            const provId = fallbackChain[idx];
+            fallbackDisabled[provId] = !fallbackDisabled[provId];
+            renderFallbackChain();
+        }
+
+        function removeFallback(idx) {
+            fallbackChain.splice(idx, 1);
+            renderFallbackChain();
+        }
+
+        function addFallbackProvider() {
+            const used = new Set(fallbackChain);
+            const available = ALL_PROVIDERS.filter(p => !used.has(p.id));
+            if (available.length === 0) { notify('All added', 'All providers are already in the chain'); return; }
+            const names = available.map((p, i) => `${i+1}. ${p.name}`).join('\n');
+            const choice = prompt('Add provider (enter number):\n' + names);
+            if (choice) {
+                const idx = parseInt(choice) - 1;
+                if (idx >= 0 && idx < available.length) {
+                    fallbackChain.push(available[idx].id);
+                    renderFallbackChain();
+                }
+            }
+        }
+
+        function resetFallbackChain() {
+            fallbackChain = ['omniroute', 'agnes', 'app_llm'];
+            fallbackDisabled = {};
+            renderFallbackChain();
+        }
+
+        function getFallbackChain() {
+            return {
+                chain: fallbackChain.filter(id => !fallbackDisabled[id]),
+                all: fallbackChain,
+                disabled: fallbackDisabled
+            };
+        }
+
         async function saveSettings() {
             const btn1 = document.getElementById('save-settings-btn');
             const btn2 = document.getElementById('save-settings-btn-2');
@@ -3857,7 +4674,9 @@
                     apiKey: document.getElementById('llm-apikey').value,
                     auto_start: document.getElementById('llm-auto-start').checked,
                     models_path: document.getElementById('llm-models-path').value,
-                    n_gpu_layers: parseInt(document.getElementById('llm-gpu-layers').value) || -1
+                    n_gpu_layers: parseInt(document.getElementById('llm-gpu-layers').value) || -1,
+                    fallback_chain: getFallbackChain().all,
+                    fallback_disabled: getFallbackChain().disabled
                 },
                 image_gen: {
                     provider: document.getElementById('image-provider').value,
@@ -4030,6 +4849,10 @@
         // === TOPIC IDEAS ===
         let topicIdeas = [];
         let selectedIdeaIndex = -1;
+        // Declared (not only assigned in clearProjectState) so state saves work even when a
+        // project opens with no saved state to restore.
+        let screenplayData = null;
+        let sceneVideoData = [];
 
         function getLLMConfig() {
             const sel = getLLMModelSelect();
@@ -4258,7 +5081,17 @@
             return ideas;
         }
 
+        function requireProject() {
+            if (!currentProject || !currentProject.path) {
+                notify('No Project Open', 'Please create or open a project first.', '⚠️');
+                openNewProject();
+                return false;
+            }
+            return true;
+        }
+
         async function generateIdeas() {
+            if (!requireProject()) return;
             const ideasBtn = document.getElementById('generate-ideas-btn');
             if (ideasBtn) { ideasBtn.disabled = true; ideasBtn.textContent = '⏳ Generating...'; }
             const checkedSources = Array.from(document.querySelectorAll('.src-chk:checked')).map(cb => cb.value);
@@ -4521,6 +5354,15 @@
                 updateStatusDot('comfyui-dot', 'red');
                 document.getElementById('comfyui-status-text').textContent = 'error';
             }
+            try {
+                const orRes = await fetch('/api/omniroute/status');
+                const orData = await orRes.json();
+                updateStatusDot('omniroute-dot', orData.running ? 'green' : 'red');
+                document.getElementById('omniroute-status-text').textContent = orData.running ? 'Connected' : 'Offline';
+            } catch(e) {
+                updateStatusDot('omniroute-dot', 'red');
+                document.getElementById('omniroute-status-text').textContent = 'Offline';
+            }
         }
 
         function updateStatusDot(id, color) {
@@ -4661,6 +5503,7 @@
         }
 
         async function generateVariants() {
+            if (!requireProject()) return;
             const idea = topicIdeas[_expandIdeaIdx];
             if (!idea) return;
             const userChange = document.getElementById('variant-change-input').value.trim();
@@ -4954,6 +5797,8 @@
         }
 
         async function generateScreenplay() {
+            if (!requireProject()) return;
+
             const scrBtn = document.getElementById('generate-screenplay-btn');
             if (scrBtn) { scrBtn.disabled = true; scrBtn.textContent = '⏳ Generating...'; }
             if (!topicIdeas.length) {
@@ -6206,6 +7051,8 @@
         }
 
         async function generateAllShots() {
+            if (!requireProject()) return;
+
             if (!screenplayData || !screenplayData.scenes) return;
             const btn = document.getElementById('generate-all-shots-btn');
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating all shots...'; }
@@ -6756,13 +7603,14 @@
 
         async function loadAssetStudioData() {
             try {
-                let res = await fetch('/api/orchestrator/asset-studio');
+                const _asPath = currentProject?.path ? ('?path=' + encodeURIComponent(currentProject.path)) : '';
+                let res = await fetch('/api/orchestrator/asset-studio' + _asPath);
                 let data = await res.json();
                 if (!data.success) return;
                 // Auto-sync: if backend bible is empty but frontend has an active project (e.g. after server restart)
                 if ((!data.character_bible || !data.character_bible.length) && currentProject && currentProject.name) {
                     await loadProject(currentProject.name);
-                    res = await fetch('/api/orchestrator/asset-studio');
+                    res = await fetch('/api/orchestrator/asset-studio' + _asPath);
                     data = await res.json();
                     if (!data.success) return;
                 }
@@ -6827,12 +7675,13 @@
                 renderCharacterSheets();
                 renderLocationSheets();
                 _updateSheetUI();
+                loadQCDashboard();
             } catch (e) {
                 console.error('Failed to load asset studio data:', e);
             }
         }
 
-        function renderAssetStudio() {
+                function renderAssetStudio() {
             const charBible = _assetStudioData.character_bible || [];
             const locBible = _assetStudioData.location_bible || [];
             const propBible = _assetStudioData.prop_bible || [];
@@ -7209,6 +8058,7 @@
         }
 
         async function generateCharacterSheet(charId, abortSignal) {
+            if (!requireProject()) return;
             const genBtn = document.getElementById('cs-gen-' + charId) || document.getElementById('asset-gen-btn');
             if (genBtn && genBtn.id !== 'asset-gen-btn' && genBtn.disabled) return;
             if (genBtn) {
@@ -7231,28 +8081,51 @@
                 abortSignal = ac.signal;
             }
 
-            // Fetch prompt from backend or construct dynamically from bible
-            let characterPrompt = '';
+            // Step 1: LLM vision analysis of the approved character image
+            let llmDescription = "";
+            setSheetProgress(5, "Analyzing reference image with AI vision...");
             try {
-                const promptRes = await fetch('/api/orchestrator/generate-turnaround', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                const descRes = await fetch("/api/orchestrator/describe-character-image", {
+                    method: "POST", headers: {"Content-Type": "application/json"},
                     signal: abortSignal,
-                    body: JSON.stringify({ character_id: charId })
+                    body: JSON.stringify({ character_id: charId, project_path: currentProject?.path || "" })
                 });
-                const promptData = await promptRes.json();
-                if (promptData.success && promptData.turnaround_request) {
-                    characterPrompt = promptData.turnaround_request.prompt;
-                    // Strip " ZImage Turbo." suffix if present
-                    characterPrompt = characterPrompt.replace(/\s*ZImage\s+Turbo\.?/gi, '');
+                const descData = await descRes.json();
+                if (descData.success && descData.description) {
+                    llmDescription = descData.description;
+                    setSheetProgress(15, "Vision analysis complete. Building prompt...");
                 }
             } catch(e) {
-                if (e.name !== 'AbortError') console.warn('Could not fetch turnaround prompt from backend:', e);
+                if (e.name !== "AbortError") console.warn("Vision analysis failed, falling back to bible:", e);
             }
 
             if (abortSignal && abortSignal.aborted) {
                 if (genBtn) { genBtn.disabled = false; genBtn.textContent = originalText; }
-                setAssetCardSpinner(charId, 'char_sheet', false);
+                setAssetCardSpinner(charId, "char_sheet", false);
+                hideSheetProgress();
+                return;
+            }
+
+            // Step 2: Build prompt using LLM description or fallback to bible text
+            let characterPrompt = "";
+            try {
+                const promptRes = await fetch("/api/orchestrator/generate-turnaround", {
+                    method: "POST", headers: {"Content-Type": "application/json"},
+                    signal: abortSignal,
+                    body: JSON.stringify({ character_id: charId, image_description: llmDescription })
+                });
+                const promptData = await promptRes.json();
+                if (promptData.success && promptData.turnaround_request) {
+                    characterPrompt = promptData.turnaround_request.prompt;
+                    characterPrompt = characterPrompt.replace(/\s*ZImage\s+Turbo\.?/gi, "");
+                }
+            } catch(e) {
+                if (e.name !== "AbortError") console.warn("Could not fetch turnaround prompt:", e);
+            }
+
+            if (abortSignal && abortSignal.aborted) {
+                if (genBtn) { genBtn.disabled = false; genBtn.textContent = originalText; }
+                setAssetCardSpinner(charId, "char_sheet", false);
                 hideSheetProgress();
                 return;
             }
@@ -7272,9 +8145,9 @@
                 }
             }
 
-            const instructions = currentProject?.settings?.character_sheet_prompt || 'Professional character turnaround reference sheet on a neutral studio background featuring the character prominently across all panels. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits from front and back. The subject stands naturally with relaxed posture and neutral expression. All panels must maintain perfectly consistent identity with identical facial features, hairstyle, body proportions, clothing details, and material textures across every view. Soft wraparound studio lighting from above-left with gentle shadows that define form while keeping the subject clearly readable. Crisp focus, highly detailed realistic rendering, modern studio presentation with clean balanced spacing between panels.';
+            const instructions = currentProject?.settings?.character_sheet_prompt || 'Preserve the character exactly as shown in the reference image: same face, same clothing, same accessories, same dark atmospheric background, same lighting, same color palette, same environment and mood. The character must look identical to the reference.';
             
-            let finalPrompt = characterPrompt + "\n\n" + instructions;
+            let finalPrompt = instructions + "\n\n" + characterPrompt;
             const styleSuffix = [];
             if (selectedVisualStyle) styleSuffix.push(selectedVisualStyle);
             if (selectedFilmAesthetic) styleSuffix.push(selectedFilmAesthetic);
@@ -7469,6 +8342,7 @@
         window._locationSheetControllers = window._locationSheetControllers || {};
 
         async function generateLocationSheet(locId, abortSignal) {
+            if (!requireProject()) return;
             const isBatch = !!abortSignal;
             
             if (!isBatch && window._locationSheetControllers[locId]) {
@@ -7555,29 +8429,52 @@
                 abortSignal = ac.signal;
             }
 
-            // Fetch/construct location details from bible
-            const loc = (_assetStudioData.location_bible || []).find(l => (l.location_id === locId || l.id === locId));
-            let locationPrompt = '';
-            if (loc) {
-                const name = loc.location_name || loc.name || locId;
-                const type = loc.environment_type || '';
-                const mood = loc.mood || '';
-                const details = loc.visual_details || loc.description || '';
-                const architecture = loc.architecture || loc.architectural_style || '';
-                const lighting = loc.lighting || loc.lighting_style || '';
-                locationPrompt = `${name} — a ${type} environment`;
-                if (mood) locationPrompt += ` with a ${mood} atmosphere`;
-                if (details) locationPrompt += `. ${details}`;
-                if (architecture) locationPrompt += ` Featuring ${architecture} architecture`;
-                if (lighting) locationPrompt += ` with ${lighting} lighting`;
-                locationPrompt += `. Comprehensive location reference board showing the full environment across multiple curated views capturing the spatial layout, atmosphere, and key architectural details.`;
-            } else {
-                locationPrompt = `${locId}. Comprehensive location reference board showing the full environment across multiple curated views capturing the spatial layout, atmosphere, and key architectural details.`;
+            // Step 1: LLM vision analysis of the approved location image
+            let llmLocationDesc = "";
+            setSheetProgress(5, "Analyzing location reference with AI vision...");
+            try {
+                const descRes = await fetch("/api/orchestrator/describe-location-image", {
+                    method: "POST", headers: {"Content-Type": "application/json"},
+                    signal: abortSignal,
+                    body: JSON.stringify({ location_id: locId, project_path: currentProject?.path || "" })
+                });
+                const descData = await descRes.json();
+                if (descData.success && descData.description) {
+                    llmLocationDesc = descData.description;
+                    setSheetProgress(15, "Vision analysis complete. Building prompt...");
+                }
+            } catch(e) {
+                if (e.name !== "AbortError") console.warn("Vision analysis failed:", e);
             }
 
-            const instructions = currentProject?.settings?.location_sheet_prompt || 'Ensure the image is a seamless 360 equirectangular HDRI panorama.';
+            // Step 2: Build location prompt
+            let locationPrompt = "";
+            if (llmLocationDesc) {
+                locationPrompt = llmLocationDesc;
+            } else {
+                // Fallback to bible text
+                const loc = (_assetStudioData.location_bible || []).find(l => (l.location_id === locId || l.id === locId));
+                if (loc) {
+                    const name = loc.location_name || loc.name || locId;
+                    const type = loc.environment_type || "";
+                    const mood = loc.mood || "";
+                    const details = loc.visual_details || loc.description || "";
+                    const architecture = loc.architecture || loc.architectural_style || "";
+                    const lighting = loc.lighting || loc.lighting_style || "";
+                    locationPrompt = name + " — a " + type + " environment";
+                    if (mood) locationPrompt += " with a " + mood + " atmosphere";
+                    if (details) locationPrompt += ". " + details;
+                    if (architecture) locationPrompt += " Featuring " + architecture + " architecture";
+                    if (lighting) locationPrompt += " with " + lighting + " lighting";
+                    locationPrompt += ". Comprehensive location reference board showing the full environment across multiple curated views capturing the spatial layout, atmosphere, and key architectural details.";
+                } else {
+                    locationPrompt = locId + ". Comprehensive location reference board.";
+                }
+            }
+
+            const instructions = currentProject?.settings?.location_sheet_prompt || "Ensure the image is a seamless 360 equirectangular HDRI panorama.";
             
-            let finalPrompt = locationPrompt + "\n\n" + instructions;
+            let finalPrompt = instructions + "\n\n" + locationPrompt;
             const styleSuffix = [];
             if (selectedVisualStyle) styleSuffix.push(selectedVisualStyle);
             if (selectedFilmAesthetic) styleSuffix.push(selectedFilmAesthetic);
@@ -8152,7 +9049,131 @@
             propsBtn.className = tab === 'props' ? 'btn btn-primary' : 'btn btn-secondary';
         }
 
-        function expandAssetItem(type, id) {
+        // === 360° equirectangular panorama viewer (dependency-free) ===
+        let _panoViewer = {
+            active: false, img: null, zoom: 1, panX: 0, panY: 0,
+            dragging: false, lastX: 0, lastY: 0, canvas: null, ctx: null
+        };
+
+        function toggle360Viewer() {
+            if (_panoViewer.active) { exit360Viewer(); return; }
+            const imgArea = document.getElementById('asset-expand-image-area');
+            if (!imgArea) return;
+            const flatImg = imgArea.querySelector('img');
+            if (!flatImg || !flatImg.src) return;
+            const src = flatImg.src;
+            imgArea.innerHTML = '<canvas id="pano-canvas" style="width:100%;height:100%;display:block;"></canvas>';
+            const canvas = document.getElementById('pano-canvas');
+            _panoViewer.canvas = canvas;
+            _panoViewer.ctx = canvas.getContext('2d');
+            _panoViewer.zoom = 1; _panoViewer.panX = 0; _panoViewer.panY = 0;
+            _panoViewer.img = new Image();
+            _panoViewer.img.onload = () => { _panoViewer.active = true; resizePanoCanvas(); render360(); };
+            _panoViewer.img.src = src;
+            const hint = document.createElement('div');
+            hint.id = 'pano-hint';
+            hint.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;font-size:0.7rem;padding:3px 10px;border-radius:4px;pointer-events:none;z-index:3;transition:opacity 0.6s;';
+            hint.textContent = 'Drag to look around · Scroll to zoom';
+            imgArea.appendChild(hint);
+            setTimeout(() => { const h = document.getElementById('pano-hint'); if (h) h.style.opacity = '0.35'; }, 4000);
+            const btn = document.getElementById('asset-360-btn');
+            if (btn) btn.textContent = '⟲ Exit 360°';
+            bindPanoEvents(canvas);
+            window.addEventListener('resize', resizePanoCanvas);
+        }
+
+        function bindPanoEvents(canvas) {
+            canvas.style.cursor = 'grab';
+            canvas.addEventListener('pointerdown', (e) => {
+                _panoViewer.dragging = true;
+                _panoViewer.lastX = e.clientX;
+                _panoViewer.lastY = e.clientY;
+                canvas.style.cursor = 'grabbing';
+                try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+                e.preventDefault();
+            });
+            canvas.addEventListener('pointermove', (e) => {
+                if (!_panoViewer.dragging) return;
+                const dx = e.clientX - _panoViewer.lastX;
+                const dy = e.clientY - _panoViewer.lastY;
+                _panoViewer.lastX = e.clientX;
+                _panoViewer.lastY = e.clientY;
+                _panoViewer.panX -= dx * _panoViewer.zoom;
+                _panoViewer.panY -= dy * _panoViewer.zoom;
+                render360();
+            });
+            const stop = () => { _panoViewer.dragging = false; if (_panoViewer.canvas) _panoViewer.canvas.style.cursor = 'grab'; };
+            canvas.addEventListener('pointerup', stop);
+            canvas.addEventListener('pointercancel', stop);
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+                _panoViewer.zoom = Math.min(4, Math.max(1, _panoViewer.zoom * factor));
+                render360();
+            }, { passive: false });
+        }
+
+        function resizePanoCanvas() {
+            const canvas = _panoViewer.canvas;
+            if (!canvas || !canvas.parentElement) return;
+            canvas.width = canvas.parentElement.clientWidth || 600;
+            canvas.height = canvas.parentElement.clientHeight || 400;
+            if (_panoViewer.active) render360();
+        }
+
+        function render360() {
+            const { canvas, ctx, img } = _panoViewer;
+            if (!canvas || !ctx || !img || !img.width) return;
+            const W = canvas.width, H = canvas.height;
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, W, H);
+            const scale = (H / img.height) * _panoViewer.zoom;
+            const imgW = img.width * scale;
+            const imgH = img.height * scale;
+            _panoViewer.panX = ((_panoViewer.panX % imgW) + imgW) % imgW;
+            const maxPanY = Math.max(0, imgH - H);
+            _panoViewer.panY = Math.max(0, Math.min(_panoViewer.panY, maxPanY));
+            const startX = -_panoViewer.panX;
+            for (let i = -1; i <= 1; i++) {
+                const x = startX + i * imgW;
+                if (x + imgW <= 0 || x >= W) continue;
+                ctx.drawImage(img, x, -_panoViewer.panY, imgW, imgH);
+            }
+        }
+
+        function exit360Viewer() {
+            const btn = document.getElementById('asset-360-btn');
+            if (btn) btn.textContent = '🌀 360°';
+            _panoViewer.active = false;
+            _panoViewer.img = null;
+            window.removeEventListener('resize', resizePanoCanvas);
+            const type = window._currentAssetExpandType;
+            const id = window._currentAssetExpandId;
+            // skipAuto360=true: restoring the flat view must not re-trigger the
+            // auto-open (otherwise exiting a panorama would immediately re-open it).
+            if (type && id) expandAssetItem(type, id, true);
+        }
+
+        // Auto-open the 360° viewer when a location sheet turns out to be a
+        // 2:1 equirectangular panorama (e.g. the 360_image_v1 output at 2048x1024).
+        function autoOpen360IfPanorama(imgUrl, id) {
+            const probe = new Image();
+            probe.onload = () => {
+                if (!probe.naturalWidth) return;
+                const ratio = probe.naturalWidth / probe.naturalHeight;
+                if (Math.abs(ratio - 2) > 0.05) return; // not equirectangular
+                // Only auto-open if this sheet is still the one being inspected
+                // and the viewer is not already active.
+                if (window._currentAssetExpandType === 'loc_sheet'
+                        && window._currentAssetExpandId === id
+                        && !_panoViewer.active) {
+                    toggle360Viewer();
+                }
+            };
+            probe.src = imgUrl;
+        }
+
+        function expandAssetItem(type, id, skipAuto360) {
             window._currentAssetExpandType = type;
             window._currentAssetExpandId = id;
             
@@ -8221,6 +9242,20 @@
             } else {
                 imgArea.innerHTML = '<span style="color:var(--text-secondary);">Generate an image to preview</span>';
             }
+            // 360° viewer is only offered for location sheets with an image
+            const panoBtn = document.getElementById('asset-360-btn');
+            if (panoBtn) {
+                panoBtn.textContent = '🌀 360°';
+                panoBtn.style.display = (type === 'loc_sheet' && !!activeImg) ? 'inline-block' : 'none';
+            }
+            _panoViewer.active = false;
+            _panoViewer.img = null;
+            window.removeEventListener('resize', resizePanoCanvas);
+            // Auto-open the 360° viewer for equirectangular (2:1) location sheets
+            // unless the view is being restored after a manual exit.
+            if (type === 'loc_sheet' && activeImg && !skipAuto360) {
+                autoOpen360IfPanorama(getAssetImageSrc(activeImg), id);
+            }
             // Generation history
             const historyEl = document.getElementById('asset-expand-history');
             const clearBtn = document.getElementById('clear-asset-history-btn');
@@ -8246,7 +9281,7 @@
                     promptTextArea.value = asset.image_prompt || '';
                 } else if (type === 'char_sheet') {
                     if (promptLabel) promptLabel.textContent = 'Character Turnaround Sheet Layout Instructions:';
-                    promptTextArea.value = currentProject?.settings?.character_sheet_prompt || 'Transform the input reference image into a clean four-panel character turnaround sheet on a neutral studio background. The layout contains evenly spaced panels showing full body front view, side profile views, full body back view, and matching close-up head portraits back and front view. Maintain consistent identity, hairstyle, facial features, body proportions, clothing details, and textures across every panel. The subject stands naturally with relaxed posture and neutral expression. Soft diffused studio lighting with subtle shadows creates a professional reference-sheet appearance. Minimal composition, balanced spacing, highly detailed realistic rendering, modern studio presentation.';
+                    promptTextArea.value = currentProject?.settings?.character_sheet_prompt || 'Preserve the character exactly as shown in the reference image: same face, same clothing, same accessories, same dark atmospheric background, same lighting, same color palette, same environment and mood. The character must look identical to the reference.';
                 } else if (type === 'loc_sheet') {
                     if (promptLabel) promptLabel.textContent = 'Location Reference Board Layout Instructions:';
                     promptTextArea.value = currentProject?.settings?.location_sheet_prompt || 'Professional location concept art featuring a single, ultra-wide cinematic establishing shot capturing the full scope and atmosphere of the environment. High-end studio quality, perfect composition, rich lighting, single image only, no borders, no grid.';
@@ -8369,6 +9404,12 @@
                 inner.style.width = '100vw';
                 inner.style.height = '100vh';
                 btn.textContent = '⛶ Exit Fullscreen';
+            }
+            // The 360° canvas fills its container — re-measure after the modal
+            // grows/shrinks so the panorama stays sharp and correctly scaled.
+            if (_panoViewer.active) {
+                resizePanoCanvas();
+                render360();
             }
         }
 
@@ -9411,10 +10452,14 @@ Project visual language: ${projVL}`;
         }
 
         async function generateAllCharacterImages() {
+            if (!requireProject()) return;
+
             return _generateBulkImages('char', 'gen-char-img-btn', 'character');
         }
 
         async function generateAllLocationImages() {
+            if (!requireProject()) return;
+
             return _generateBulkImages('loc', 'gen-loc-img-btn', 'location');
         }
 
@@ -9692,6 +10737,10 @@ Project visual language: ${projVL}`;
                 notify('Upscale Failed', 'No image to upscale. Generate an image first.', '⚠️');
                 return false;
             }
+            if (targetImg.includes('ComfyUI_')) {
+                notify('Upscale Failed', 'Image is a stale temp file. Regenerate first.', '⚠️');
+                return false;
+            }
             const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
             const wf = settings.workflows?.upscale;
             if (!wf) {
@@ -9768,6 +10817,7 @@ Project visual language: ${projVL}`;
                             assets[id].approved_image = imgUrl;
                         }
                         notify('Upscaled', '4K upscale complete', '🔍');
+                        if (typeof updateCostSummary === 'function') updateCostSummary();
                         if (window._currentAssetExpandId === id) expandAssetItem(type, id);
                         renderCharacterSheets();
                         renderLocationSheets();
@@ -10508,31 +11558,51 @@ Project visual language: ${projVL}`;
             return defaultFolder + '/approved/' + basename + '.png';
         }
 
+        // Match an asset by its ID field (character_id/location_id), falling back
+        // to other id-ish fields or the ID embedded in the savedImage path.
+        function assetMatches(asset, id, idKey) {
+            if (!id) return true;
+            return asset[idKey] === id
+                || asset.id === id
+                || asset.name === id
+                || (asset.savedImage && asset.savedImage.includes('/' + id + '.'));
+        }
+
         function getSavedInputImages(targetChars = null, targetLocation = null) {
             const paths = [];
-            locationData.filter(l => l.savedImage && (!targetLocation || l.name === targetLocation)).forEach(l => {
-                const path = cleanAssetPath(l.savedImage, 'locations');
-                if (path) paths.push(path);
-            });
-            charData.filter(c => c.savedImage && (!targetChars || targetChars.includes(c.name))).forEach(c => {
-                const path = cleanAssetPath(c.savedImage, 'characters');
-                if (path) paths.push(path);
-            });
-            // Add approved character/location sheet images for I2I reference
-            if (_assetStudioData && _assetStudioData.character_sheets) {
-                Object.entries(_assetStudioData.character_sheets).forEach(([id, s]) => {
-                    if (s.approved && s.sheet_image && (!targetChars || targetChars.includes(s.name || id))) paths.push(s.sheet_image);
+            const push = (p) => { if (p && !paths.includes(p)) paths.push(p); };
+            var refType = (document.getElementById('sb-ref-type') || {}).value || 'both';
+            // Approved portraits — they anchor identity
+            if (refType === 'portrait' || refType === 'both') {
+                charData.filter(c => c.savedImage && (!targetChars || targetChars.some(id => assetMatches(c, id, 'character_id')))).forEach(c => {
+                    push(cleanAssetPath(c.savedImage, 'characters'));
                 });
+            }
+            locationData.filter(l => l.savedImage && assetMatches(l, targetLocation, 'location_id')).forEach(l => {
+                push(cleanAssetPath(l.savedImage, 'locations'));
+            });
+            // Character sheets for I2I reference
+            if (refType === 'sheet' || refType === 'both') {
+                if (_assetStudioData && _assetStudioData.character_sheets) {
+                    Object.entries(_assetStudioData.character_sheets).forEach(([id, s]) => {
+                        if (s.approved && s.sheet_image && (!targetChars || targetChars.some(cid => s.character_id === cid || s.name === cid || id === cid))) {
+                            push(s.sheet_image);
+                        }
+                    });
+                }
             }
             if (_assetStudioData && _assetStudioData.location_sheets) {
                 Object.entries(_assetStudioData.location_sheets).forEach(([id, s]) => {
-                    if (s.approved && s.sheet_image && (!targetLocation || (s.name || id) === targetLocation)) paths.push(s.sheet_image);
+                    if (s.approved && s.sheet_image && assetMatches(s, targetLocation, 'location_id')) {
+                        push(s.sheet_image);
+                    }
                 });
             }
             return paths;
         }
 
         async function generateAllStoryboard() {
+            if (!requireProject()) return;
             for (let i = 0; i < imagePromptData.length; i++) {
                 const btn = document.getElementById(`scene-t2i-btn-${i}`);
                 if (!btn || btn.disabled || btn.style.display === 'none') continue;
@@ -10548,16 +11618,25 @@ Project visual language: ${projVL}`;
                 notify('No Prompt', 'Write an image prompt first'); return;
             }
             // Build an enriched prompt with character & location context
-            const savedChars = charData.filter(c => c.savedImage).map(c => {
-                let clean = c.savedImage;
-                if (clean.includes('/')) clean = clean.split('/').pop();
-                if (clean.endsWith('.png')) clean = clean.slice(0, -4);
-                return {
-                    name: c.name || 'Unknown',
-                    description: c.description || '',
-                    savedImage: clean
-                };
-            });
+            const refType2 = (document.getElementById('sb-ref-type') || {}).value || 'both';
+            let savedChars = [];
+            if (refType2 === 'portrait' || refType2 === 'both') {
+                savedChars = charData.filter(c => c.savedImage).map(c => {
+                    let clean = c.savedImage;
+                    if (clean.includes('/')) clean = clean.split('/').pop();
+                    if (clean.endsWith('.png')) clean = clean.slice(0, -4);
+                    return { name: c.name || 'Unknown', description: c.description || '', savedImage: clean };
+                });
+            }
+            if (refType2 === 'sheet' || refType2 === 'both') {
+                if (_assetStudioData && _assetStudioData.character_sheets) {
+                    Object.entries(_assetStudioData.character_sheets).forEach(([id, sheet]) => {
+                        if (sheet.approved && sheet.sheet_image) {
+                            savedChars.push({ name: (sheet.name || id) + ' (sheet)', description: sheet.description || '', savedImage: sheet.sheet_image });
+                        }
+                    });
+                }
+            }
             const savedLocs = locationData.filter(l => l.savedImage).map(l => {
                 let clean = l.savedImage;
                 if (clean.includes('/')) clean = clean.split('/').pop();
@@ -10622,7 +11701,7 @@ Project visual language: ${projVL}`;
         function renderRefThumbnail(image, label, type, onClick) {
             if (image) {
                 return `<div class="ref-thumb ${type}" onclick="event.stopPropagation();${onClick}" title="${escapeHtml(label)}">
-                    <img src="${image}" alt="${escapeHtml(label)}" loading="lazy" onerror="this.style.display='none'">
+                    <img src="${image}" alt="${escapeHtml(label)}" onerror="this.style.display='none'">
                     <div class="ref-thumb-label">${escapeHtml(label)}</div>
                 </div>`;
             }
@@ -10672,6 +11751,8 @@ Project visual language: ${projVL}`;
         function renderStoryboard() {
             const container = document.getElementById('storyboard-container');
             if (!container) return;
+            initPrevFrameRefToggle();
+            initRefTypeSelector();
 
             if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.length) {
                 container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
@@ -10801,7 +11882,7 @@ Project visual language: ${projVL}`;
                         if (hasVideo) {
                             previewContent = `<video id="shot-preview-video-${sceneIdx}-${shotIdx}" src="${videoUrl}" poster="${thumbUrl || ''}" preload="metadata" loop muted style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="event.stopPropagation(); expandStoryboardShot(${sceneIdx}, ${shotIdx})"></video>`;
                         } else if (hasImage) {
-                            previewContent = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${thumbUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage('${imageUrl}')" data-filename="${tempImg || ''}" loading="lazy">`;
+                            previewContent = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${thumbUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage('${imageUrl}')" data-filename="${tempImg || ''}" onerror="this.style.display='none';var e=document.createElement('span');e.style.cssText='color:#f87171;font-size:0.6rem';e.textContent='Image missing - click REDO';this.parentElement.appendChild(e);this.remove();">`;
                         } else {
                             previewContent = `<span style="color:var(--text-secondary);font-size:0.7rem;">No Image Generated</span>`;
                         }
@@ -10821,7 +11902,8 @@ Project visual language: ${projVL}`;
                                 ${previewContent}
                                 ${hasVideo ? `<span style="position:absolute;top:4px;left:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:var(--accent-primary);z-index:2;">🎬 VIDEO</span>` : (hasImage ? `<span style="position:absolute;top:4px;left:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:#34495e;z-index:2;">🖼️ IMAGE</span>` : '')}
                                 <span id="shot-res-badge-${sceneIdx}-${shotIdx}" style="position:absolute;top:4px;right:4px;font-size:0.55rem;padding:1px 5px;border-radius:3px;font-weight:700;color:#fff;background:${hasImage ? ((sh._temp_upscaled_file||savedImg||tempImg||'').includes('_4k_') ? '#e74c3c' : '#222') : 'transparent'};z-index:2;">${hasImage ? getResolutionLabel(sh._temp_upscaled_file||savedImg||tempImg) : ''}</span>
-                                ${sh.consistency_eval ? `<div class="consistency-badge" style="position:absolute;top:5px;right:5px;padding:4px 8px;border-radius:4px;font-size:0.7rem;font-weight:bold;z-index:10;background:${sh.consistency_eval.passed ? 'rgba(0,180,0,0.8)' : 'rgba(220,0,0,0.8)'};color:white;cursor:help;" title="${escapeHtml(sh.consistency_eval.feedback)}">${sh.consistency_eval.score}/10 ${sh.consistency_eval.passed ? '✅' : '❌'}</div>` : ''}
+                    ${sh._gen_provider ? (() => { const pi = getProviderInfo(sh._gen_provider); return '<span style="position:absolute;top:4px;left:4px;font-size:0.5rem;padding:1px 4px;border-radius:3px;font-weight:600;color:#fff;background:' + (pi.type==='local'?'rgba(34,197,94,0.8)':pi.type==='free-cloud'?'rgba(59,130,246,0.8)':'rgba(168,85,247,0.8)') + ';z-index:2;" title="Provider: ' + pi.label + (sh._gen_model?' ('+sh._gen_model+')':'') + (sh._gen_time_ms?' \u00b7 '+Math.round(sh._gen_time_ms/1000)+'s':'') + '">' + pi.icon + ' ' + pi.label + '</span>'; })() : ''}
+                                ${sh.consistency_eval ? `<div class="consistency-badge" style="position:absolute;bottom:5px;right:5px;padding:3px 7px;border-radius:4px;font-size:0.65rem;font-weight:bold;z-index:10;background:${sh.consistency_eval.passed ? 'rgba(0,180,0,0.85)' : 'rgba(220,0,0,0.85)'};color:white;cursor:help;" title="${escapeHtml(sh.consistency_eval.feedback || '')}${sh.consistency_eval.retried ? ` (retried ${Math.max(0, (sh.consistency_eval.attempts || 1) - 1)}×)` : ''}">${sh.consistency_eval.score}/10 ${sh.consistency_eval.passed ? '✅' : '❌'}${sh.consistency_eval.retried ? ' ⟳' : ''}</div>` : ''}
                             </div>
                             <!-- Compact button row -->
                             <div style="display:flex;gap:2px;padding:3px 0;flex-wrap:wrap;">
@@ -10910,26 +11992,150 @@ Project visual language: ${projVL}`;
             scheduleSaveState();
         }
 
+        // --- Per-shot generation timer ---
+        window._shotGenTimers = {}; // { 'sceneIdx-shotIdx': { start: Date, interval: null } }
+
         function showShotSpinner(sceneIdx, shotIdx, label) {
             const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
             if (!preview) return;
             const badge = preview.querySelector('.consistency-badge');
-            preview.innerHTML = `<div class="t2i-spinner"><div class="t2i-spinner-ring"></div><div class="t2i-spinner-text">${label || 'Generating...'}</div></div>`;
+            const key = sceneIdx + '-' + shotIdx;
+            const startMs = Date.now();
+            // Clear any previous timer
+            if (window._shotGenTimers[key] && window._shotGenTimers[key].interval) clearInterval(window._shotGenTimers[key].interval);
+            window._shotGenTimers[key] = { start: startMs, interval: null, phase: label || 'Queued for ComfyUI' };
+            preview.innerHTML = `<div class="t2i-spinner"><div class="t2i-spinner-ring"></div><div class="t2i-spinner-text" id="shot-spinner-text-${sceneIdx}-${shotIdx}">${label || 'Generating...'}</div><div class="t2i-spinner-time" id="shot-spinner-time-${sceneIdx}-${shotIdx}" style="font-size:0.5rem;color:var(--text-secondary);margin-top:2px;">0s</div></div>`;
             if (badge) preview.appendChild(badge);
+            // Tick every second to show elapsed time
+            const timerEl = document.getElementById(`shot-spinner-time-${sceneIdx}-${shotIdx}`);
+            const textEl = document.getElementById(`shot-spinner-text-${sceneIdx}-${shotIdx}`);
+            window._shotGenTimers[key].interval = setInterval(() => {
+                const elapsed = Math.round((Date.now() - startMs) / 1000);
+                if (timerEl) timerEl.textContent = elapsed + 's';
+                // Update phase labels at milestones
+                const t = window._shotGenTimers[key];
+                if (textEl && t) {
+                    if (elapsed >= 45 && t.phase === 'Queued for ComfyUI') {
+                        t.phase = 'Rendering on GPU';
+                        textEl.textContent = '🎨 Rendering on GPU';
+                    }
+                    if (elapsed >= 90 && t.phase === 'Rendering on GPU') {
+                        t.phase = 'Still rendering';
+                        textEl.textContent = '🎨 Still rendering...';
+                    }
+                }
+            }, 1000);
+        }
+
+        function updateShotSpinnerPhase(sceneIdx, shotIdx, phase) {
+            const key = sceneIdx + '-' + shotIdx;
+            const textEl = document.getElementById(`shot-spinner-text-${sceneIdx}-${shotIdx}`);
+            if (textEl) textEl.textContent = phase;
+            if (window._shotGenTimers[key]) window._shotGenTimers[key].phase = phase;
         }
 
         function hideShotSpinner(sceneIdx, shotIdx) {
+            const key = sceneIdx + '-' + shotIdx;
+            if (window._shotGenTimers[key] && window._shotGenTimers[key].interval) {
+                clearInterval(window._shotGenTimers[key].interval);
+                delete window._shotGenTimers[key];
+            }
             const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
             if (!preview) return;
             const spinner = preview.querySelector('.t2i-spinner');
             if (spinner) spinner.remove();
         }
 
+        function showShotError(sceneIdx, shotIdx, errorMsg) {
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
+            if (!preview) return;
+            // Remove any existing error badge first
+            preview.querySelectorAll('.shot-error-badge').forEach(b => b.remove());
+            const badge = document.createElement('div');
+            badge.className = 'shot-error-badge';
+            badge.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:rgba(220,38,38,0.92);color:white;padding:4px 6px;font-size:0.55rem;border-radius:0 0 4px 4px;z-index:10;cursor:pointer;max-height:42px;overflow:hidden;text-overflow:ellipsis;line-height:1.3;';
+            badge.title = errorMsg || 'Generation failed';
+            badge.innerHTML = `❌ ${escapeHtml((errorMsg || 'Generation failed').substring(0, 80))}${errorMsg && errorMsg.length > 80 ? '...' : ''}`;
+            preview.appendChild(badge);
+        }
+
+        function hideShotError(sceneIdx, shotIdx) {
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
+            if (!preview) return;
+            preview.querySelectorAll('.shot-error-badge').forEach(b => b.remove());
+        }
+
+        /* Provider cost tracking */
+        const PROVIDER_COSTS = {
+            'comfyui': {label: 'ComfyUI', costPer1k: 0, icon: '🖥️', type: 'local'},
+            'app_llm': {label: 'Local LLM', costPer1k: 0, icon: '💻', type: 'local'},
+            'omniroute': {label: 'OmniRoute', costPer1k: 0, icon: '🌐', type: 'free-cloud'},
+            'agnes': {label: 'Agnes', costPer1k: 0.0002, icon: '☁️', type: 'cloud'},
+            'openai': {label: 'OpenAI', costPer1k: 0.003, icon: '🤖', type: 'cloud'},
+            'claude': {label: 'Claude', costPer1k: 0.003, icon: '🧠', type: 'cloud'},
+            'gemini': {label: 'Gemini', costPer1k: 0.0001, icon: '💎', type: 'cloud'},
+            'default': {label: 'Unknown', costPer1k: 0, icon: '❓', type: 'unknown'}
+        };
+        function getProviderInfo(pid) { return PROVIDER_COSTS[pid] || PROVIDER_COSTS['default']; }
+        function estimateCost(pid, tokens) { return ((tokens||0)/1000) * getProviderInfo(pid).costPer1k; }
+
+        function updateCostSummary() {
+            const el = document.getElementById('sb-cost-summary');
+            if (!el || !screenplayData || !screenplayData.scenes) { if (el) el.textContent = ''; return; }
+            let totalCost = 0, totalTime = 0, genCount = 0, providerCounts = {};
+            screenplayData.scenes.forEach(s => { if (!s.shots) return; s.shots.forEach(sh => {
+                if (sh._gen_provider) {
+                    genCount++;
+                    providerCounts[sh._gen_provider] = (providerCounts[sh._gen_provider] || 0) + 1;
+                    totalCost += sh._gen_cost || 0;
+                    totalTime += sh._gen_time_ms || 0;
+                }
+            }); });
+            if (genCount === 0) { el.textContent = ''; return; }
+            let html = Object.entries(providerCounts).map(([p,c]) => { const pi = getProviderInfo(p); return pi.icon + ' ' + c + '\u00d7 ' + pi.label; }).join(' \u00b7 ');
+            if (totalCost > 0) html += ' \u00b7 \ud83d\udcb0 $' + totalCost.toFixed(4);
+            html += ' \u00b7 \u23f1 avg ' + Math.round(totalTime / genCount / 1000) + 's';
+            el.innerHTML = html;
+        }
+
+        /* Upscale-specific shot spinner with cancel button */
+        function showShotUpscaleSpinner(sceneIdx, shotIdx) {
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
+            if (!preview) return;
+            const key = sceneIdx + '-' + shotIdx;
+            const startMs = Date.now();
+            if (window._shotGenTimers[key] && window._shotGenTimers[key].interval) clearInterval(window._shotGenTimers[key].interval);
+            window._shotGenTimers[key] = { start: startMs, interval: null, phase: 'Upscaling to 4K' };
+            preview.innerHTML = `<div class="t2i-spinner"><div class="t2i-spinner-ring" style="border-top-color:#f59e0b;"></div><div class="t2i-spinner-text" id="shot-spinner-text-${sceneIdx}-${shotIdx}" style="color:#f59e0b;">🔍 Upscaling to 4K</div><div class="t2i-spinner-time" id="shot-spinner-time-${sceneIdx}-${shotIdx}" style="font-size:0.5rem;color:var(--text-secondary);margin-top:2px;">0s</div></div>`;
+            const timerEl = document.getElementById(`shot-spinner-time-${sceneIdx}-${shotIdx}`);
+            window._shotGenTimers[key].interval = setInterval(() => {
+                const elapsed = Math.round((Date.now() - startMs) / 1000);
+                if (timerEl) timerEl.textContent = elapsed + 's';
+            }, 1000);
+        }
+
+
+
         function getResolutionLabel(filename) {
             if (filename && filename.includes('_4k_')) return '4K';
             const res = document.getElementById('sel-img-resolution')?.value || currentProject?.settings?.imgResolution || '1024x576';
             const labels = { '3840x2160': '4K', '1920x1080': '1080p', '1280x720': '720p' };
             return labels[res] || res;
+        }
+
+        function updateConsistencyBadge(sceneIdx, shotIdx) {
+            const sh = screenplayData?.scenes?.[sceneIdx]?.shots?.[shotIdx];
+            const preview = document.getElementById(`shot-preview-${sceneIdx}-${shotIdx}`);
+            if (!preview) return;
+            preview.querySelectorAll('.consistency-badge').forEach(b => b.remove());
+            if (!sh || !sh.consistency_eval) return;
+            const ev = sh.consistency_eval;
+            const badge = document.createElement('div');
+            badge.className = 'consistency-badge';
+            badge.style.cssText = `position:absolute;bottom:5px;right:5px;padding:3px 7px;border-radius:4px;font-size:0.65rem;font-weight:bold;z-index:10;background:${ev.passed ? 'rgba(0,180,0,0.85)' : 'rgba(220,0,0,0.85)'};color:white;cursor:help;`;
+            badge.textContent = `${ev.score}/10 ${ev.passed ? '✅' : '❌'}${ev.retried ? ' ⟳' : ''}`;
+            badge.title = (ev.feedback || '') + (ev.retried ? ` (retried ${Math.max(0, (ev.attempts || 1) - 1)}×)` : '');
+            preview.appendChild(badge);
         }
 
         function updateShotPreview(sceneIdx, shotIdx) {
@@ -10958,7 +12164,7 @@ Project visual language: ${projVL}`;
                     : savedImg
                         ? `/api/projects/${encodeURIComponent(projName)}/saved-image/scenes/${encodeURIComponent(savedImg)}${projectPathQuery}`
                         : '';
-                preview.innerHTML = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${thumbUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage('${imageUrl}')" data-filename="${tempImg || ''}" loading="lazy">`;
+                preview.innerHTML = `<img id="shot-preview-img-${sceneIdx}-${shotIdx}" src="${thumbUrl}" alt="Shot ${sh.shot_id}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="openFullscreenImage('${imageUrl}')" data-filename="${tempImg || ''}" onerror="this.style.display='none';var e=document.createElement('span');e.style.cssText='color:#f87171;font-size:0.6rem';e.textContent='Image missing - click REDO';this.parentElement.appendChild(e);this.remove();">`;
             } else {
                 preview.innerHTML = '';
             }
@@ -11106,6 +12312,10 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             if (btn) { btn.disabled = false; btn.textContent = '🔄 Regenerate Prompt'; }
         }
 
+        // --- Batch timing tracker ---
+        window._sbBatchStartTime = null; // when batch generation started
+        window._sbShotDurations = [];   // completed shot durations in ms
+
         function updateStoryboardProgressUI() {
             const pb = document.getElementById('storyboard-progress');
             if (!pb) return;
@@ -11123,11 +12333,28 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             
             const titleEl = document.getElementById('sb-progress-title');
             if (titleEl) {
+                let info = '';
                 if (total > 1) {
-                    titleEl.textContent = `Generating shot ${completed + 1} of ${total}...`;
+                    info = `Generating shot ${completed + 1} of ${total}`;
                 } else {
-                    titleEl.textContent = `Generating shot image...`;
+                    info = `Generating shot image`;
                 }
+                // Calculate ETA
+                if (completed > 0 && window._sbBatchStartTime) {
+                    const elapsed = Date.now() - window._sbBatchStartTime;
+                    const avgPerShot = elapsed / completed;
+                    const remaining = total - completed;
+                    const etaSec = Math.round((avgPerShot * remaining) / 1000);
+                    if (etaSec >= 60) {
+                        info += ` · ~${Math.floor(etaSec / 60)}m ${etaSec % 60}s left`;
+                    } else {
+                        info += ` · ~${etaSec}s left`;
+                    }
+                    info += ` · ${completed}/${total} done`;
+                } else if (completed === 0) {
+                    info += ` · Starting...`;
+                }
+                titleEl.textContent = info;
             }
         }
 
@@ -11150,12 +12377,25 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             }
             
             const shotChars = sh.characters_present || s.characters_present || [];
-            const savedChars = charData.filter(c => c.savedImage && shotChars.includes(c.name)).map(c => {
-                let clean = c.savedImage;
-                if (clean.includes('/')) clean = clean.split('/').pop();
-                else clean = clean.replace(/\s+/g, '_') + '.png';
-                return { name: c.name, description: c.description || '', savedImage: clean.replace('.png', '') };
-            });
+            const refType = (document.getElementById('sb-ref-type') || {}).value || 'both';
+            let savedChars = [];
+            if (refType === 'portrait' || refType === 'both') {
+                savedChars = charData.filter(c => c.savedImage && shotChars.includes(c.name)).map(c => {
+                    let clean = c.savedImage;
+                    if (clean.includes('/')) clean = clean.split('/').pop();
+                    else clean = clean.replace(/\s+/g, '_') + '.png';
+                    return { name: c.name, description: c.description || '', savedImage: clean.replace('.png', ''), type: 'portrait' };
+                });
+            }
+            if (refType === 'sheet' || refType === 'both') {
+                if (_assetStudioData && _assetStudioData.character_sheets) {
+                    Object.entries(_assetStudioData.character_sheets).forEach(([id, sheet]) => {
+                        if (sheet.approved && sheet.sheet_image && shotChars.some(cid => sheet.character_id === cid || sheet.name === cid || id === cid)) {
+                            savedChars.push({ name: (sheet.name || id) + ' (sheet)', description: sheet.description || '', savedImage: sheet.sheet_image, type: 'sheet' });
+                        }
+                    });
+                }
+            }
 
             const savedLocs = locationData.filter(l => l.name === s.location_id && l.savedImage).map(l => {
                 let clean = l.savedImage;
@@ -11180,12 +12420,14 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     abortBtn.style.display = 'inline-block';
                 }
             }
-            showShotSpinner(sceneIdx, shotIdx);
+            showShotSpinner(sceneIdx, shotIdx, 'Queued for ComfyUI');
             
             if (!window._sbBatchTotal) {
                 window._sbBatchTotal = 1;
                 window._sbBatchCompleted = 0;
             }
+            if (!window._sbBatchStartTime) window._sbBatchStartTime = Date.now();
+            const _shotGenStartMs = Date.now();
 
             updateStoryboardProgressUI();
 
@@ -11205,9 +12447,10 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 inputImages.unshift(sh.golden_reference);
             }
             
-            // Inject previous shot's image (either approved or temporary) as the first input image for continuity
-            // REMOVED: Injecting the previous shot breaks the composition and ignores the prompt.
-            // The system will now rely entirely on Character/Location sheets + Vision LLM auto-correction.
+            // Optional continuity: use the previous shot's approved frame as the
+            // character reference (Krea 2 char+bg workflow only, via the backend
+            // hint) so the character stays consistent across consecutive shots.
+            const prevFramePath = prevFrameRefEnabled() ? getPrevShotFramePath(sceneIdx, shotIdx) : '';
             const aspectRatio = selectedAspectRatio || currentProject?.settings?.aspectRatio || '16:9';
             const imgResEl = document.getElementById('sel-img-resolution');
             const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
@@ -11216,6 +12459,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const seedOverride = sh._genSeed || seed;
 
             try {
+                updateShotSpinnerPhase(sceneIdx, shotIdx, '🎨 Rendering on GPU...');
                 const res = await fetch('/api/orchestrator/generate-consistent-shot', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     signal: abortSignal,
@@ -11226,12 +12470,30 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         cfg: cfgOverride,
                         project_path: currentProject?.path || '',
                         input_images: inputImages,
+                        character_image: prevFramePath,
                         aspect_ratio: aspectRatio,
-                        resolution: imgResolution
+                        resolution: imgResolution,
+                        scene_context: {
+                            scene_synopsis: s.synopsis || '',
+                            emotional_tone: s.emotional_tone || '',
+                            location: s.location_id || '',
+                            characters_present: s.characters_present || [],
+                            previous_shot_action: shotIdx > 0 ? (s.shots[shotIdx - 1].action || s.shots[shotIdx - 1].camera_language || '') : '',
+                            screenplay_excerpt: (s.screenplay_excerpt || s.description || '').substring(0, 500)
+                        }
                     })
                 });
                 const data = await res.json();
+                if (data.success) {
+                    updateShotSpinnerPhase(sceneIdx, shotIdx, '🔍 Evaluating consistency...');
+                    await new Promise(r => setTimeout(r, 100));
+                }
                 hideShotSpinner(sceneIdx, shotIdx);
+                // Record shot duration for batch ETA calculation
+                if (window._sbBatchStartTime) {
+                    window._sbShotDurations = window._sbShotDurations || [];
+                    window._sbShotDurations.push(Date.now() - _shotGenStartMs);
+                }
                 if (data.success) {
                     const tempFilename = data.filename;
                     // Save to project scenes/ immediately so images persist across restarts
@@ -11263,19 +12525,40 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     if (!sh.storyboard_history.includes(tempFilename)) {
                         sh.storyboard_history.push(tempFilename);
                     }
-                    // Clear the consistency evaluation since it's a brand new image
-                    sh.consistency_eval = null;
+                    // Store the automatic vision-LLM identity check result (if any)
+                    sh.consistency_eval = data.consistency_eval || null;
+                    sh._gen_provider = data.provider_used || data.provider || 'comfyui';
+                    sh._gen_model = data.model_used || data.model || '';
+                    sh._gen_cost = data.estimated_cost || 0;
+                    sh._gen_tokens = data.tokens_used || 0;
+                    sh._gen_time_ms = Date.now() - (window._shotGenStartMs || Date.now());
+                    if (typeof updateCostSummary === 'function') updateCostSummary();
                     
                     updateShotPreview(sceneIdx, shotIdx);
+                    updateConsistencyBadge(sceneIdx, shotIdx);
+                    hideShotError(sceneIdx, shotIdx);
                     scheduleSaveState();
                     const imgEl = document.getElementById(`shot-preview-img-${sceneIdx}-${shotIdx}`);
                     if (imgEl && !imgEl.complete) {
                         await new Promise(resolve => { imgEl.onload = resolve; imgEl.onerror = resolve; });
                     }
                 } else {
-                    notify('I2I Failed', data.error || 'Generation failed');
-                    btn.disabled = false;
-                    btn.textContent = '🎨 Generate Image';
+                    const errMsg = data.error || 'Generation failed';
+                    notify('❌ REDO Failed', errMsg + '\n\nClick 🔄 Redo to try again.', '❌', 5000);
+                    showShotError(sceneIdx, shotIdx, errMsg);
+                    // Restore button: show Redo if image existed before, else Gen
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = '🔄 Redo';
+                        btn.style.display = 'inline-block';
+                    }
+                    // Also update progress bar if in batch
+                    if (window._sbBatchTotal > 1) {
+                        const pb = document.getElementById('storyboard-progress');
+                        if (pb) {
+                            document.getElementById('sb-progress-title').textContent = '❌ Shot failed: ' + errMsg.substring(0, 60);
+                        }
+                    }
                 }
                 
                 if (!window._sbBatchTotal || window._sbBatchCompleted + 1 >= window._sbBatchTotal) {
@@ -11288,28 +12571,47 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     }
                     window._sbBatchTotal = 0;
                     window._sbBatchCompleted = 0;
+                    window._sbBatchStartTime = null;
+                    window._sbShotDurations = [];
                 }
             } catch(e) {
+                const errMsg = e.name === 'AbortError' ? 'Generation cancelled' : (e.message || 'Network error');
+                updateShotSpinnerPhase(sceneIdx, shotIdx, '❌ ' + errMsg);
+                await new Promise(r => setTimeout(r, 800));
                 hideShotSpinner(sceneIdx, shotIdx);
+                if (e.name !== 'AbortError') {
+                    showShotError(sceneIdx, shotIdx, errMsg);
+                    notify('❌ REDO Error', errMsg + '\n\nClick 🔄 Redo to try again.', '❌', 5000);
+                    // Restore button
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = '🔄 Redo';
+                        btn.style.display = 'inline-block';
+                    }
+                }
                 if (!window._sbBatchTotal || window._sbBatchCompleted + 1 >= window._sbBatchTotal) {
                     const pb = document.getElementById('storyboard-progress');
                     if (pb) {
-                        document.getElementById('sb-progress-title').textContent = '❌ Errored';
+                        document.getElementById('sb-progress-title').textContent = '❌ Errored: ' + errMsg;
                         setTimeout(() => { pb.style.display = 'none'; }, 1500);
                     }
                     window._sbBatchTotal = 0;
                     window._sbBatchCompleted = 0;
+                    window._sbBatchStartTime = null;
+                    window._sbShotDurations = [];
                 }
             } finally {
                 const abortBtn = document.getElementById(`shot-abort-btn-${sceneIdx}-${shotIdx}`);
                 if (abortBtn) {
                     abortBtn.style.display = 'none';
                 }
-                btn.style.display = 'inline-block';
+                // The Gen button is only rendered for shots without an image, so
+                // it can be absent on regeneration — guard before touching it.
+                if (btn) btn.style.display = 'inline-block';
             }
         }
 
-        async function storyboardUpscaleImage(sceneIdx, shotIdx) {
+        async function storyboardUpscaleImage(sceneIdx, shotIdx, abortSignal) {
             const s = screenplayData.scenes[sceneIdx];
             const sh = s.shots[shotIdx];
             const activeImage = sh.storyboard_image || sh._temp_storyboard_image;
@@ -11330,7 +12632,11 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const inputPath = sh.storyboard_image
                 ? 'scenes/' + sh.storyboard_image
                 : activeImage;
-            notify('Upscaling', 'Sending to 4K upscaler...', '🔍');
+            if (!inputPath || inputPath.includes('ComfyUI_')) {
+                notify('Upscale Failed', 'Image is a stale temp file. Click REDO to regenerate first.', '⚠️');
+                return false;
+            }
+            showShotUpscaleSpinner(sceneIdx, shotIdx);
             try {
                 const res = await fetch('/api/image/generate', {
                     method: 'POST',
@@ -11340,7 +12646,8 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         prompt: 'upscale', width: 1024, height: 1024,
                         project_path: currentProject?.path || '',
                         input_images: [inputPath]
-                    })
+                    }),
+                    signal: abortSignal
                 });
                 const data = await res.json();
                 if (data.success && (data.image_url || data.filename)) {
@@ -11366,19 +12673,24 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         sh.storyboard_status = 'generated';
                         sh.storyboard_history = sh.storyboard_history || [];
                         if (!sh.storyboard_history.includes(tempFilename)) sh.storyboard_history.push(tempFilename);
+                        hideShotSpinner(sceneIdx, shotIdx);
                         notify('Upscaled', '4K upscale complete', '🔍');
                         renderStoryboard();
                         scheduleSaveState();
                         return true;
                     } else {
+                        hideShotSpinner(sceneIdx, shotIdx);
                         notify('Upscale Failed', saveData.error || 'Save failed', '❌');
                         return false;
                     }
                 } else {
+                    hideShotSpinner(sceneIdx, shotIdx);
                     notify('Upscale Failed', data.error || 'Generation failed', '❌');
                     return false;
                 }
             } catch (e) {
+                hideShotSpinner(sceneIdx, shotIdx);
+                if (e.name === 'AbortError') return false;
                 notify('Upscale Error', e.message, '❌');
                 return false;
             }
@@ -11476,7 +12788,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                             document.getElementById('sb-progress-bar').style.width = pct + '%';
                             document.getElementById('sb-progress-pct').textContent = pct + '%';
                         }
-                        const ok = await storyboardUpscaleImage(sIdx, shIdx);
+                        const ok = await storyboardUpscaleImage(sIdx, shIdx, signal);
                         if (ok) count++;
                         completed++;
                     }
@@ -11492,6 +12804,77 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             }
             setTimeout(() => { if (pb) pb.style.display = 'none'; }, 1500);
             renderStoryboard();
+        }
+
+        async function regenerateAllInconsistent() {
+            if (!screenplayData || !screenplayData.scenes) return;
+            const failedShots = [];
+            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
+                const s = screenplayData.scenes[sIdx];
+                if (!s.shots) continue;
+                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
+                    const sh = s.shots[shIdx];
+                    const ev = sh.consistency_eval;
+                    if (ev && !ev.passed) {
+                        failedShots.push({sIdx, shIdx, score: ev.score || 0});
+                    }
+                }
+            }
+            if (failedShots.length === 0) {
+                notify('Regen', 'No failed shots found — all passing or no evaluations yet.', '✅');
+                return;
+            }
+            failedShots.sort((a, b) => a.score - b.score);
+            const total = failedShots.length;
+            const pb = document.getElementById('storyboard-progress');
+            const abortBtn = document.getElementById('scene-abort-btn');
+            window._sceneAbortController = new AbortController();
+            const signal = window._sceneAbortController.signal;
+            if (abortBtn) abortBtn.style.display = 'inline-block';
+            if (pb) {
+                pb.style.display = 'block';
+                document.getElementById('sb-progress-title').textContent = `Regenerating ${total} failed shot(s)...`;
+                document.getElementById('sb-progress-bar').style.width = '0%';
+                document.getElementById('sb-progress-pct').textContent = '0%';
+            }
+            let regenCount = 0;
+            for (let i = 0; i < failedShots.length; i++) {
+                if (signal.aborted) break;
+                const {sIdx, shIdx} = failedShots[i];
+                const pct = Math.round((i / total) * 100);
+                if (pb) {
+                    document.getElementById('sb-progress-bar').style.width = pct + '%';
+                    document.getElementById('sb-progress-pct').textContent = `${i}/${total}`;
+                    document.getElementById('sb-progress-title').textContent = `Regenerating ${i + 1} of ${total} (score: ${failedShots[i].score}/10)...`;
+                }
+                try {
+                    const sh = screenplayData.scenes[sIdx].shots[shIdx];
+                    sh.consistency_eval = null;
+                    const ok = await generateShotImage(sIdx, shIdx, signal);
+                    if (ok) regenCount++;
+                    // Re-set progress after generateShotImage overwrites it
+                    if (pb && !signal.aborted) {
+                        const done = i + 1;
+                        const newPct = Math.round((done / total) * 100);
+                        document.getElementById('sb-progress-bar').style.width = newPct + '%';
+                        document.getElementById('sb-progress-pct').textContent = done + '/' + total;
+                        document.getElementById('sb-progress-title').textContent = 'Regen ' + done + ' of ' + total + ' (' + regenCount + ' passed)...';
+                    }
+                } catch(e) { if (e.name === 'AbortError') break; console.error(e); }
+            }
+            if (!signal.aborted) {
+                if (pb) {
+                    document.getElementById('sb-progress-bar').style.width = '100%';
+                    document.getElementById('sb-progress-pct').textContent = '100%';
+                    document.getElementById('sb-progress-title').textContent = `✅ Regenerated ${regenCount}/${total} failed shots`;
+                }
+                notify('Regen Complete', `Regenerated ${regenCount}/${total} failed shots`, '🔄');
+            }
+            if (abortBtn) setTimeout(() => { abortBtn.style.display = 'none'; }, 1500);
+            setTimeout(() => { if (pb) pb.style.display = 'none'; }, 2000);
+            renderStoryboard();
+            if (typeof updateCostSummary === 'function') updateCostSummary();
+            scheduleSaveState();
         }
 
         async function extractShotBackground() {
@@ -11516,7 +12899,8 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         project_path: currentProject?.path || '',
                         location_id: s.location_id,
                         pan_angle: panAngle,
-                        scene_id: s.scene_id || s.scene_number
+                        scene_id: s.scene_id || s.scene_number,
+                        previous_file: sh.scene_bg_image || sh._temp_bg_image || ''
                     })
                 });
                 const data = await res.json();
@@ -11887,7 +13271,9 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                             seed: seed,
                             project_path: currentProject?.path || '',
                             input_image: inputImagePath,
-                            scene_index: sceneIdx
+                            scene_index: sceneIdx,
+                            steps: storyboardVideoSteps(),
+                            refine: llmEnhanceEnabled()
                         })
                     });
                     hideShotSpinner(sceneIdx, shotIdx);
@@ -12076,6 +13462,58 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             renderStoryboard();
         }
 
+        function llmEnhanceEnabled() {
+            const el = document.getElementById('sb-llm-enhance');
+            return !!(el && el.checked);
+        }
+
+        function prevFrameRefEnabled() {
+            const el = document.getElementById('sb-prev-frame-ref');
+            return !!(el && el.checked);
+        }
+
+        function initPrevFrameRefToggle() {
+            const el = document.getElementById('sb-prev-frame-ref');
+            if (!el) return;
+            const saved = localStorage.getItem('sb_prev_frame_ref');
+            if (saved !== null) el.checked = saved === '1';
+            el.onchange = () => localStorage.setItem('sb_prev_frame_ref', el.checked ? '1' : '0');
+        }
+
+        function initRefTypeSelector() {
+            const el = document.getElementById('sb-ref-type');
+            if (!el) return;
+            const saved = localStorage.getItem('sb_ref_type');
+            if (saved !== null) el.value = saved;
+            el.onchange = () => localStorage.setItem('sb_ref_type', el.value);
+        }
+
+        // Project-resolvable path to the previous shot's frame: the approved
+        // image lives in scenes/ (basename stored on storyboard_image), falling
+        // back to a saved temp image (already prefixed with its folder).
+        function getPrevShotFramePath(sceneIdx, shotIdx) {
+            if (!screenplayData?.scenes) return '';
+            let prev = null;
+            if (shotIdx > 0) {
+                prev = screenplayData.scenes[sceneIdx]?.shots?.[shotIdx - 1] || null;
+            } else if (sceneIdx > 0) {
+                const prevScene = screenplayData.scenes[sceneIdx - 1];
+                if (prevScene && prevScene.shots && prevScene.shots.length) {
+                    prev = prevScene.shots[prevScene.shots.length - 1];
+                }
+            }
+            if (!prev) return '';
+            if (prev.storyboard_image) return 'scenes/' + prev.storyboard_image.split('/').pop();
+            if (prev._temp_storyboard_image && prev._temp_storyboard_image.includes('/')) return prev._temp_storyboard_image;
+            return '';
+        }
+
+        function storyboardVideoSteps() {
+            const el = document.getElementById('sb-global-video-steps');
+            const v = parseInt(el?.value);
+            return (v && v > 0) ? v : 8;
+        }
+
         async function generateShotVideo(sceneIdx, shotIdx) {
             const s = screenplayData.scenes[sceneIdx];
             const sh = s.shots[shotIdx];
@@ -12094,7 +13532,6 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             btn.textContent = '⏳...';
             showShotSpinner(sceneIdx, shotIdx);
             const seed = sh._genSeed || Math.floor(Math.random() * 999999999) + 1;
-            const stepsOverride = sh._genSteps;
             const inputImagePath = `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`;
 
             try {
@@ -12105,7 +13542,8 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                     input_image: inputImagePath,
                     scene_index: sceneIdx
                 };
-                if (stepsOverride) body.steps = stepsOverride;
+                body.steps = storyboardVideoSteps();
+                body.refine = llmEnhanceEnabled();
                 const res = await fetch('/api/comfyui/generate/i2v', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(body)
@@ -13400,6 +14838,8 @@ Raw JSON only, no markdown.`;
         }
 
         async function generateAllStoryboardImages() {
+            if (!requireProject()) return;
+
             if (!screenplayData || !screenplayData.scenes) {
                 notify('No Screenplay', 'Please generate screenplay first.'); return;
             }
@@ -13421,6 +14861,8 @@ Raw JSON only, no markdown.`;
             
             window._sbBatchTotal = totalPending;
             window._sbBatchCompleted = 0;
+            window._sbBatchStartTime = Date.now();
+            window._sbShotDurations = [];
             
             const pb = document.getElementById('storyboard-progress');
             if (pb) pb.style.display = 'block';
@@ -13465,11 +14907,15 @@ Raw JSON only, no markdown.`;
                 setTimeout(() => { pb.style.display = 'none'; }, 1500);
             }
             window._sceneAbortController = null;
+            window._sbBatchStartTime = null;
+            window._sbShotDurations = [];
             hideAbortButton();
             renderStoryboard();
         }
 
         async function generateAllStoryboardVideos() {
+            if (!requireProject()) return;
+
             if (!screenplayData || !screenplayData.scenes) {
                 notify('No Screenplay', 'Please generate screenplay first.'); return;
             }
@@ -14756,7 +16202,7 @@ Output all prompts in one block, separated by blank lines.`;
                 const res = await fetch('/api/comfyui/generate/t2i', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: resolution })
+                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: resolution, refine: llmEnhanceEnabled() })
                 });
                 const data = await res.json();
                 
@@ -14810,7 +16256,8 @@ Output all prompts in one block, separated by blank lines.`;
                         project_path: currentProject?.path || '',
                         input_image: nleTempImageFile,
                         scene_index: 0,
-                        steps: steps
+                        steps: steps,
+                        refine: llmEnhanceEnabled()
                     })
                 });
                 const data = await res.json();
@@ -15063,6 +16510,7 @@ Output all prompts in one block, separated by blank lines.`;
         }
 
         function switchSidebarPanel(panel) {
+            if (!requireProject()) return;
             document.querySelectorAll('.sidebar-rail-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
             document.getElementById('rail-' + panel).classList.add('active');
@@ -15291,12 +16739,8 @@ Output all prompts in one block, separated by blank lines.`;
                 sidebar.style.transition = 'none';
                 e.preventDefault();
             });
-            // Auto-restore last project on page load
-            const lastProjectName = localStorage.getItem('lastProjectName');
-            const lastProjectPath = localStorage.getItem('lastProjectPath');
-            if (lastProjectName && lastProjectPath) {
-                setTimeout(() => openProjectWorkspace(lastProjectName, lastProjectPath), 100);
-            }
+            // Always start on home page — user picks New Project or Open Project
+            // (Auto-restore removed: landing page is the entry point)
         });
 
         document.addEventListener('mousemove', function(e) {
@@ -15318,7 +16762,14 @@ Output all prompts in one block, separated by blank lines.`;
             sidebar.style.transition = '';
         });
 
-        // === Agent Chatbot Integration ===
+        // === Film Agent Integration ===
+        const FILM_AGENT_SKILLS_ICONS = {
+            'write_screenplay': '🎬', 'design_montage': '🎞️', 'plan_shot_composition': '📷',
+            'design_character': '👤', 'analyze_story_structure': '📐', 'advise_color_grading': '🎨',
+            'design_sound_design': '🔊', 'generate_comfyui_prompt': '🖼️', 'advise_editing_rhythm': '✂️',
+            'advise_cinematography': '🎥', 'get_project_state': '📂', 'web_search_reference': '🔍'
+        };
+
         async function sendAgentChatMessage() {
             const inputEl = document.getElementById('agent-chat-input');
             const msg = inputEl.value.trim();
@@ -15327,34 +16778,33 @@ Output all prompts in one block, separated by blank lines.`;
             inputEl.value = '';
             appendAgentChatMessage('user', msg);
             
-            const mode = document.getElementById('agent-mode-select').value;
             const statusEl = document.getElementById('agent-chat-status');
-            statusEl.textContent = '⏳ Thinking...';
+            statusEl.textContent = '🎬 Film Agent thinking...';
             
             try {
-                const res = await fetch('/api/agent-wizard/chat', {
+                const res = await fetch('/api/film-agent/chat', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ message: msg, mode: mode, chat_id: 'web_session' })
+                    body: JSON.stringify({ message: msg, session_id: 'web_session', project_path: currentProject?.path || null })
                 });
                 const data = await res.json();
                 statusEl.textContent = '';
                 if (data.success) {
+                    // Show tool usage indicators first
+                    if (data.tools_used && data.tools_used.length > 0) {
+                        const toolNames = data.tools_used.map(t => FILM_AGENT_SKILLS_ICONS[t.name] || '🔧' + ' ' + t.name.replace(/_/g, ' ')).join(' → ');
+                        const toolIndicator = document.createElement('div');
+                        toolIndicator.style.cssText = 'font-size:0.65rem;color:var(--accent-secondary);padding:4px 12px;font-style:italic;opacity:0.8;';
+                        toolIndicator.textContent = `Used: ${toolNames}`;
+                        document.getElementById('agent-chat-messages').appendChild(toolIndicator);
+                    }
                     appendAgentChatMessage('agent', data.response);
-                    if (data.progress) {
-                        statusEl.textContent = data.progress;
-                    }
-                    if (data.current_approval) {
-                        appendApprovalWidget(data.current_approval);
-                    }
-                    if (data.state === 'building' || data.state === 'awaiting_approval') {
-                        startAgentPolling();
-                    } else if (data.state === 'complete') {
-                        notify('🎉 Complete', 'Project has been created successfully!');
-                        syncRecentProjectsWithBackend();
+                    if (data.message_count > 0) {
+                        statusEl.textContent = `💬 ${data.message_count} messages`;
+                        setTimeout(() => { statusEl.textContent = ''; }, 3000);
                     }
                 } else {
-                    appendAgentChatMessage('agent', 'Error: ' + data.message);
+                    appendAgentChatMessage('agent', 'Error: ' + (data.message || 'Unknown error'));
                 }
             } catch (e) {
                 statusEl.textContent = '';
@@ -15375,12 +16825,25 @@ Output all prompts in one block, separated by blank lines.`;
                 msgEl.style.background = 'rgba(255,51,51,0.1)';
                 msgEl.style.borderRight = '2px solid var(--accent-primary)';
                 msgEl.style.alignSelf = 'flex-end';
+                msgEl.style.lineHeight = '1.5';
                 msgEl.textContent = text;
             } else {
                 msgEl.style.background = 'var(--bg-tertiary)';
                 msgEl.style.borderLeft = '2px solid var(--accent-primary)';
                 msgEl.style.alignSelf = 'flex-start';
-                msgEl.innerHTML = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+                msgEl.style.lineHeight = '1.6';
+                // Enhanced markdown: bold, code blocks, headers, bullet points
+                let html = text
+                    .replace(/```([\s\S]*?)```/g, '<pre style="background:rgba(0,0,0,0.3);padding:6px 8px;border-radius:3px;font-size:0.78rem;overflow-x:auto;margin:6px 0;font-family:monospace;">$1</pre>')
+                    .replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.3);padding:1px 4px;border-radius:2px;font-size:0.8rem;">$1</code>')
+                    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                    .replace(/\*(.*?)\*/g, '<i>$1</i>')
+                    .replace(/^### (.+)$/gm, '<div style="font-size:0.8rem;font-weight:700;color:var(--accent-primary);margin:8px 0 4px;">$1</div>')
+                    .replace(/^## (.+)$/gm, '<div style="font-size:0.85rem;font-weight:700;color:#fff;margin:10px 0 4px;">$1</div>')
+                    .replace(/^# (.+)$/gm, '<div style="font-size:0.9rem;font-weight:800;color:var(--accent-primary);margin:12px 0 4px;">🎬 $1</div>')
+                    .replace(/^- (.+)$/gm, '<div style="padding-left:12px;">• $1</div>')
+                    .replace(/\n/g, '<br>');
+                msgEl.innerHTML = html;
             }
             box.appendChild(msgEl);
             box.scrollTop = box.scrollHeight;
@@ -15514,7 +16977,7 @@ Output all prompts in one block, separated by blank lines.`;
                 });
             }
             // Auto-start local engines if enabled
-            if (s.llm && s.llm.auto_start && s.llm.provider && ['ollama','lm_studio','llama_cpp','app_llm'].includes(s.llm.provider)) {
+            if (s.llm && s.llm.auto_start && s.llm.provider && ['ollama','lm_studio','llama_cpp','app_llm','omniroute'].includes(s.llm.provider)) {
                 const body = {provider: s.llm.provider};
                 if (s.llm.provider === 'llama_cpp' && s.llm.model) {
                     const mp = s.llm.models_path || '';
@@ -15692,5 +17155,6 @@ Output all prompts in one block, separated by blank lines.`;
             }
         }
     </script>
+
 </body>
 </html>
