@@ -62,7 +62,7 @@
   },
   "57:28": {
     "inputs": {
-      "unet_name": "W4A8\\Z-Image-Turbo-w4a8.safetensors",
+      "unet_name": "IMAGE\\Z IMAGE\\z_image_turbo_bf16.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",

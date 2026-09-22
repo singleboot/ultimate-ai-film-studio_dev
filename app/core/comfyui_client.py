@@ -132,7 +132,11 @@ class ComfyUIClient:
         return []
 
     def queue_prompt(self, workflow: Dict) -> Optional[str]:
-        """Queue a prompt for generation."""
+        """Queue a prompt for generation.
+
+        On failure, records a human-readable reason in self.last_queue_error
+        (ComfyUI returns HTTP 400 with node_errors for invalid workflows)."""
+        self.last_queue_error = None
         try:
             prompt_payload = {
                 "prompt": workflow,
@@ -142,7 +146,33 @@ class ComfyUIClient:
             if response.status_code == 200:
                 data = response.json()
                 return data.get("prompt_id")
+            # Non-200: extract ComfyUI's validation error so users see the real cause
+            try:
+                err = response.json()
+                top = err.get("error") or {}
+                msg = top.get("message") or f"HTTP {response.status_code}"
+                node_errors = err.get("node_errors") or {}
+                if isinstance(node_errors, dict):
+                    node_errors = list(node_errors.items())
+                details = []
+                for ne in node_errors[:3]:
+                    if isinstance(ne, tuple):
+                        nid, ne_body = ne
+                    else:
+                        nid, ne_body = ne.get("node_id", "?"), ne
+                    errs = (ne_body or {}).get("errors") or []
+                    for e0 in errs[:2]:
+                        etype = e0.get("type", "")
+                        edet = e0.get("details", "")
+                        details.append(f"node {nid} [{etype}]: {edet}")
+                if details:
+                    msg += " | " + "; ".join(details)
+                self.last_queue_error = msg
+            except Exception:
+                self.last_queue_error = f"HTTP {response.status_code}"
+            print(f"Error queueing prompt: {self.last_queue_error}")
         except Exception as e:
+            self.last_queue_error = str(e)
             print(f"Error queueing prompt: {e}")
         return None
 
@@ -697,7 +727,8 @@ class ComfyUIClient:
                         debug_log.append(f"[final] {nid} ({ct}): text='{str(inp['text'])[:60]}'")
             prompt_id = self.queue_prompt(workflow)
             if not prompt_id:
-                return {"success": False, "error": "Failed to queue workflow on ComfyUI"}
+                qerr = getattr(self, 'last_queue_error', None)
+                return {"success": False, "error": "Failed to queue workflow on ComfyUI" + (f": {qerr}" if qerr else "")}
 
             logger.info("ComfyUI queued [%s] id=%s", workflow_name, prompt_id)
 

@@ -64,7 +64,7 @@
   },
   "194": {
     "inputs": {
-      "unet_name": "W4A8\\Krea-2-Turbo-w4a8.safetensors",
+      "unet_name": "Krea-2-Turbo-w4a8.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",

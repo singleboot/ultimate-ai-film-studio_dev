@@ -186,7 +186,7 @@
   },
   "92:70": {
     "inputs": {
-      "unet_name": "IMAGE\\FLUX 2\\flux-2-klein-9b-fp8.safetensors",
+      "unet_name": "W4A8\\Flux2-Klein-9B-w4a8.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",

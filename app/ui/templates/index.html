@@ -10453,7 +10453,8 @@ Project visual language: ${projVL}`;
                     notify('Done', `All ${label} images generated`, '✅');
                 } else if (successCount === 0) {
                     setAssetProgress(0, `All ${label} images failed`);
-                    notify('Failed', `All ${label} images failed`, '❌');
+                    const lastErr = window._assetGenLastError ? ` — last error: ${window._assetGenLastError}` : '';
+                    notify('Failed', `All ${label} images failed${lastErr}`, '❌');
                 } else {
                     setAssetProgress(100, `${successCount}/${done} ${label} images generated, ${failCount} failed`);
                     notify('Partial', `${successCount} images OK, ${failCount} failed`, '⚠️');
@@ -10592,6 +10593,7 @@ Project visual language: ${projVL}`;
             }
             pollProgress();
             try {
+                window._assetGenLastError = null;
                 const seedOverride = document.getElementById('gen-seed')?.value;
                 const seed = seedOverride ? parseInt(seedOverride) : Math.floor(Math.random() * 999999999) + 1;
                 const cfgVal = parseFloat(document.getElementById('gen-cfg')?.value) || 1.0;
@@ -10686,9 +10688,11 @@ Project visual language: ${projVL}`;
                         }
                         notify('Generated', 'Image ready for approval', '✅');
                     } else {
+                        window._assetGenLastError = saveData.error || 'Failed to save generated image to project';
                         notify('Save Failed', saveData.error || 'Failed to save generated image to project', '❌');
                     }
                 } else {
+                    window._assetGenLastError = data.error || 'Generation failed';
                     notify('Failed', data.error || 'Generation failed', '❌');
                 }
             } catch (e) {

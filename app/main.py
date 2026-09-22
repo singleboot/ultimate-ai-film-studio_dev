@@ -4163,7 +4163,7 @@ async def list_workflows():
         return {"workflows": []}
     files = []
     for f in Workflows_DIR.iterdir():
-        if f.suffix == ".json":
+        if f.suffix == ".json" and f.is_file() and not f.name.startswith("backup"):
             files.append({"name": f.stem, "filename": f.name, "size": f.stat().st_size})
     return {"workflows": files}
 
