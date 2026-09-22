@@ -2964,13 +2964,40 @@ async def clear_project_stage(name: str, request: Request):
             target_dir = project_manager.get_project_path(name) / stage
             
         if target_dir.exists() and target_dir.is_dir():
-            import shutil
-            # Delete everything inside target_dir but keep target_dir itself
+            import shutil, time as _time
+            import gc as _gc
+            # Delete everything inside target_dir but keep target_dir itself.
+            # Windows-friendly: per-file deletion with retry (a viewer/browser
+            # holding a handle briefly must not abort the whole clear), and
+            # collect failed paths instead of failing the entire request.
+            failed = []
+            def _rmtree_retry(path: Path, tries: int = 3):
+                for i in range(tries):
+                    try:
+                        shutil.rmtree(path)
+                        return True
+                    except OSError:
+                        _gc.collect()
+                        _time.sleep(0.4)
+                return False
             for item in target_dir.iterdir():
                 if item.is_dir():
-                    shutil.rmtree(item)
+                    if not _rmtree_retry(item):
+                        failed.append(str(item))
                 else:
-                    item.unlink()
+                    deleted = False
+                    for i in range(3):
+                        try:
+                            item.unlink()
+                            deleted = True
+                            break
+                        except OSError:
+                            _gc.collect()
+                            _time.sleep(0.4)
+                    if not deleted:
+                        failed.append(str(item))
+            if failed:
+                return {"success": False, "error": "Could not delete " + str(len(failed)) + " file(s) (locked by another program? Close image viewers and retry). First: " + failed[0]}
 
         # Update orchestrator project graph memory to match
         if orchestrator:

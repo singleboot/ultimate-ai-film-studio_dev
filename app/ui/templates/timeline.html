@@ -86,6 +86,9 @@
             display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;
         }
+        /* Confirm prompts must sit above the notification dialog (2000) so a
+           pending Clear/Approve question is never buried behind an error popup. */
+        #custom-confirm-modal { z-index: 3000; }
         .modal-overlay.active { display: flex; }
         .modal {
             background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 14px;
