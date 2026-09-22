@@ -12467,7 +12467,9 @@ Project visual language: ${projVL}`;
             const root = document.getElementById('sb-timeline-root');
             if (root) {
                 root.querySelectorAll('[data-tl-shot]').forEach(el => {
-                    el.style.boxShadow = el.dataset.tlShot === key ? '0 0 0 2px #ff5252 inset' : '';
+                    if (el.dataset.tlShot === key) el.style.boxShadow = '0 0 0 2px #ff5252 inset';
+                    else if (sbTlCenterSel && el.dataset.tlShot === sbTlCenterSel) el.style.boxShadow = '0 0 0 3px #b39ddb inset';
+                    else el.style.boxShadow = '';
                 });
             }
         }
@@ -12512,6 +12514,122 @@ Project visual language: ${projVL}`;
         function sbTlTogglePlay(ev) {
             if (ev) ev.stopPropagation();
             if (sbTlPlaying) sbTlStopRange(); else sbTlPlayRange();
+        }
+
+
+        // ================= Center player: plays the selected shot =================
+        let sbTlCenterSel = null;
+        let sbTlCenterKeyHandler = null;
+
+        function sbTlCenterEnsureOverlay() {
+            let ov = document.getElementById('sb-tl-center-overlay');
+            if (ov) return ov;
+            ov = document.createElement('div');
+            ov.id = 'sb-tl-center-overlay';
+            ov.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.88);display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;';
+            ov.addEventListener('click', (e) => { if (e.target === ov) sbTlCenterClose(); });
+            ov.innerHTML = `
+                <div id="sb-tl-center-stage" style="position:relative;max-width:min(1100px,92vw);width:92vw;max-height:78vh;min-height:200px;display:flex;align-items:center;justify-content:center;background:#000;border:1px solid var(--border-color);border-radius:12px;box-shadow:0 10px 60px rgba(0,0,0,0.8);overflow:hidden;"></div>
+                <div style="color:#ddd;font-size:0.8rem;display:flex;gap:12px;align-items:center;max-width:92vw;">
+                    <span id="sb-tl-center-title" style="font-weight:700;color:var(--accent-primary);"></span>
+                    <span id="sb-tl-center-meta" style="color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+                </div>
+                <button class="btn btn-secondary" onclick="sbTlCenterClose()" title="Close (Esc)" style="position:fixed;top:14px;right:18px;padding:4px 12px;">✕</button>`;
+            document.body.appendChild(ov);
+            return ov;
+        }
+
+        function sbTlCenterOpen(sceneIdx, shotIdx) {
+            const sh = screenplayData?.scenes?.[sceneIdx]?.shots?.[shotIdx];
+            if (!sh) return;
+            if (sbTlPlaying) sbTlStopRange();
+            sbTlCenterSel = sceneIdx + '_' + shotIdx;
+            const ov = sbTlCenterEnsureOverlay();
+            sbTlCenterLoad(sh, sceneIdx);
+            ov.style.display = 'flex';
+            if (!sbTlCenterKeyHandler) {
+                sbTlCenterKeyHandler = (e) => { if (e.key === 'Escape') sbTlCenterClose(); };
+                document.addEventListener('keydown', sbTlCenterKeyHandler);
+            }
+            const root = document.getElementById('sb-timeline-root');
+            if (root) root.querySelectorAll('[data-tl-shot]').forEach(el => {
+                if (el.dataset.tlShot === sbTlCenterSel) el.style.boxShadow = '0 0 0 3px #b39ddb inset';
+            });
+        }
+
+        function sbTlCenterLoad(sh, sceneIdx) {
+            const stage = document.getElementById('sb-tl-center-stage');
+            if (!stage) return;
+            stage.querySelectorAll('video,img').forEach(m => { try { if (m.pause) m.pause(); } catch (e) {} m.remove(); });
+            const scene = screenplayData.scenes[sceneIdx];
+            const title = document.getElementById('sb-tl-center-title');
+            const meta = document.getElementById('sb-tl-center-meta');
+            if (title) title.textContent = sh.shot_id || 'SHOT';
+            if (meta) meta.textContent = (scene ? (scene.scene_id || '') + ' · ' : '') + sbTlFmtTime(sbTlShotDuration(sh, sbTlCenterSel)) + ' · ' + ((sh.action || '').slice(0, 90) || 'no action text');
+            const url = sbTlShotVideoUrl(sh);
+            if (url) {
+                const v = document.createElement('video');
+                v.controls = true;
+                v.autoplay = true;
+                v.muted = true;
+                v.playsInline = true;
+                v.style.cssText = 'max-width:100%;max-height:78vh;width:auto;height:auto;';
+                v.onerror = () => {
+                    v.remove();
+                    const img = sbTlShotImageUrl(sh);
+                    if (img) sbTlCenterLoadImage(img);
+                    else sbTlCenterShowEmpty('video unavailable for this shot');
+                };
+                v.src = url;
+                stage.appendChild(v);
+            } else {
+                const img = sbTlShotImageUrl(sh);
+                if (img) sbTlCenterLoadImage(img);
+                else sbTlCenterShowEmpty('no media yet — generate this shot');
+            }
+        }
+
+        function sbTlCenterLoadImage(src) {
+            const stage = document.getElementById('sb-tl-center-stage');
+            if (!stage) return;
+            const im = document.createElement('img');
+            im.style.cssText = 'max-width:100%;max-height:78vh;object-fit:contain;';
+            im.onerror = () => { im.remove(); sbTlCenterShowEmpty('image unavailable'); };
+            im.src = src;
+            stage.appendChild(im);
+        }
+
+        function sbTlCenterShowEmpty(text) {
+            const stage = document.getElementById('sb-tl-center-stage');
+            if (!stage) return;
+            const d = document.createElement('div');
+            d.style.cssText = 'color:var(--text-secondary);font-size:0.85rem;padding:60px 20px;';
+            d.textContent = text;
+            stage.appendChild(d);
+        }
+
+        function sbTlCenterClose() {
+            const sel = sbTlCenterSel;
+            sbTlCenterSel = null;
+            const ov = document.getElementById('sb-tl-center-overlay');
+            if (ov) ov.style.display = 'none';
+            const stage = document.getElementById('sb-tl-center-stage');
+            if (stage) stage.querySelectorAll('video,img,div').forEach(m => { try { if (m.pause) m.pause(); } catch (e) {} m.remove(); });
+            const root = document.getElementById('sb-timeline-root');
+            if (root && sel) root.querySelectorAll('[data-tl-shot]').forEach(el => {
+                if (el.dataset.tlShot === sel) el.style.boxShadow = '';
+            });
+            if (sbTlCenterKeyHandler) { document.removeEventListener('keydown', sbTlCenterKeyHandler); sbTlCenterKeyHandler = null; }
+        }
+
+        let sbTlCenterPendingOpen = null;
+        function sbTlCenterCardClick(sceneIdx, shotIdx, ev) {
+            if (ev) {
+                ev.stopPropagation();
+                if (ev.button !== undefined && ev.button !== 0) return;
+            }
+            if (sbTlCenterPendingOpen) clearTimeout(sbTlCenterPendingOpen);
+            sbTlCenterPendingOpen = setTimeout(() => { sbTlCenterPendingOpen = null; sbTlCenterOpen(sceneIdx, shotIdx); }, 250);
         }
 
         function renderStoryboardTimeline(container) {
@@ -12579,7 +12697,8 @@ Project visual language: ${projVL}`;
                     <div id="shot-card-${shotKey}" data-tl-shot="${shotKey}" tabindex="0" draggable="true"
                         title="${escapeHtml(sh.shot_id || '')} · ${sbTlFmtTime(dur)}${hasVideo ? ' (video)' : ''} · drag to reorder"
                         ondragstart="storyboardShotDragStart(event, '${shotKey}')" ondragover="storyboardShotDragOver(event, this)" ondragleave="storyboardShotDragLeave(event, this)" ondrop="storyboardShotDrop(event, this, '${shotKey}')" ondragend="storyboardShotDragEnd()"
-                        ondblclick="expandStoryboardShot(${sceneIdx}, ${shotIdx})"
+                        onclick="sbTlCenterCardClick(${sceneIdx}, ${shotIdx}, event)"
+                        ondblclick="if (sbTlCenterPendingOpen) { clearTimeout(sbTlCenterPendingOpen); sbTlCenterPendingOpen = null; } expandStoryboardShot(${sceneIdx}, ${shotIdx})"
                         style="position:relative;flex:0 0 ${Math.max(dur * pps, 34).toFixed(0)}px;height:100%;border-right:1px solid var(--bg-secondary);outline:2px solid ${borderColor};outline-offset:-2px;overflow:hidden;cursor:pointer;user-select:none;">
                         ${media}
                         ${hasVideo ? `<span style="position:absolute;top:2px;left:2px;font-size:0.5rem;padding:0 3px;border-radius:2px;background:var(--accent-primary);color:#fff;font-weight:700;">🎬</span>` : ''}
@@ -12621,7 +12740,7 @@ Project visual language: ${projVL}`;
 
             container.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:var(--bg-secondary);padding:6px 12px;border-radius:8px;border:1px solid var(--border-color);flex-wrap:wrap;">
-                <span style="font-size:0.75rem;color:var(--text-secondary);">🎞 <strong style="color:var(--accent-primary);">Timeline</strong> — width = duration · drag ruler to scrub · drag empty space to pan · double-click shot to inspect · Alt+←/→ to reorder · scrub the ruler to preview shots</span>
+                <span style="font-size:0.75rem;color:var(--text-secondary);">🎞 <strong style="color:var(--accent-primary);">Timeline</strong> — width = duration · drag ruler to scrub · drag empty space to pan · double-click shot to inspect · Alt+←/→ to reorder · scrub the ruler to preview shots · click a shot to play it large</span>
                 <span id="sb-tl-time" style="font-size:0.7rem;color:var(--accent-primary);font-weight:700;margin-left:auto;font-variant-numeric:tabular-nums;"><span id="sb-tl-time-main">${sbTlFmtTime(sbTlPlayheadSec)} / ${sbTlFmtTime(totalSec)}</span></span><span id="sb-tl-range-label" style="color:#4caf50;">${rangeLabel}</span></span>
                 <span style="display:inline-flex;align-items:center;gap:5px;">
                     <button class="btn btn-secondary" onclick="storyboardTimelineScrollScene(-1)" style="padding:2px 8px;font-size:0.65rem;" title="Previous scene">⏮</button>
