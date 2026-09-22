@@ -14369,8 +14369,44 @@ Respond with raw JSON only, no markdown, no backticks.`;
             if (placeholder) placeholder.style.display = 'none';
             if (actions) actions.style.display = 'block';
             img.dataset.filename = filename;
+            img.dataset.upscaled = '';
             const btn = document.getElementById(`t2i-btn-${type}-${index}`);
             if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate Image'; }
+        }
+
+        // Upscale a temp T2I preview image to 4K, then load it into the preview for approval.
+        async function upscaleT2IImage(type, index) {
+            const isScene = type === 'scene';
+            const imgId = isScene ? `scene-t2i-img-${index}` : `t2i-img-${type}-${index}`;
+            const img = document.getElementById(imgId);
+            if (!img || !img.dataset.filename) return false;
+            const tempFilename = img.dataset.filename;
+            notify('Upscaling', 'Sending to 4K upscaler...', '🔍');
+            try {
+                // Backend downloads the temp image from ComfyUI and runs the
+                // configured upscale workflow on it (returns a new temp filename).
+                const res = await fetch('/api/image/upscale-temp', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ filename: tempFilename, subfolder: img.dataset.subfolder || '' })
+                });
+                const data = await res.json();
+                if (!data.success || !(data.image_url || data.filename)) {
+                    notify('Upscale Failed', data.error || 'Generation failed', '❌');
+                    return false;
+                }
+                // Load the upscaled temp result into the preview for approval
+                const upscaledTemp = data.filename || data.image_url;
+                img.src = `/api/comfyui/view?filename=${upscaledTemp}${data.subfolder ? '&subfolder=' + data.subfolder : ''}`;
+                img.dataset.filename = upscaledTemp;
+                img.dataset.upscaled = '1';
+                img.style.display = 'block';
+                notify('Upscaled', 'Review the 4K result, then approve', '🔍');
+                return true;
+            } catch (e) {
+                notify('Upscale Error', e.message, '❌');
+                return false;
+            }
         }
 
         function openFullscreenImage(src) {
@@ -14494,6 +14530,20 @@ Respond with raw JSON only, no markdown, no backticks.`;
         async function approveT2I(type, index) {
             const img = document.getElementById(`t2i-img-${type}-${index}`);
             if (!img || !img.dataset.filename) return;
+            // Upscale warning — same prompt as the asset/storyboard approve flows
+            if (currentProject?.settings?.upscaleWarning !== false && !img.dataset.upscaled) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await upscaleT2IImage(type, index);
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        return;
+                    }
+                }
+            }
             const cardName = type === 'char' ? (charData[index]?.name || 'character_' + index) : (locationData[index]?.name || 'location_' + index);
             const stage = type === 'char' ? 'characters' : 'locations';
             const prevSaved = type === 'char' ? charData[index]?.savedImage : locationData[index]?.savedImage;
@@ -14816,6 +14866,7 @@ Raw JSON only, no markdown.`;
             if (placeholder) placeholder.style.display = 'none';
             if (actions) actions.style.display = 'block';
             img.dataset.filename = filename;
+            img.dataset.upscaled = '';
             const btn = document.getElementById(`scene-t2i-btn-${index}`);
             if (btn) { btn.disabled = false; btn.textContent = '🎨 Generate'; }
         }
@@ -14823,6 +14874,20 @@ Raw JSON only, no markdown.`;
         async function approveSceneT2I(index) {
             const img = document.getElementById(`scene-t2i-img-${index}`);
             if (!img || !img.dataset.filename) return;
+            // Upscale warning — same prompt as the storyboard approve flows
+            if (currentProject?.settings?.upscaleWarning !== false && !img.dataset.upscaled) {
+                const doUpscale = await showConfirm(
+                    'Upscale to 4K?',
+                    'This image has not been upscaled to 4K. Would you like to upscale and then approve automatically?'
+                );
+                if (doUpscale) {
+                    const ok = await upscaleT2IImage('scene', index);
+                    if (!ok) {
+                        notify('Upscale Failed', 'Upscale failed. Approve was cancelled.', '❌');
+                        return;
+                    }
+                }
+            }
             const cardName = 'scene_' + (index + 1);
             const prevSaved = sceneImageData[index]?.savedImage;
             const res = await fetch('/api/projects/save-image', {

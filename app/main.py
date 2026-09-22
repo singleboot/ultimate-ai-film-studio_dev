@@ -1514,6 +1514,58 @@ def generate_image_endpoint(data: dict):
         cfg=data.get("cfg")
     )
 
+@app.post("/api/image/upscale-temp")
+def upscale_temp_image(data: dict = Body(...)):
+    """4K-upscale a temp ComfyUI output image (e.g. an unapproved T2I preview).
+
+    Downloads the temp image from ComfyUI's /view, writes it to a temp file,
+    and runs the configured upscale workflow through the image engine (which
+    uploads it into LoadImage automatically). Returns the new temp filename so
+    the caller can preview/approve it like any other generation.
+
+    Sync on purpose: blocking network I/O against ComfyUI.
+    """
+    if not image_engine:
+        return {"success": False, "error": "Image engine not available"}
+    filename = data.get("filename", "")
+    subfolder = data.get("subfolder", "")
+    if not filename:
+        return {"success": False, "error": "No filename provided"}
+    settings = load_settings()
+    wf = (settings.get("workflows") or {}).get("upscale")
+    if not wf:
+        return {"success": False, "error": "No upscale workflow selected in Settings > Workflows"}
+    img_settings = settings.get("image_gen") or {}
+    import requests as _rq
+    import tempfile
+    url = f"{comfyui_client.host}/view?filename={filename}"
+    if subfolder:
+        url += f"&subfolder={subfolder}"
+    try:
+        resp = _rq.get(url, timeout=30)
+        resp.raise_for_status()
+    except Exception as e:
+        return {"success": False, "error": f"Failed to fetch temp image from ComfyUI: {e}"}
+    tmp = tempfile.NamedTemporaryFile(suffix=Path(filename).suffix or ".png", delete=False)
+    try:
+        tmp.write(resp.content)
+        tmp.close()
+        return image_engine.generate_image(
+            provider_id=img_settings.get("provider", "comfyui"),
+            model=img_settings.get("model", ""),
+            prompt="upscale",
+            host=img_settings.get("host", ""),
+            api_key=img_settings.get("apiKey", ""),
+            width=1024, height=1024,
+            workflow_name=wf,
+            input_images=[tmp.name],
+        )
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
 @app.get("/api/image/progress")
 async def get_image_progress():
     """Get current image generation progress."""
