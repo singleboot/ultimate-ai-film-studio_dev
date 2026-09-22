@@ -1921,6 +1921,8 @@ async def generate_consistent_shot(request: Request):
         def _poll():
             while not _stop_poll:
                 try:
+                    if _stop_poll:
+                        break
                     prog = comfyui_client.get_progress()
                     if prog.get("running") and prog.get("max", 0) > 0:
                         pct = round(prog["current"] / prog["max"] * 100)

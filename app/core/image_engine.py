@@ -25,6 +25,11 @@ class ImageEngine:
 
     def _update_gen_progress(self, pct: int, status: str = None, label: str = None):
         with self._gen_lock:
+            # Terminal states are sticky: a slow poll thread must never overwrite
+            # a finished/errored generation with a stale "running" snapshot
+            # (this froze the UI spinner after every successful image).
+            if self._gen_progress.get("status") in ("done", "error") and status not in ("done", "error", "idle"):
+                return
             self._gen_progress["pct"] = min(100, max(0, pct))
             if status:
                 self._gen_progress["status"] = status
@@ -195,6 +200,8 @@ class ImageEngine:
                         }
                         readable = node_map.get(node_type, node_type.replace("_", " ").title() if node_type else "")
                         node_label = f" — {readable}" if readable else ""
+                        if _stop_polling:
+                            break
                         self._update_gen_progress(pct, "running", step_label)
                         with self._gen_lock:
                             self._gen_progress["step_label"] = step_label
@@ -205,7 +212,10 @@ class ImageEngine:
                         est_per_step = 2.0
                         est_step = min(int(elapsed / est_per_step) + 1, total_steps)
                         pct = round((est_step / total_steps) * 100)
-                        step_label = f"Step ~{est_step}/{total_steps}"
+                        if _stop_polling:
+                            break
+                        step_label = f"~{est_step}/{total_steps}"
+                        pct = min(pct, 90)  # never claim 100% from the estimator; only the real result is 100%
                         self._update_gen_progress(pct, "running", step_label)
                         with self._gen_lock:
                             self._gen_progress["step_label"] = step_label
