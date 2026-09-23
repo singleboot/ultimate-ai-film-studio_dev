@@ -1569,6 +1569,58 @@ def upscale_temp_image(data: dict = Body(...)):
         except OSError:
             pass
 
+@app.post("/api/image/shot-fix")
+def shot_fix_image(data: dict = Body(...)):
+    """Fix a shot image with Qwen-Image-Edit-2511.
+
+    Takes a temp ComfyUI output (the unapproved storyboard preview), an
+    instruction like "fix the warped hand", downloads the image, and runs
+    the shot-fix workflow. The model re-renders the scene honoring the
+    instruction while keeping composition (VAEEncode keeps dimensions).
+    Returns the new temp filename so the preview/approve flow continues
+    unchanged. Sync on purpose: blocking network I/O against ComfyUI.
+    """
+    if not image_engine:
+        return {"success": False, "error": "Image engine not available"}
+    filename = data.get("filename", "")
+    subfolder = data.get("subfolder", "")
+    instruction = (data.get("instruction") or "").strip()
+    if not filename:
+        return {"success": False, "error": "No filename provided"}
+    if not instruction:
+        return {"success": False, "error": "No fix instruction provided"}
+    settings = load_settings()
+    wf = (settings.get("workflows") or {}).get("shotfix", "image_qwen_edit_shotfix.json")
+    import requests as _rq
+    import tempfile
+    url = f"{comfyui_client.host}/view?filename={filename}"
+    if subfolder:
+        url += f"&subfolder={subfolder}"
+    try:
+        resp = _rq.get(url, timeout=30)
+        resp.raise_for_status()
+    except Exception as e:
+        return {"success": False, "error": f"Failed to fetch temp image from ComfyUI: {e}"}
+    tmp = tempfile.NamedTemporaryFile(suffix=Path(filename).suffix or ".png", delete=False)
+    try:
+        tmp.write(resp.content)
+        tmp.close()
+        return image_engine.generate_image(
+            provider_id="comfyui",
+            model="",
+            prompt=instruction,
+            host=settings.get("comfyui", {}).get("host", ""),
+            api_key="",
+            width=1024, height=1024,
+            workflow_name=wf,
+            input_images=[tmp.name],
+        )
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
 @app.get("/api/image/progress")
 async def get_image_progress():
     """Get current image generation progress."""
@@ -1615,14 +1667,22 @@ def generate_video_endpoint(data: dict):
             else:
                 logger.warning("[generate_video_endpoint] Image NOT FOUND: %s", p)
 
+    provider = data.get("provider", "comfyui")
+    workflow_name = data.get("workflow_name")
+    if provider.startswith("comfyui") and not workflow_name:
+        # Default to the configured i2v workflow (LTX-2.5 with native audio)
+        # so the endpoint works without the caller naming a workflow — same
+        # convention as the t2v endpoint.
+        settings = load_settings()
+        workflow_name = settings.get("workflows", {}).get("i2v", "") or DEFAULT_I2V_WORKFLOW
     return image_engine.generate_video(
-        provider_id=data.get("provider", "comfyui"),
+        provider_id=provider,
         model=data.get("model", ""),
         prompt=data.get("prompt", ""),
         host=data.get("host"),
         api_key=data.get("api_key"),
         input_image=data.get("input_image"),
-        workflow_name=data.get("workflow_name")
+        workflow_name=workflow_name
     )
 
 # === ComfyUI Subprocess Management ===
@@ -1800,8 +1860,10 @@ def generate_image(
 
 # Default ComfyUI workflow presets used when Settings has no workflow assigned yet.
 DEFAULT_T2I_WORKFLOW = "image_krea2_turbo_t2i_v2.json"
+# LTX-2.5-Distilled i2v with native audio generation — the installed model
+# outclasses the old MiniMax/LTX2.3 paths (which needed missing GGUFs).
+DEFAULT_I2V_WORKFLOW = "video_ltx2_5_i2v.json"
 DEFAULT_T2V_WORKFLOW = "video_minimax_h3_t2v_ltxupsampler.json"
-DEFAULT_I2V_WORKFLOW = "video_minimax_h3_r2v_ltxupsampler.json"
 
 
 def _refine_prompt_via_agent(agent_id: str, prompt: str, refine: bool) -> str:
@@ -3496,7 +3558,7 @@ async def extend_video(name: str, request: Request):
             seed = int(time.time() * 1000) % 1000000
             
         settings = load_settings()
-        workflow_name = settings.get("workflows", {}).get("i2v", "video_ltx2_3_i2v_v2.json")
+        workflow_name = settings.get("workflows", {}).get("i2v", "") or DEFAULT_I2V_WORKFLOW
         
         # Trigger ComfyUI generation
         res = comfyui_client.generate_with_workflow(

@@ -165,7 +165,12 @@ class ImageEngine:
         }
         handler = handlers.get(provider_id)
         if handler:
-            return handler(provider, model, prompt, host, api_key, input_image, workflow_name, **kwargs)
+            # Keyword-only dispatch: handlers declare different subsets of these
+            # (comfyui takes host/workflow_name/input_image, cloud providers take
+            # api_key, etc.) — extras are absorbed by **kwargs. The old positional
+            # call misrouted arguments and crashed the comfyui path entirely.
+            return handler(provider, model, prompt, host=host, api_key=api_key,
+                           input_image=input_image, workflow_name=workflow_name, **kwargs)
         return {"success": False, "error": "Unsupported provider or video not available"}
 
     def _generate_comfyui_image(self, provider: Dict, model: str, prompt: str, host: str = None,
@@ -271,6 +276,8 @@ class ImageEngine:
             self.comfyui.set_host(host)
         if workflow_name:
             input_images = [input_image] if input_image else None
+            # Drop cloud-provider-only kwargs the ComfyUI path doesn't accept
+            kwargs.pop("api_key", None)
             return self.comfyui.generate_with_workflow(
                 prompt=prompt, workflow_name=workflow_name,
                 input_images=input_images, **kwargs

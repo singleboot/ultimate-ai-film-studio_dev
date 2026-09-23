@@ -931,7 +931,8 @@ class ComfyUIClient:
                 return {"success": False, "error": "Failed to queue workflow on ComfyUI" + (f": {qerr}" if qerr else "")}
 
             logger.info("ComfyUI queued [%s] id=%s", workflow_name, prompt_id)
-            self.register_job(prompt_id, f"Image · {workflow_name}")
+            kind = "Video" if str(workflow_name).lower().startswith(("video_", "t2v", "i2v")) else "Image"
+            self.register_job(prompt_id, f"{kind} · {workflow_name}")
 
             gstart = time.time()
             output = self.get_output(prompt_id, timeout=1800)
@@ -954,6 +955,12 @@ class ComfyUIClient:
                     fname = gif.get("filename", "unknown")
                     logger.info("ComfyUI done [%s] → %s [%.1fs]", workflow_name, fname, elapsed)
                     return {"success": True, "filename": fname, "subfolder": gif.get("subfolder", "")}
+                if "videos" in nout and nout["videos"]:
+                    # SaveVideo (LTX 2.x) returns a "videos" output, not images/gifs
+                    vid = nout["videos"][0]
+                    fname = vid.get("filename", "unknown")
+                    logger.info("ComfyUI done [%s] → %s [%.1fs]", workflow_name, fname, elapsed)
+                    return {"success": True, "filename": fname, "subfolder": vid.get("subfolder", ""), "media_type": "video"}
 
             if isinstance(output, dict) and "_error" in output:
                 logger.error("ComfyUI error [%s]: %s", workflow_name, output['_error'])

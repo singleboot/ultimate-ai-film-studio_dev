@@ -1104,6 +1104,7 @@
                 </div>
                 <div style="display:flex;gap:6px;">
                     <button class="btn btn-secondary" onclick="siCreateVariant()" id="si-variant-btn" style="padding:4px 10px;font-size:0.7rem;">✏️ Variant</button>
+                    <button class="btn btn-secondary" onclick="siFixShot()" id="si-fix-btn" style="padding:4px 10px;font-size:0.7rem;" title="AI-fix artifacts in this preview (Qwen-Image-Edit)">🪄 Fix</button>
                     <button class="btn btn-secondary" onclick="siRegenerate()" id="si-regen-btn" style="padding:4px 10px;font-size:0.7rem;">🔄 Regen</button>
                     <button class="btn btn-primary" onclick="saveShotInspectorEdits()" id="si-save-btn" style="padding:4px 10px;font-size:0.7rem;background:#10b981;color:#fff;">💾 Save</button>
                     <button class="btn btn-primary" onclick="siApprove()" id="si-approve-btn" style="padding:4px 10px;font-size:0.7rem;">✅ Approve</button>
@@ -6535,6 +6536,44 @@
             }
             if (btn) { btn.disabled = false; btn.textContent = 'Generate 3 Variants'; }
             document.getElementById('si-variant-input-area').style.display = 'none';
+        }
+
+        async function siFixShot() {
+            if (!_siShotId) return;
+            let shot = null;
+            if (screenplayData && screenplayData.scenes) {
+                for (const s of screenplayData.scenes) {
+                    if (s.shots) { const f = s.shots.find(x => x.shot_id === _siShotId); if (f) { shot = f; break; } }
+                }
+            }
+            if (!shot) return;
+            const tempFile = shot._temp_storyboard_image;
+            if (!tempFile) { notify('Nothing to fix', 'Generate a preview first — Fix works on the pending preview', '⚠️'); return; }
+            const instr = prompt('Describe the fix (Qwen-Image-Edit):', 'Fix visual artifacts and distorted details while keeping the scene, style and composition identical.');
+            if (!instr || !instr.trim()) return;
+            const btn = document.getElementById('si-fix-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Fixing…'; }
+            if (typeof startProgressPolling === 'function') startProgressPolling();
+            try {
+                const res = await fetch('/api/image/shot-fix', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: tempFile, subfolder: '', instruction: instr.trim() })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    shot._temp_storyboard_image = data.filename;
+                    shot._temp_upscaled_file = null;   // fixed image is not 4K
+                    notify('Fixed', 'Preview updated with the fixed image', '🪄');
+                    openShotInspector(_siShotId);   // re-render with the fixed preview
+                } else {
+                    notify('Fix failed', data.error || 'unknown error', '❌');
+                }
+            } catch (e) {
+                notify('Fix failed', e.message, '❌');
+            } finally {
+                if (typeof stopProgressPolling === 'function') stopProgressPolling(true, '');
+                if (btn) { btn.disabled = false; btn.textContent = '🪄 Fix'; }
+            }
         }
 
         async function siRegenerate() {

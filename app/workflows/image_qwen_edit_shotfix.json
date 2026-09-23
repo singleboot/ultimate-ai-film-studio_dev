@@ -1,0 +1,108 @@
+{
+  "1": {
+    "inputs": {
+      "image": "input.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Shot image (injected by app)" }
+  },
+  "2": {
+    "inputs": {
+      "prompt": "Fix visual artifacts in this image while preserving the scene, characters, style and composition.",
+      "clip": ["3", 0],
+      "vae": ["4", 0],
+      "image1": ["1", 0]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": { "title": "Fix instruction (injected by app)" }
+  },
+  "3": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "cpu"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": { "title": "Qwen VL text encoder" }
+  },
+  "4": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": { "title": "Qwen VAE" }
+  },
+  "5": {
+    "inputs": {
+      "gguf_name": "qwen-image-edit-2511-Q4_K_S.gguf"
+    },
+    "class_type": "LoaderGGUF",
+    "_meta": { "title": "Qwen-Image-Edit-2511 (GGUF)" }
+  },
+  "6": {
+    "inputs": {
+      "lora_name": "QWEN\\Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1,
+      "model": ["5", 0]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": { "title": "Lightning 4-step LoRA" }
+  },
+  "7": {
+    "inputs": {
+      "shift": 3,
+      "model": ["6", 0]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": { "title": "Sampling shift" }
+  },
+  "8": {
+    "inputs": {
+      "strength": 1,
+      "pre_cfg": false,
+      "model": ["7", 0]
+    },
+    "class_type": "CFGNorm",
+    "_meta": { "title": "CFG norm (cfg=1 lightning)" }
+  },
+  "9": {
+    "inputs": {
+      "pixels": ["1", 0],
+      "vae": ["4", 0]
+    },
+    "class_type": "VAEEncode",
+    "_meta": { "title": "Encode input (preserves dimensions)" }
+  },
+  "10": {
+    "inputs": {
+      "seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["8", 0],
+      "positive": ["2", 0],
+      "negative": ["2", 0],
+      "latent_image": ["9", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "Sampler (4-step lightning)" }
+  },
+  "11": {
+    "inputs": {
+      "samples": ["10", 0],
+      "vae": ["4", 0]
+    },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "Decode" }
+  },
+  "12": {
+    "inputs": {
+      "filename_prefix": "UAI_ShotFix",
+      "images": ["11", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": { "title": "Save fixed shot" }
+  }
+}
