@@ -263,6 +263,118 @@ FILM_SKILLS: List[Dict[str, Any]] = [
                 "required": ["query"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_storyboard",
+            "description": "List every shot in the project storyboard with its production state (image status, video status, prompts). Use this to survey the project before acting, or to pick targets.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scene": {"type": "integer", "description": "Optional: limit to one scene index (0-based)"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_shot_detail",
+            "description": "Get full creative detail for one shot: action, dialogue, storyboard prompt, video prompt, camera/lens/lighting notes, and current media state.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scene": {"type": "integer", "description": "Scene index (0-based)"},
+                    "shot": {"type": "integer", "description": "Shot index within the scene (0-based)"}
+                },
+                "required": ["scene", "shot"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_shot_image",
+            "description": "Generate the storyboard image for ONE shot on the GPU (runs in background). Uses the shot's storyboard_prompt, or write a better one with prompt_override. Check completion with get_generation_progress.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scene": {"type": "integer", "description": "Scene index (0-based)"},
+                    "shot": {"type": "integer", "description": "Shot index (0-based)"},
+                    "prompt_override": {"type": "string", "description": "Optional: replace the shot's storyboard prompt with your own craft"}
+                },
+                "required": ["scene", "shot"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_shot_video",
+            "description": "Render ONE shot to video with the i2v workflow (runs in background, takes minutes). Requires the shot to have a storyboard image. Check with get_generation_progress.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scene": {"type": "integer", "description": "Scene index (0-based)"},
+                    "shot": {"type": "integer", "description": "Shot index (0-based)"},
+                    "prompt_override": {"type": "string", "description": "Optional: override the motion prompt"}
+                },
+                "required": ["scene", "shot"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "approve_shot_image",
+            "description": "Approve a shot's storyboard image for the timeline. Only approve when the user asked for it or after confirming they are happy with the result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scene": {"type": "integer", "description": "Scene index (0-based)"},
+                    "shot": {"type": "integer", "description": "Shot index (0-based)"}
+                },
+                "required": ["scene", "shot"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_shot_video_prompt",
+            "description": "Write or replace the video motion prompt on a shot. Use your cinematography skill here — describe subject motion, camera move, and atmosphere concretely.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scene": {"type": "integer", "description": "Scene index (0-based)"},
+                    "shot": {"type": "integer", "description": "Shot index (0-based)"},
+                    "prompt": {"type": "string", "description": "The motion prompt for the i2v model"}
+                },
+                "required": ["scene", "shot", "prompt"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_generation_progress",
+            "description": "Check the status of studio jobs you started (queued/running/done/error with results and timings).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "Optional: a specific job to check"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_comfyui_queue",
+            "description": "See what the GPU is doing right now: ComfyUI running/pending counts plus your active studio jobs.",
+            "parameters": {"type": "object", "properties": {}}
+        }
     }
 ]
 
@@ -272,21 +384,79 @@ FILM_SKILLS: List[Dict[str, Any]] = [
 class FilmAgentToolExecutor:
     """Executes film-making tools when the LLM requests them."""
 
-    def __init__(self, project_manager=None, llm_engine=None, orchestrator=None):
+    def __init__(self, project_manager=None, llm_engine=None, orchestrator=None, studio_bridge=None):
         self.pm = project_manager
         self.llm = llm_engine
         self.orchestrator = orchestrator
+        self.studio = studio_bridge
 
     def execute(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         try:
             handler = getattr(self, f"_exec_{tool_name}", None)
             if handler:
                 result = handler(arguments)
-                return json.dumps(result, indent=2)
+                return json.dumps(result, indent=2, default=str)
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
         except Exception as e:
             logger.error(f"Tool execution error [{tool_name}]: {e}")
             return json.dumps({"error": str(e)})
+
+    def _resolve_project(self, args: Dict) -> Dict:
+        """Resolve the active project path from args, pm, or the app's current project."""
+        p = args.get("project_path") or (getattr(self.pm, "get_current_project_path", lambda: None)() if self.pm else None)
+        if not p and self.studio is not None:
+            p = getattr(self.studio, "current_project_path", None)
+        if not p:
+            return {"error": "No project is open — ask the user to open one in the studio first."}
+        return {"path": str(p)}
+
+    def _exec_list_storyboard(self, args: Dict) -> Dict:
+        proj = self._resolve_project(args)
+        if "error" in proj:
+            return proj
+        return self.studio.list_storyboard(proj["path"], args.get("scene"))
+
+    def _exec_get_shot_detail(self, args: Dict) -> Dict:
+        proj = self._resolve_project(args)
+        if "error" in proj:
+            return proj
+        return self.studio.get_shot_detail(int(args.get("scene", 0)), int(args.get("shot", 0)), proj["path"])
+
+    def _exec_generate_shot_image(self, args: Dict) -> Dict:
+        proj = self._resolve_project(args)
+        if "error" in proj:
+            return proj
+        return self.studio.generate_shot_image(int(args.get("scene", 0)), int(args.get("shot", 0)), proj["path"], args.get("prompt_override"))
+
+    def _exec_generate_shot_video(self, args: Dict) -> Dict:
+        proj = self._resolve_project(args)
+        if "error" in proj:
+            return proj
+        return self.studio.generate_shot_video(int(args.get("scene", 0)), int(args.get("shot", 0)), proj["path"], args.get("prompt_override"))
+
+    def _exec_approve_shot_image(self, args: Dict) -> Dict:
+        proj = self._resolve_project(args)
+        if "error" in proj:
+            return proj
+        return self.studio.approve_shot_image(int(args.get("scene", 0)), int(args.get("shot", 0)), proj["path"])
+
+    def _exec_set_shot_video_prompt(self, args: Dict) -> Dict:
+        proj = self._resolve_project(args)
+        if "error" in proj:
+            return proj
+        return self.studio.set_shot_video_prompt(int(args.get("scene", 0)), int(args.get("shot", 0)), proj["path"], args.get("prompt", ""))
+
+    def _exec_get_generation_progress(self, args: Dict) -> Dict:
+        if self.studio is None:
+            return {"error": "Studio bridge unavailable"}
+        if args.get("job_id"):
+            return self.studio._job_snapshot(args["job_id"])
+        return {"jobs": self.studio.jobs_snapshot()}
+
+    def _exec_get_comfyui_queue(self, args: Dict) -> Dict:
+        if self.studio is None:
+            return {"error": "Studio bridge unavailable"}
+        return self.studio.queue_status()
 
     def _exec_write_screenplay(self, args: Dict) -> Dict:
         heading = args.get("scene_heading", "")
@@ -707,11 +877,11 @@ class FilmAgent:
     It pushes back on mediocre ideas and elevates projects.
     """
 
-    def __init__(self, llm_engine=None, project_manager=None, orchestrator=None):
+    def __init__(self, llm_engine=None, project_manager=None, orchestrator=None, studio_bridge=None):
         self.llm = llm_engine
         self.pm = project_manager
         self.orchestrator = orchestrator
-        self.tool_executor = FilmAgentToolExecutor(project_manager, llm_engine, orchestrator)
+        self.tool_executor = FilmAgentToolExecutor(project_manager, llm_engine, orchestrator, studio_bridge=studio_bridge)
         self.sessions: Dict[str, Dict] = {}
 
     def get_or_create_session(self, session_id: str) -> Dict:
@@ -745,6 +915,15 @@ You are someone who has studied the greats — Kubrick's precision, Villeneuve's
 4. **Steal from life, not just movies.** The best film ideas come from observing real human behavior, not from copying other films. Push the user to draw from personal experience.
 
 5. **Break rules intentionally.** You know the 180-degree rule, the three-act structure, the rule of thirds — and you know when breaking them creates something extraordinary.
+
+## YOUR HANDS (STUDIO TOOLS)
+
+You are not advisory-only — you are wired into the studio itself. You can:
+- **list_storyboard** to survey every shot's production state, and **get_shot_detail** to study one shot's craft notes.
+- **generate_shot_image** and **generate_shot_video** to actually produce a shot on the GPU (background jobs — fire them, then check **get_generation_progress**; **get_comfyui_queue** shows what the GPU is doing).
+- **set_shot_video_prompt** to write motion prompts with real cinematography craft, and **approve_shot_image** to sign off on a shot.
+
+Workflow instincts: before generating, look at what exists (list_storyboard). When you generate, say which shot and why. When a job is queued, tell the user you'll check progress rather than pretending it finished — poll get_generation_progress if the user asks, and report results honestly, including errors. The web UI needs a manual refresh to show files you created. Approvals are user-owned: only approve when asked or after the user confirms they like the result.
 
 ## WHAT YOU KNOW (2026 FILM LANDSCAPE)
 
@@ -821,8 +1000,13 @@ Your job is to be the creative partner that every filmmaker wishes they had — 
         session["messages"].append({"role": "user", "content": message})
 
         if project_context:
-            context_msg = f"[Current Project Context]\n{json.dumps(project_context, indent=2)}"
+            context_msg = f"[Current Project Context]\n{json.dumps(project_context, indent=2)[:12000]}"
             session["messages"].insert(0, {"role": "system", "content": context_msg})
+            # The production tools need the on-disk project path
+            if isinstance(project_context, dict) and project_context.get("_project_path"):
+                session["project_path"] = project_context["_project_path"]
+                if self.tool_executor.studio is not None:
+                    self.tool_executor.studio.current_project_path = project_context["_project_path"]
 
         tools_used = []
         max_tool_rounds = 5

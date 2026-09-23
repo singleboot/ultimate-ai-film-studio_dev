@@ -35,6 +35,7 @@ try:
     from core.orchestrator import CinematicOrchestrator, load_master_system_prompt
     from core.agent_project_creator import AgentProjectCreator
     from core.film_agent import FilmAgent
+    from core.studio_bridge import StudioBridge
     from core.film_orchestrator import ExecutiveProducer
     from core.telegram_bot import TelegramBotService
     HAS_LLM = True
@@ -235,7 +236,8 @@ from core.comfyui_client import ComfyUIClient
 comfyui_client = ComfyUIClient()
 image_engine = ImageEngine(comfyui_client=comfyui_client, settings_path=str(SETTINGS_FILE)) if HAS_LLM else None
 orchestrator = CinematicOrchestrator(llm_engine=llm_engine) if HAS_LLM else None
-film_agent = FilmAgent(llm_engine=llm_engine, project_manager=project_manager, orchestrator=orchestrator) if HAS_LLM else None
+studio_bridge = StudioBridge(comfyui_client=comfyui_client, image_engine=image_engine, project_manager=project_manager) if HAS_LLM else None
+film_agent = FilmAgent(llm_engine=llm_engine, project_manager=project_manager, orchestrator=orchestrator, studio_bridge=studio_bridge) if HAS_LLM else None
 executive_producer = ExecutiveProducer(llm_engine=llm_engine, project_manager=project_manager, orchestrator=orchestrator) if HAS_LLM else None
 
 class GenerateRequest(BaseModel):
@@ -4526,6 +4528,8 @@ async def film_agent_chat(request: FilmAgentChatRequest):
             try:
                 with open(state_file, "r", encoding="utf-8") as f:
                     project_context = json.load(f)
+                # Production tools need the on-disk path (not part of the state file itself)
+                project_context["_project_path"] = request.project_path
             except Exception:
                 pass
 
