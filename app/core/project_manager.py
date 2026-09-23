@@ -1,9 +1,12 @@
 import json
 import os
+import logging
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
+
+logger = logging.getLogger("project-manager")
 
 
 class ProjectManager:
@@ -328,11 +331,26 @@ class ProjectManager:
         if not project_path.exists():
             return {"success": False, "error": "Project path not found"}
         state_file = project_path / "project_state.json"
+        tmp = state_file.with_suffix('.json.tmp')
         try:
-            with open(state_file, 'w', encoding='utf-8') as f:
-                json.dump(state_data, f, indent=2, default=str)
+            # Atomic write: tmp + os.replace so a crash mid-save can never
+            # leave a half-written state file. The previous good file is kept
+            # as project_state.json.bak; load recovers from it if needed.
+            data = json.dumps(state_data, indent=2, default=str, ensure_ascii=False)
+            with open(tmp, 'w', encoding='utf-8') as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            if state_file.exists():
+                shutil.copy2(state_file, state_file.with_suffix('.json.bak'))
+            os.replace(tmp, state_file)
             return {"success": True}
         except Exception as e:
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except Exception:
+                pass
             return {"success": False, "error": str(e)}
 
     def load_project_state(self, name: str, project_path_str: str = None) -> Optional[Dict]:
@@ -349,6 +367,16 @@ class ProjectManager:
             with open(state_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
+            # Primary file corrupt (crash mid-save on older versions):
+            # fall back to the .bak copy saved alongside the last good write.
+            bak = state_file.with_suffix('.json.bak')
+            if bak.exists():
+                try:
+                    data = json.load(open(bak, 'r', encoding='utf-8'))
+                    logger.warning("project_state.json corrupt — recovered from %s", bak.name)
+                    return data
+                except Exception:
+                    pass
             return None
 
     def export_project(self, name: str, export_path: str) -> bool:

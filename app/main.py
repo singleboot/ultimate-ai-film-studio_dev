@@ -4642,6 +4642,25 @@ def get_default_html() -> str:
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 7860))
+    try:
+        port = int(os.environ.get("PORT", "") or 7860)
+    except ValueError:
+        port = 7860
+    if port <= 0:
+        # PORT=0 in the environment would make uvicorn bind a random free
+        # port every launch — the app would seem to "vanish". Force default.
+        port = 7860
+    # Single-instance guard: two app instances sharing one ComfyUI and one
+    # project file can silently corrupt state. Refuse to double-start.
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as _resp:
+            logger.warning("Another instance is already running on port %s — exiting to protect project state.", port)
+            print(f"Ultimate AI Film Studio is already running on http://127.0.0.1:{port}")
+            raise SystemExit(0)
+    except SystemExit:
+        raise
+    except Exception:
+        pass  # nothing answering — safe to start
     logger.info("Starting Ultimate AI Film Studio on http://127.0.0.1:%s", port)
     uvicorn.run(app, host="127.0.0.1", port=port)
