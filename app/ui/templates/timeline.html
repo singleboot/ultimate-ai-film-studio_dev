@@ -6538,6 +6538,66 @@
             document.getElementById('si-variant-input-area').style.display = 'none';
         }
 
+        // ================= Shot-fix modal (styled, AI-suggested fixes) =================
+        const SB_FIX_PRESETS = [
+            { icon: '🧍', label: 'Fix anatomy / hands', instruction: 'Fix anatomical errors: distorted hands, extra or missing fingers, malformed limbs and faces. Keep the scene, characters, style, lighting and composition identical.' },
+            { icon: '🧹', label: 'Clean artifacts', instruction: 'Remove visual artifacts: smudges, stray lines, duplicated objects, warped textures and noise. Keep the scene, characters, style and composition identical.' },
+            { icon: '📝', label: 'Fix text / symbols', instruction: 'Fix any garbled or illegible text, letters and symbols so they are clean and readable. Keep everything else in the image identical.' },
+            { icon: '👁️', label: 'Fix faces / eyes', instruction: 'Fix distorted faces: correct asymmetric eyes, malformed mouths and unnatural skin while keeping identity and expression. Keep everything else identical.' },
+            { icon: '💡', label: 'Fix lighting / color', instruction: 'Fix the lighting and color balance: remove blown highlights, banding and color casts so light is physically consistent. Keep composition and characters identical.' }
+        ];
+        let _sbFixShot = null;
+
+        function _sbFixEnsureModal() {
+            let ov = document.getElementById('sb-fix-modal');
+            if (ov) return ov;
+            ov = document.createElement('div');
+            ov.id = 'sb-fix-modal';
+            ov.className = 'modal-overlay';
+            ov.style.zIndex = '1500';   // above the shot inspector (1000), below confirm (3000)
+            ov.innerHTML =
+                '<div class="modal" style="max-width:540px; width:94%; padding:18px;">' +
+                    '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' +
+                        '<h3 style="margin:0; color:var(--text-primary); font-size:1rem;">🪄 Fix Shot <span id="sb-fix-shot-id" style="font-size:0.75rem; color:var(--text-secondary);"></span></h3>' +
+                        '<button class="nav-btn" onclick="sbFixClose()" style="padding:2px 10px;">✕</button>' +
+                    '</div>' +
+                    '<div style="font-size:0.72rem; color:var(--text-secondary); margin-bottom:10px;">Pick a quick fix, an AI-suggested fix, or write your own instruction (Qwen-Image-Edit):</div>' +
+                    '<div id="sb-fix-presets" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;"></div>' +
+                    '<div id="sb-fix-status" style="display:none; font-size:0.75rem; color:var(--accent-primary); margin-bottom:8px;">🤖 Analyzing the preview…</div>' +
+                    '<textarea id="sb-fix-instruction" class="form-input" rows="3" style="width:100%; font-size:0.8rem; resize:vertical;" placeholder="Describe the fix…"></textarea>' +
+                    '<div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">' +
+                        '<button class="btn btn-secondary" id="sb-fix-suggest-btn" onclick="sbFixSuggest()" style="padding:5px 12px; font-size:0.75rem;">🤖 Suggest fixes</button>' +
+                        '<button class="btn btn-secondary" onclick="sbFixClose()" style="padding:5px 12px; font-size:0.75rem;">Cancel</button>' +
+                        '<button class="btn btn-primary" id="sb-fix-apply-btn" onclick="sbFixApply()" style="padding:5px 14px; font-size:0.75rem;">🪄 Fix</button>' +
+                    '</div>' +
+                '</div>';
+            document.body.appendChild(ov);
+            return ov;
+        }
+
+        function _sbFixRenderPresets(list) {
+            const wrap = document.getElementById('sb-fix-presets');
+            if (!wrap) return;
+            const items = (list && list.length ? list : SB_FIX_PRESETS);
+            wrap.innerHTML = items.map((p, i) =>
+                '<button class="btn btn-secondary" data-i="' + i + '" style="padding:3px 10px; font-size:0.7rem; max-width:100%; overflow:hidden; text-overflow:ellipsis;">' + (p.icon || '🔧') + ' ' + (p.label || '') + '</button>').join('');
+            [...wrap.querySelectorAll('button')].forEach(b => {
+                b.onclick = () => {
+                    const p = items[Number(b.dataset.i)];
+                    const ta = document.getElementById('sb-fix-instruction');
+                    if (ta) ta.value = p.instruction || p;
+                };
+            });
+        }
+
+        function sbFixClose() {
+            const ov = document.getElementById('sb-fix-modal');
+            if (ov) ov.classList.remove('active');
+            _sbFixShot = null;
+            const ta = document.getElementById('sb-fix-instruction');
+            if (ta) ta.value = '';
+        }
+
         async function siFixShot() {
             if (!_siShotId) return;
             let shot = null;
@@ -6547,17 +6607,83 @@
                 }
             }
             if (!shot) return;
+            if (!shot._temp_storyboard_image) { notify('Nothing to fix', 'Generate a preview first — Fix works on the pending preview', '⚠️'); return; }
+            _sbFixShot = shot;
+            const ov = _sbFixEnsureModal();
+            const idEl = document.getElementById('sb-fix-shot-id');
+            if (idEl) idEl.textContent = shot.shot_id || '';
+            const ta = document.getElementById('sb-fix-instruction');
+            if (ta) ta.value = '';
+            const status = document.getElementById('sb-fix-status');
+            if (status) { status.style.display = 'none'; status.textContent = '🤖 Analyzing the preview…'; }
+            _sbFixRenderPresets(null);
+            ov.classList.add('active');
+            sbFixSuggest();   // auto-run AI suggestions while the dialog opens
+        }
+
+        function _sbFixParseSuggestions(text) {
+            return String(text || '').split('\n')
+                .map(l => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim())
+                .filter(l => l.length > 15).slice(0, 4)
+                .map(l => ({ icon: '🤖', label: l.length > 44 ? l.slice(0, 44) + '…' : l, instruction: l }));
+        }
+
+        async function sbFixSuggest() {
+            if (!_sbFixShot) return;
+            const status = document.getElementById('sb-fix-status');
+            const sbtn = document.getElementById('sb-fix-suggest-btn');
+            if (status) { status.style.display = 'block'; status.textContent = '🤖 Analyzing the preview…'; }
+            if (sbtn) { sbtn.disabled = true; sbtn.textContent = '🤖 Analyzing…'; }
+            try {
+                const tempFile = _sbFixShot._temp_storyboard_image;
+                let images = null;
+                try {
+                    const imgResp = await fetch('/api/comfyui/view?filename=' + encodeURIComponent(tempFile));
+                    if (imgResp.ok) {
+                        const blob = await imgResp.blob();
+                        const b64 = await new Promise(resolve => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                            reader.readAsDataURL(blob);
+                        });
+                        images = [b64];
+                    }
+                } catch (e) { console.error('Could not load preview for analysis:', e); }
+                const prompt = 'Inspect the attached AI-generated film storyboard frame and list up to 4 concrete, single-sentence fix instructions (one per line, no numbering or bullets) that an image-edit model can apply to repair visible defects such as anatomy errors, artifacts, garbled text, lighting problems or composition drift. Each line must start with a verb and end with: Keep everything else identical. Return only the instruction lines.';
+                const result = await generateFromLLM(prompt, images, 'You are a precise visual QA assistant. Answer with instruction lines only.', null);
+                if (result && result.success && result.response) {
+                    const suggestions = _sbFixParseSuggestions(result.response);
+                    if (suggestions.length) {
+                        _sbFixRenderPresets(suggestions);
+                        if (status) { status.textContent = '🤖 ' + suggestions.length + ' fix(es) suggested — click one or write your own.'; }
+                    } else if (status) {
+                        status.textContent = '🤖 No specific suggestions — use a quick fix or write your own.';
+                    }
+                } else if (status) {
+                    status.textContent = '🤖 AI suggestions unavailable (' + ((result && result.error) || 'LLM not configured') + ') — quick fixes still work.';
+                }
+            } catch (e) {
+                if (status) status.textContent = '🤖 AI suggestions failed: ' + e.message + ' — quick fixes still work.';
+            } finally {
+                if (sbtn) { sbtn.disabled = false; sbtn.textContent = '🤖 Suggest fixes'; }
+            }
+        }
+
+        async function sbFixApply() {
+            if (!_sbFixShot) return;
+            const ta = document.getElementById('sb-fix-instruction');
+            const instr = ta ? ta.value.trim() : '';
+            if (!instr) { notify('No instruction', 'Pick a fix or describe what to change', '⚠️'); return; }
+            const shot = _sbFixShot;
             const tempFile = shot._temp_storyboard_image;
-            if (!tempFile) { notify('Nothing to fix', 'Generate a preview first — Fix works on the pending preview', '⚠️'); return; }
-            const instr = prompt('Describe the fix (Qwen-Image-Edit):', 'Fix visual artifacts and distorted details while keeping the scene, style and composition identical.');
-            if (!instr || !instr.trim()) return;
+            sbFixClose();
             const btn = document.getElementById('si-fix-btn');
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Fixing…'; }
             if (typeof startProgressPolling === 'function') startProgressPolling();
             try {
                 const res = await fetch('/api/image/shot-fix', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename: tempFile, subfolder: '', instruction: instr.trim() })
+                    body: JSON.stringify({ filename: tempFile, subfolder: '', instruction: instr })
                 });
                 const data = await res.json();
                 if (data.success) {
