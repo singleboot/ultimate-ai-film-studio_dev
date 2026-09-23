@@ -2654,7 +2654,11 @@
                 if (step === 'videos') {
                     notify('Saving Workspace', 'Writing project state to disk...', '⏳');
                     await saveProjectState();
-                    window.location.href = '/timeline';
+                    // Legacy /timeline page removed — the storyboard page's inline
+                    // timeline view is the timeline now.
+                    try { localStorage.setItem('storyboardViewMode', 'timeline'); } catch(e) {}
+                    renderStoryboard();
+                    showPage('storyboard');
                     return;
                 }
                 const built = { ideas: 1, screenplay: 1, 'asset-studio': 1, storyboard: 1, videos: 1 };

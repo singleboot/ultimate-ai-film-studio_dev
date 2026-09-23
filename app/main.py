@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -283,20 +283,8 @@ async def root():
 
 @app.get("/timeline", response_class=HTMLResponse)
 async def serve_timeline():
-    """Serve the modular timeline NLE UI."""
-    try:
-        html_file = base_dir / "ui" / "templates" / "timeline.html"
-        if html_file.exists():
-            with open(html_file, 'r', encoding='utf-8') as f:
-                headers = {
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0"
-                }
-                return HTMLResponse(content=f.read(), headers=headers)
-    except Exception as e:
-        logger.error("Error serving Timeline HTML: %s", e)
-    return HTMLResponse(content="<h1>Timeline file not found</h1>")
+    """Legacy /timeline NLE page — removed; redirect to the app with its inline storyboard timeline."""
+    return RedirectResponse(url="/", status_code=302)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

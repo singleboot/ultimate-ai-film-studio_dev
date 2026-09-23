@@ -1,4 +1,4 @@
-// Queue dashboard + badge — shared by / and /timeline (single source of truth).
+// Queue dashboard + badge — loaded by the main app UI (single source of truth).
 // Extracted from the duplicated inline blocks; uses global notify/showConfirm.
 // ================= ComfyUI queue dashboard =================
 let comfyQueueTimer = null;
