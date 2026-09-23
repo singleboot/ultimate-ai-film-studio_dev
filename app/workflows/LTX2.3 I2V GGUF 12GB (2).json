@@ -568,9 +568,10 @@
   },
   "187": {
     "inputs": {
-      "unet_name": "VIDEO\\LTX\\ltx-2.3-22b-distilled-1.1-Q4_0.gguf"
+      "unet_name": "VIDEO\\LTX\\ltx-2.3-22b-distilled-1.1_transformer_only_mxfp8_block32.safetensors",
+      "weight_dtype": "default"
     },
-    "class_type": "UnetLoaderGGUF",
+    "class_type": "UNETLoader",
     "_meta": {
       "title": "Unet Loader (GGUF)"
     }

@@ -144,7 +144,7 @@
   },
   "76:5": {
     "inputs": {
-      "unet_name": "wan2.2_bernini_r_high_noise_int8_convrot.safetensors",
+      "unet_name": "VIDEO\\WAN\\2.2\\wan2.2_bernini_r_high_noise_fp8_scaled.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -168,7 +168,7 @@
   },
   "76:12": {
     "inputs": {
-      "unet_name": "wan2.2_bernini_r_low_noise_int8_convrot.safetensors",
+      "unet_name": "VIDEO\\WAN\\2.2\\wan2.2_bernini_r_low_noise_fp8_scaled.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
