@@ -183,6 +183,8 @@ class ImageEngine:
         total_steps = steps or 20
         def _poll_progress():
             gen_start = time.time()
+            saw_real = False   # have we seen real ComfyUI progress this run?
+            last_pct = 0
             while not _stop_polling:
                 try:
                     prog = self.comfyui.get_progress()
@@ -203,17 +205,30 @@ class ImageEngine:
                         if _stop_polling:
                             break
                         self._update_gen_progress(pct, "running", step_label)
+                        saw_real = True
+                        last_pct = pct
                         with self._gen_lock:
                             self._gen_progress["step_label"] = step_label
                             self._gen_progress["node_label"] = node_label
                     else:
+                        if _stop_polling:
+                            break
+                        if saw_real:
+                            # Real steps were streaming and the node finished —
+                            # the job is in its tail (VAE decode / save). Hold
+                            # progress and label it honestly instead of guessing.
+                            hold_pct = max(last_pct, 90)
+                            self._update_gen_progress(hold_pct, "running", "Finishing — VAE decode / saving")
+                            with self._gen_lock:
+                                self._gen_progress["step_label"] = ""
+                                self._gen_progress["node_label"] = ""
+                            time.sleep(1)
+                            continue
                         # Fallback: estimate from elapsed time when /progress is unavailable
                         elapsed = time.time() - gen_start
                         est_per_step = 2.0
                         est_step = min(int(elapsed / est_per_step) + 1, total_steps)
                         pct = round((est_step / total_steps) * 100)
-                        if _stop_polling:
-                            break
                         step_label = f"~{est_step}/{total_steps}"
                         pct = min(pct, 90)  # never claim 100% from the estimator; only the real result is 100%
                         self._update_gen_progress(pct, "running", step_label)

@@ -2073,6 +2073,8 @@ async def generate_i2i_endpoint(request: Request):
             "ControlNetLoader": "Loading ControlNet", "LoraLoader": "Loading LoRA",
         }
         gen_start = time.time()
+        saw_real = False   # have we seen real ComfyUI progress this run?
+        last_pct = 0
         while not _stop_i2i_poll:
             try:
                 prog = comfyui_client.get_progress()
@@ -2089,6 +2091,19 @@ async def generate_i2i_endpoint(request: Request):
                         with image_engine._gen_lock:
                             image_engine._gen_progress["step_label"] = step_label
                             image_engine._gen_progress["node_label"] = node_label
+                    saw_real = True
+                    last_pct = pct
+                    time.sleep(1)
+                    continue
+                if saw_real:
+                    # Real steps were streaming and the node finished — the job
+                    # is in its tail (VAE decode / save). Hold progress honestly.
+                    if image_engine:
+                        hold_pct = max(last_pct, 90)
+                        image_engine._update_gen_progress(hold_pct, "running", "Finishing — VAE decode / saving")
+                        with image_engine._gen_lock:
+                            image_engine._gen_progress["step_label"] = ""
+                            image_engine._gen_progress["node_label"] = ""
                     time.sleep(1)
                     continue
                 # Fallback: estimate from elapsed time when /progress is unavailable

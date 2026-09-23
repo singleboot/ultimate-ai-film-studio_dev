@@ -7,7 +7,12 @@ import signal
 import requests
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from threading import Thread
+from threading import Thread, Lock
+
+try:
+    import websocket as _websocket_lib  # websocket-client
+except ImportError:
+    _websocket_lib = None
 
 logger = logging.getLogger("comfyui_client")
 
@@ -46,6 +51,152 @@ class ComfyUIClient:
         self.history = []
         self._proc: Optional[subprocess.Popen] = None
         self._comfyui_path: Optional[str] = None
+
+        # --- WebSocket live-progress state ---------------------------------
+        # This ComfyUI build has no /progress REST endpoint (it 404s), but it
+        # broadcasts rich execution events on its WebSocket: per-step progress,
+        # progress_state snapshots (value/max/state per node), executing node
+        # transitions and terminal execution_success/error/interrupted. A
+        # persistent listener thread maintains the state below so get_progress()
+        # serves REAL step counts to every poller instead of time estimates.
+        self._ws_lock = Lock()
+        self._ws_state: Dict[str, Any] = {
+            "running": False,
+            "current": 0,
+            "max": 0,
+            "node": "",
+            "state": "",      # "", "running", "done", "error"
+            "prompt_id": "",
+            "updated": 0.0,
+        }
+        self._last_node_types: Dict[str, str] = {}   # node-id -> class_type, for readable labels
+        self._ws_thread: Optional[Thread] = None
+        self._start_ws_listener()
+
+    def _start_ws_listener(self):
+        """Start the persistent WebSocket event listener (daemon, auto-reconnect)."""
+        if _websocket_lib is None:
+            logger.warning("websocket-client not installed — falling back to estimated progress")
+            return
+        if self._ws_thread and self._ws_thread.is_alive():
+            return
+        self._ws_thread = Thread(target=self._ws_listener_loop, daemon=True)
+        self._ws_thread.start()
+
+    def _ws_url(self) -> str:
+        host = self.host.rstrip("/")
+        if host.startswith("https://"):
+            return "wss://" + host[len("https://"):] + "/ws"
+        if host.startswith("http://"):
+            return "ws://" + host[len("http://"):] + "/ws"
+        return "ws://" + host + "/ws"
+
+    def _ws_listener_loop(self):
+        """Connect to ComfyUI's /ws and feed execution events into _ws_state.
+        Reconnects with backoff whenever ComfyUI restarts or drops the socket."""
+        backoff = 2.0
+        while True:
+            try:
+                ws = _websocket_lib.create_connection(
+                    f"{self._ws_url()}?clientId={self.client_id}", timeout=10
+                )
+                backoff = 2.0
+                logger.info("ComfyUI websocket connected (%s) — live progress enabled", self.host)
+                try:
+                    while True:
+                        try:
+                            raw = ws.recv()
+                        except _websocket_lib.WebSocketTimeoutException:
+                            continue  # idle socket (no events in 10s) — keep listening
+                        if isinstance(raw, bytes):
+                            continue  # binary previews, not progress events
+                        try:
+                            self._on_ws_event(json.loads(raw))
+                        except Exception:
+                            pass
+                finally:
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # Disconnected (ComfyUI down / restarting): mark idle and retry later
+            with self._ws_lock:
+                self._ws_state["running"] = False
+                self._ws_state["state"] = ""
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+
+    def _on_ws_event(self, msg: Dict):
+        """Fold one ComfyUI WebSocket event into the live-progress cache."""
+        etype = msg.get("type")
+        data = msg.get("data") or {}
+        with self._ws_lock:
+            st = self._ws_state
+            if etype == "progress":
+                # Classic per-step event: {node, prompt_id, value, max}
+                st["running"] = True
+                st["state"] = "running"
+                st["prompt_id"] = str(data.get("prompt_id") or st.get("prompt_id", ""))
+                try:
+                    st["current"] = int(data.get("value") or 0)
+                    st["max"] = int(data.get("max") or 0) or st.get("max", 0)
+                except (TypeError, ValueError):
+                    pass
+                st["node"] = str(data.get("node") or "")
+                st["updated"] = time.time()
+            elif etype == "progress_state":
+                # Snapshot: nodes = {node_id: {value, max, state, ...}}
+                pid = data.get("prompt_id")
+                nodes = data.get("nodes") or {}
+                running = [n for n in nodes.values()
+                           if isinstance(n, dict) and n.get("state") == "running"]
+                if running:
+                    n0 = running[0]
+                    st["running"] = True
+                    st["state"] = "running"
+                    st["prompt_id"] = str(pid or st.get("prompt_id", ""))
+                    try:
+                        st["current"] = int(n0.get("value") or 0)
+                        st["max"] = int(n0.get("max") or 0) or st.get("max", 0)
+                    except (TypeError, ValueError):
+                        pass
+                    st["node"] = str(n0.get("node_id") or "")
+                elif pid and pid == st.get("prompt_id") and st.get("state") == "running":
+                    # Tracked prompt has no running nodes left — done only when
+                    # nothing is pending either (VAE decode / save nodes may                    # still be queued after the sampler finished)
+                    has_pending = any(
+                        isinstance(n, dict) and n.get("state") == "pending"
+                        for n in nodes.values()
+                    )
+                    if not has_pending:
+                        st["running"] = False
+                        st["state"] = "done"
+                st["updated"] = time.time()
+            elif etype == "executing":
+                if data.get("node") is None:
+                    # node=None signals the prompt finished executing
+                    if st.get("state") == "running":
+                        st["running"] = False
+                        st["state"] = "done"
+                    st["updated"] = time.time()
+                else:
+                    st["running"] = True
+                    st["state"] = "running"
+                    st["prompt_id"] = str(data.get("prompt_id") or st.get("prompt_id", ""))
+                    st["node"] = str(data.get("node") or "")
+                    st["updated"] = time.time()
+            elif etype == "execution_success":
+                st["running"] = False
+                st["state"] = "done"
+                st["prompt_id"] = str(data.get("prompt_id") or st.get("prompt_id", ""))
+                st["updated"] = time.time()
+            elif etype in ("execution_error", "execution_interrupted"):
+                st["running"] = False
+                st["state"] = "error"
+                st["prompt_id"] = str(data.get("prompt_id") or st.get("prompt_id", ""))
+                st["updated"] = time.time()
 
     def _load_config(self, config_path: str) -> Dict:
         """Load ComfyUI workflow configuration."""
@@ -138,6 +289,13 @@ class ComfyUIClient:
         (ComfyUI returns HTTP 400 with node_errors for invalid workflows)."""
         self.last_queue_error = None
         try:
+            # Remember node-id -> class_type so live progress can show
+            # human-readable labels ("Sampling") instead of raw node ids
+            self._last_node_types = {
+                str(nid): str(nd.get("class_type", ""))
+                for nid, nd in (workflow or {}).items()
+                if isinstance(nd, dict)
+            }
             prompt_payload = {
                 "prompt": workflow,
                 "client_id": self.client_id
@@ -177,20 +335,27 @@ class ComfyUIClient:
         return None
 
     def get_progress(self) -> Dict:
-        """Get current generation progress from ComfyUI."""
-        try:
-            resp = requests.get(f"{self.host}/progress", timeout=5)
-            if resp.status_code == 200:
-                data = resp.json()
-                return {
-                    "running": data.get("running", False),
-                    "current": data.get("current", 0),
-                    "max": data.get("max", 25),
-                    "node": data.get("node", ""),
-                    "node_type": data.get("node_type", ""),
-                }
-        except Exception:
-            pass
+        """Get current generation progress from ComfyUI.
+
+        Serves the live WebSocket event cache — real step counts and node ids
+        as ComfyUI executes. running=False means nothing is executing right
+        now; callers fall back to their time-based estimator in that case."""
+        with self._ws_lock:
+            st = dict(self._ws_state)
+            node_types = dict(self._last_node_types)
+        if st.get("running"):
+            node_id = st.get("node", "")
+            # Prefer the class_type of the running node so UIs show
+            # "Sampling" rather than raw ids like "57:3"
+            node_type = node_types.get(node_id) or node_id
+            return {
+                "running": True,
+                "current": st.get("current", 0),
+                "max": st.get("max", 0),
+                "node": node_id,
+                "node_type": node_type,
+                "prompt_id": st.get("prompt_id", ""),
+            }
         return {"running": False, "current": 0, "max": 0, "node": "", "node_type": ""}
 
     def get_queue(self) -> Dict:
