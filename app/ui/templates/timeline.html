@@ -2899,15 +2899,36 @@
                 
                 titleEl.textContent = title || 'Confirm Action';
                 msgEl.textContent = message || 'Are you sure you want to proceed?';
-                
+
+                // "Don't ask again" support for the 4K upscale prompts: the
+                // checkbox only appears on those dialogs. Ticking it and
+                // answering No persists settings.upscaleWarning=false so the
+                // popup stops firing for this project (all ~10 call sites get
+                // this automatically without individual edits).
+                window._confirmChecked = false;
+                let cbWrap = document.getElementById('confirm-dont-ask-wrap');
+                const isUpscalePrompt = (title || '').startsWith('Upscale to 4K?');
+                if (cbWrap) cbWrap.remove();
+                if (isUpscalePrompt) {
+                    cbWrap = document.createElement('div');
+                    cbWrap.id = 'confirm-dont-ask-wrap';
+                    cbWrap.style.cssText = 'margin:0 0 14px; font-size:0.75rem; color:var(--text-secondary);';
+                    cbWrap.innerHTML = '<label style="cursor:pointer; display:inline-flex; align-items:center; gap:6px;">' +
+                        '<input type="checkbox" id="confirm-dont-ask" style="cursor:pointer;"> Don\'t ask again for this project</label>';
+                    msgEl.after(cbWrap);
+                    cbWrap.querySelector('#confirm-dont-ask').addEventListener('change', (e) => {
+                        window._confirmChecked = e.target.checked;
+                    });
+                }
+
                 modal.classList.add('active');
-                
+
                 function cleanup() {
                     modal.classList.remove('active');
                     okBtn.onclick = null;
                     cancelBtn.onclick = null;
                 }
-                
+
                 okBtn.onclick = () => {
                     cleanup();
                     resolve(true);
@@ -2915,6 +2936,12 @@
                 
                 cancelBtn.onclick = () => {
                     cleanup();
+                    if (window._confirmChecked && (title || '').startsWith('Upscale to 4K?') && currentProject) {
+                        currentProject.settings = currentProject.settings || {};
+                        currentProject.settings.upscaleWarning = false;
+                        if (typeof scheduleSaveState === 'function') scheduleSaveState();
+                        notify('4K prompt disabled', 'It will not ask again for this project.', 'ℹ️');
+                    }
                     resolve(false);
                 };
             });
@@ -9916,16 +9943,24 @@ Project visual language: ${projVL}`;
 
 
 
-        async function _generateBulkImages(type, btnId, label) {
+        window._assetBatchFailed = window._assetBatchFailed || {};
+        async function _generateBulkImages(type, btnId, label, failedOnly = false) {
             cancelAssetBatch();
             const ac = new AbortController();
             window._assetBatchAbortController = ac;
             const bibleName = type === 'char' ? 'character_bible' : 'location_bible';
-            const items = (_assetStudioData[bibleName] || []).map(x => ({
+            let items = (_assetStudioData[bibleName] || []).map(x => ({
                 id: x.character_id || x.id || x.location_id || '',
                 type: type,
                 name: x.full_name || x.character_name || x.name || x.location_name || x.id
             })).filter(x => x.id);
+            if (failedOnly) {
+                const failedSet = window._assetBatchFailed[type] || [];
+                items = items.filter(x => failedSet.includes(x.id));
+                if (!items.length) { notify('Nothing', 'No failed images to retry', '⚠️'); return; }
+            } else {
+                window._assetBatchFailed[type] = [];
+            }
             if (!items.length) { notify('Nothing', `No ${label} found`, '⚠️'); return; }
             const btn = document.getElementById(btnId);
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
@@ -9955,11 +9990,23 @@ Project visual language: ${projVL}`;
                         successCount++;
                     } else {
                         failCount++;
+                        (window._assetBatchFailed[type] = window._assetBatchFailed[type] || []).push(item.id);
                     }
                 }
             }
             window._assetBatchAbortController = null;
-            if (btn) { btn.disabled = false; btn.textContent = label === 'character' ? '🎬 Char Images' : '🎬 Loc Images'; }
+            if (btn) {
+                btn.disabled = false;
+                if (failCount > 0) {
+                    btn.textContent = `↻ Retry Failed (${failCount})`;
+                    btn.title = 'Click to regenerate only the failed images';
+                    btn.dataset.retry = '1';
+                } else {
+                    btn.textContent = label === 'character' ? '🎬 Char Images' : '🎬 Loc Images';
+                    btn.title = '';
+                    btn.dataset.retry = '';
+                }
+            }
             if (!ac.signal.aborted) {
                 const activeTab = document.querySelector('.asset-tab[style*="display: block"]') || document.getElementById('asset-chars-tab');
                 if (activeTab) {
@@ -9983,16 +10030,18 @@ Project visual language: ${projVL}`;
             }
         }
 
-        async function generateAllCharacterImages() {
+        async function generateAllCharacterImages(failedOnly) {
             if (!requireProject()) return;
-
-            return _generateBulkImages('char', 'gen-char-img-btn', 'character');
+            const btn = document.getElementById('gen-char-img-btn');
+            if (failedOnly === undefined && btn && btn.dataset.retry === '1') failedOnly = true;
+            return _generateBulkImages('char', 'gen-char-img-btn', 'character', !!failedOnly);
         }
 
-        async function generateAllLocationImages() {
+        async function generateAllLocationImages(failedOnly) {
             if (!requireProject()) return;
-
-            return _generateBulkImages('loc', 'gen-loc-img-btn', 'location');
+            const btn = document.getElementById('gen-loc-img-btn');
+            if (failedOnly === undefined && btn && btn.dataset.retry === '1') failedOnly = true;
+            return _generateBulkImages('loc', 'gen-loc-img-btn', 'location', !!failedOnly);
         }
 
         async function assetGenerateImage(id, type) {
@@ -11497,6 +11546,13 @@ Project visual language: ${projVL}`;
                 const typing = aTag === 'INPUT' || aTag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable);
                 if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'i' || ev.key === 'I')) { ev.preventDefault(); sbTlSetRangePoint('in'); return; }
                 if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'o' || ev.key === 'O')) { ev.preventDefault(); sbTlSetRangePoint('out'); return; }
+                // NLE transport shortcuts: Space = play/pause, Home/End = jump
+                // playhead, C = close gaps (only when the timeline has focus
+                // and the user isn't typing in a field)
+                if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === ' ' || ev.code === 'Space')) { ev.preventDefault(); sbTlTogglePlay(); return; }
+                if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'c' || ev.key === 'C')) { ev.preventDefault(); sbTlCloseGaps(); return; }
+                if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && ev.key === 'Home') { ev.preventDefault(); sbTlPlayheadSec = 0; sbTlUpdatePlayhead(); sbTlUpdateMonitor(); return; }
+                if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && ev.key === 'End') { const rt = document.getElementById('sb-timeline-root'); const tot = rt ? parseFloat(rt.dataset.totalSec || '0') : 0; ev.preventDefault(); sbTlPlayheadSec = tot; sbTlUpdatePlayhead(); sbTlUpdateMonitor(); return; }
                 if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'Delete' || ev.key === 'Backspace') && typeof sbTlSelectedAudio !== 'undefined' && sbTlSelectedAudio) { ev.preventDefault(); sbTlDeleteAudio(sbTlSelectedAudio); return; }
                 const cur = document.activeElement && document.activeElement.closest ? document.activeElement.closest('[data-tl-shot]') : null;
                 if ((ev.altKey || ev.metaKey) && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && cur) {

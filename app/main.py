@@ -1709,6 +1709,67 @@ def cancel_comfyui_job(req: QueueCancelRequest):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+@app.get("/api/comfyui/model-sync")
+async def model_sync_scan():
+    """Scan all workflows for missing model references.
+
+    Reuses the smoke gate's validator, so the wizard and the CI-style check
+    always agree. Returns per-workflow issues plus same-family suggestions
+    (e.g. z_image_turbo_bf16 -> Z-Image-Turbo-w4a8).
+    """
+    try:
+        import smoke_check
+        errs, sugg = smoke_check.check_models()
+        return {"success": True, "issues": errs, "suggestions": sugg,
+                "models_root": str(smoke_check.find_models_root())}
+    except Exception as e:
+        return {"success": False, "error": str(e), "issues": [], "suggestions": []}
+
+
+class ModelSyncFixRequest(BaseModel):
+    file: str            # path relative to repo root, e.g. app/workflows/x.json
+    node_class: str
+    input: str
+    missing: str
+    suggested: str
+
+
+@app.post("/api/comfyui/model-sync")
+async def model_sync_apply(fixes: List[ModelSyncFixRequest]):
+    """Apply model remaps to workflow files.
+
+    For each fix, every node in the workflow whose class_type and current
+    value match gets its input rewritten to the suggested installed model.
+    Writes are atomic (tmp + os.replace).
+    """
+    results = []
+    for fix in fixes:
+        # Path traversal guard: only allow fixes inside app/workflows/
+        p = (Path(__file__).parent / fix.file.replace("\\", "/")).resolve()
+        if not str(p).startswith(str((Path(__file__).parent / "workflows").resolve())) or p.suffix != ".json":
+            results.append({"file": fix.file, "success": False, "error": "path outside app/workflows"})
+            continue
+        try:
+            wf = json.loads(p.read_text(encoding="utf-8"))
+            changed = 0
+            for nd in wf.values():
+                if (isinstance(nd, dict) and nd.get("class_type") == fix.node_class
+                        and isinstance(nd.get("inputs"), dict)
+                        and nd["inputs"].get(fix.input) == fix.missing):
+                    nd["inputs"][fix.input] = fix.suggested
+                    changed += 1
+            if changed == 0:
+                results.append({"file": fix.file, "success": False, "error": "no matching nodes found (already fixed?)"})
+                continue
+            tmp = p.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(wf, indent=2, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, p)
+            results.append({"file": fix.file, "success": True, "changed": changed})
+        except Exception as e:
+            results.append({"file": fix.file, "success": False, "error": str(e)})
+    return {"success": all(r.get("success") for r in results), "results": results}
+
+
 @app.get("/api/comfyui/checkpoints")
 async def get_comfyui_checkpoints():
     """Get available checkpoints from ComfyUI."""
@@ -3039,38 +3100,35 @@ async def clear_project_stage(name: str, request: Request):
         if target_dir.exists() and target_dir.is_dir():
             import shutil, time as _time
             import gc as _gc
-            # Delete everything inside target_dir but keep target_dir itself.
-            # Windows-friendly: per-file deletion with retry (a viewer/browser
-            # holding a handle briefly must not abort the whole clear), and
-            # collect failed paths instead of failing the entire request.
+            # Reversible clear: MOVE stage contents into <project>/_trash/<stage>/<timestamp>/
+            # instead of deleting, so a clear can be undone by hand. The newest
+            # 5 trash batches per stage are kept; older ones auto-purge.
+            # Windows-friendly: per-item move with retry (a viewer/browser
+            # holding a handle briefly must not abort the whole clear).
+            trash_root = target_dir.parent / "_trash" / stage
+            trash_dir = trash_root / _time.strftime("%Y%m%d_%H%M%S")
+            trash_dir.mkdir(parents=True, exist_ok=True)
             failed = []
-            def _rmtree_retry(path: Path, tries: int = 3):
+            def _move_retry(src: Path, tries: int = 3):
                 for i in range(tries):
                     try:
-                        shutil.rmtree(path)
+                        shutil.move(str(src), str(trash_dir / src.name))
                         return True
                     except OSError:
                         _gc.collect()
                         _time.sleep(0.4)
                 return False
             for item in target_dir.iterdir():
-                if item.is_dir():
-                    if not _rmtree_retry(item):
-                        failed.append(str(item))
-                else:
-                    deleted = False
-                    for i in range(3):
-                        try:
-                            item.unlink()
-                            deleted = True
-                            break
-                        except OSError:
-                            _gc.collect()
-                            _time.sleep(0.4)
-                    if not deleted:
-                        failed.append(str(item))
+                if not _move_retry(item):
+                    failed.append(str(item))
             if failed:
-                return {"success": False, "error": "Could not delete " + str(len(failed)) + " file(s) (locked by another program? Close image viewers and retry). First: " + failed[0]}
+                return {"success": False, "error": "Could not move " + str(len(failed)) + " file(s) to trash (locked by another program? Close image viewers and retry). First: " + failed[0]}
+            try:
+                batches = sorted(p for p in trash_root.iterdir() if p.is_dir())
+                for old in batches[:-5]:
+                    shutil.rmtree(old, ignore_errors=True)
+            except Exception:
+                pass
 
         # Update orchestrator project graph memory to match
         if orchestrator:

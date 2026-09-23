@@ -1933,6 +1933,7 @@
 
                                     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
                                         <button class="btn btn-secondary" onclick="testImageProvider(this)" style="padding:4px 12px;font-size:0.75rem;">Test Connection</button>
+                                        <button class="btn btn-secondary" onclick="openModelSyncWizard()" style="padding:4px 12px;font-size:0.75rem;">🧩 Model Sync</button>
                                         <span id="image-test-result" style="font-size:0.85rem;"></span>
                                     </div>
 
@@ -2469,6 +2470,99 @@
         // === NOTIFICATION ===
         let _notifTimeout = null;
 
+        // ================= Model sync wizard =================
+        let _modelSyncState = null;
+
+        async function openModelSyncWizard() {
+            const btn = event && event.target ? event.target : null;
+            if (btn) { btn.disabled = true; btn.textContent = '🧩 Scanning…'; }
+            try {
+                const r = await fetch('/api/comfyui/model-sync');
+                _modelSyncState = await r.json();
+            } catch (e) {
+                notify('Scan failed', e.message, '❌');
+                if (btn) { btn.disabled = false; btn.textContent = '🧩 Model Sync'; }
+                return;
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🧩 Model Sync'; }
+            if (!_modelSyncState.success) { notify('Scan failed', _modelSyncState.error || 'unknown', '❌'); return; }
+            renderModelSyncWizard();
+        }
+
+        function renderModelSyncWizard() {
+            const st = _modelSyncState || { issues: [], suggestions: [] };
+            const rows = (st.issues || []).map((iss, idx) => {
+                const m = iss.error.match(/^(.+?) references missing model: (.+)$/);
+                const ref = m ? m[2] : iss.error;
+                const sug = m ? ((st.suggestions || []).find(s => s.file === iss.file && s.missing === m[2]) || {}).suggested : '';
+                const fname = iss.file.split('/').pop();
+                return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;margin-bottom:6px;font-size:0.72rem;">
+                    <div style="flex:1;min-width:0;">
+                        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${fname}">${fname}</div>
+                        <div style="color:#f87171;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ref}</div>
+                        ${sug ? `<div style="color:#4ade80;">→ ${sug}</div>` : ''}
+                    </div>
+                    ${sug ? `<button class="btn btn-primary" onclick="applyModelSyncFix(${idx})" style="padding:2px 8px;font-size:0.65rem;">Fix</button>` : ''}
+                </div>`;
+            }).join('');
+            const html = (st.issues || []).length
+                ? rows + `<div style="margin-top:10px;">
+                    <button class="btn btn-primary" onclick="applyAllModelSyncFixes()" style="padding:4px 12px;font-size:0.75rem;">Fix All (${(st.suggestions || []).length})</button>
+                  </div>`
+                : '<div style="color:var(--text-secondary);padding:8px;font-size:0.8rem;">✅ All workflow models are installed. You are in sync.</div>';
+            showConfirm('🧩 Model Sync', 'Loading…');
+            // showConfirm renders text; replace with real HTML rows once open
+            const msgEl = document.getElementById('custom-confirm-message');
+            if (msgEl) msgEl.innerHTML = html;
+        }
+
+        async function applyModelSyncFix(idx) {
+            const st = _modelSyncState;
+            if (!st) return;
+            const iss = st.issues[idx];
+            const m = iss.error.match(/^(.+?) references missing model: (.+)$/);
+            if (!m) return;
+            const [_, nodeRef, missing] = m;
+            const sug = (st.suggestions || []).find(s => s.file === iss.file && s.missing === missing);
+            if (!sug) { notify('No fix available', 'No installed variant matches this model', '⚠️'); return; }
+            const [nodeClass, input] = nodeRef.split('.');
+            await postModelSyncFixes([{ file: iss.file, node_class: nodeClass, input: input, missing: missing, suggested: sug.suggested }]);
+            await openModelSyncWizard();
+        }
+
+        async function applyAllModelSyncFixes() {
+            const st = _modelSyncState;
+            if (!st) return;
+            const fixes = [];
+            (st.issues || []).forEach(iss => {
+                const m = iss.error.match(/^(.+?) references missing model: (.+)$/);
+                if (!m) return;
+                const sug = (st.suggestions || []).find(s => s.file === iss.file && s.missing === m[2]);
+                if (sug) {
+                    const [nodeClass, input] = m[1].split('.');
+                    fixes.push({ file: iss.file, node_class: nodeClass, input: input, missing: m[2], suggested: sug.suggested });
+                }
+            });
+            if (!fixes.length) { notify('No fixes', 'Nothing can be auto-remapped', '⚠️'); return; }
+            await postModelSyncFixes(fixes);
+            await openModelSyncWizard();
+        }
+
+        async function postModelSyncFixes(fixes) {
+            try {
+                const r = await fetch('/api/comfyui/model-sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(fixes)
+                });
+                const d = await r.json();
+                if (d.success) notify('Models synced', fixes.length + ' remap(s) applied', '✅');
+                else notify('Some fixes failed', JSON.stringify(d.results || {}).slice(0, 140), '⚠️');
+            } catch (e) {
+                notify('Fix failed', e.message, '❌');
+            }
+        }
+
         function notify(msg, detail, icon, duration = 2500) {
             document.getElementById('notif-icon').textContent = icon || '⚠️';
             document.getElementById('notif-msg').textContent = msg;
@@ -2502,7 +2596,28 @@
                 
                 titleEl.textContent = title || 'Confirm Action';
                 msgEl.textContent = message || 'Are you sure you want to proceed?';
-                
+
+                // "Don't ask again" support for the 4K upscale prompts: the
+                // checkbox only appears on those dialogs. Ticking it and
+                // answering No persists settings.upscaleWarning=false so the
+                // popup stops firing for this project (all ~10 call sites get
+                // this automatically without individual edits).
+                window._confirmChecked = false;
+                let cbWrap = document.getElementById('confirm-dont-ask-wrap');
+                const isUpscalePrompt = (title || '').startsWith('Upscale to 4K?');
+                if (cbWrap) cbWrap.remove();
+                if (isUpscalePrompt) {
+                    cbWrap = document.createElement('div');
+                    cbWrap.id = 'confirm-dont-ask-wrap';
+                    cbWrap.style.cssText = 'margin:0 0 14px; font-size:0.75rem; color:var(--text-secondary);';
+                    cbWrap.innerHTML = '<label style="cursor:pointer; display:inline-flex; align-items:center; gap:6px;">' +
+                        '<input type="checkbox" id="confirm-dont-ask" style="cursor:pointer;"> Don\'t ask again for this project</label>';
+                    msgEl.after(cbWrap);
+                    cbWrap.querySelector('#confirm-dont-ask').addEventListener('change', (e) => {
+                        window._confirmChecked = e.target.checked;
+                    });
+                }
+
                 modal.classList.add('active');
                 
                 function cleanup() {
@@ -2518,6 +2633,12 @@
                 
                 cancelBtn.onclick = () => {
                     cleanup();
+                    if (window._confirmChecked && (title || '').startsWith('Upscale to 4K?') && currentProject) {
+                        currentProject.settings = currentProject.settings || {};
+                        currentProject.settings.upscaleWarning = false;
+                        if (typeof scheduleSaveState === 'function') scheduleSaveState();
+                        notify('4K prompt disabled', 'It will not ask again for this project.', 'ℹ️');
+                    }
                     resolve(false);
                 };
             });
@@ -10413,16 +10534,24 @@ Project visual language: ${projVL}`;
 
 
 
-        async function _generateBulkImages(type, btnId, label) {
+        window._assetBatchFailed = window._assetBatchFailed || {};
+        async function _generateBulkImages(type, btnId, label, failedOnly = false) {
             cancelAssetBatch();
             const ac = new AbortController();
             window._assetBatchAbortController = ac;
             const bibleName = type === 'char' ? 'character_bible' : 'location_bible';
-            const items = (_assetStudioData[bibleName] || []).map(x => ({
+            let items = (_assetStudioData[bibleName] || []).map(x => ({
                 id: x.character_id || x.id || x.location_id || '',
                 type: type,
                 name: x.full_name || x.character_name || x.name || x.location_name || x.id
             })).filter(x => x.id);
+            if (failedOnly) {
+                const failedSet = window._assetBatchFailed[type] || [];
+                items = items.filter(x => failedSet.includes(x.id));
+                if (!items.length) { notify('Nothing', 'No failed images to retry', '⚠️'); return; }
+            } else {
+                window._assetBatchFailed[type] = [];
+            }
             if (!items.length) { notify('Nothing', `No ${label} found`, '⚠️'); return; }
             const btn = document.getElementById(btnId);
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating...'; }
@@ -10452,11 +10581,23 @@ Project visual language: ${projVL}`;
                         successCount++;
                     } else {
                         failCount++;
+                        (window._assetBatchFailed[type] = window._assetBatchFailed[type] || []).push(item.id);
                     }
                 }
             }
             window._assetBatchAbortController = null;
-            if (btn) { btn.disabled = false; btn.textContent = label === 'character' ? '🎬 Char Images' : '🎬 Loc Images'; }
+            if (btn) {
+                btn.disabled = false;
+                if (failCount > 0) {
+                    btn.textContent = `↻ Retry Failed (${failCount})`;
+                    btn.title = 'Click to regenerate only the failed images';
+                    btn.dataset.retry = '1';
+                } else {
+                    btn.textContent = label === 'character' ? '🎬 Char Images' : '🎬 Loc Images';
+                    btn.title = '';
+                    btn.dataset.retry = '';
+                }
+            }
             if (!ac.signal.aborted) {
                 const activeTab = document.querySelector('.asset-tab[style*="display: block"]') || document.getElementById('asset-chars-tab');
                 if (activeTab) {
@@ -10480,16 +10621,18 @@ Project visual language: ${projVL}`;
             }
         }
 
-        async function generateAllCharacterImages() {
+        async function generateAllCharacterImages(failedOnly) {
             if (!requireProject()) return;
-
-            return _generateBulkImages('char', 'gen-char-img-btn', 'character');
+            const btn = document.getElementById('gen-char-img-btn');
+            if (failedOnly === undefined && btn && btn.dataset.retry === '1') failedOnly = true;
+            return _generateBulkImages('char', 'gen-char-img-btn', 'character', !!failedOnly);
         }
 
-        async function generateAllLocationImages() {
+        async function generateAllLocationImages(failedOnly) {
             if (!requireProject()) return;
-
-            return _generateBulkImages('loc', 'gen-loc-img-btn', 'location');
+            const btn = document.getElementById('gen-loc-img-btn');
+            if (failedOnly === undefined && btn && btn.dataset.retry === '1') failedOnly = true;
+            return _generateBulkImages('loc', 'gen-loc-img-btn', 'location', !!failedOnly);
         }
 
         async function assetGenerateImage(id, type) {
