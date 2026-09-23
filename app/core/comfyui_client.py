@@ -70,6 +70,7 @@ class ComfyUIClient:
             "updated": 0.0,
         }
         self._last_node_types: Dict[str, str] = {}   # node-id -> class_type, for readable labels
+        self._job_labels: Dict[str, str] = {}        # prompt_id -> "Label" for the queue dashboard
         self._ws_thread: Optional[Thread] = None
         self._start_ws_listener()
 
@@ -180,6 +181,7 @@ class ComfyUIClient:
                     if st.get("state") == "running":
                         st["running"] = False
                         st["state"] = "done"
+                    self._job_labels.pop(str(data.get("prompt_id") or ""), None)
                     st["updated"] = time.time()
                 else:
                     st["running"] = True
@@ -191,11 +193,13 @@ class ComfyUIClient:
                 st["running"] = False
                 st["state"] = "done"
                 st["prompt_id"] = str(data.get("prompt_id") or st.get("prompt_id", ""))
+                self._job_labels.pop(str(data.get("prompt_id") or ""), None)
                 st["updated"] = time.time()
             elif etype in ("execution_error", "execution_interrupted"):
                 st["running"] = False
                 st["state"] = "error"
                 st["prompt_id"] = str(data.get("prompt_id") or st.get("prompt_id", ""))
+                self._job_labels.pop(str(data.get("prompt_id") or ""), None)
                 st["updated"] = time.time()
 
     def _load_config(self, config_path: str) -> Dict:
@@ -333,6 +337,36 @@ class ComfyUIClient:
             self.last_queue_error = str(e)
             print(f"Error queueing prompt: {e}")
         return None
+
+    def register_job(self, prompt_id: str, label: str = ""):
+        """Record a queued job's prompt_id with a human-readable label for the queue dashboard."""
+        if prompt_id:
+            with self._ws_lock:
+                self._job_labels[str(prompt_id)] = label or "ComfyUI job"
+
+    def list_job_labels(self) -> Dict[str, str]:
+        """Snapshot of prompt_id -> label for the queue dashboard."""
+        with self._ws_lock:
+            return dict(self._job_labels)
+
+    def dequeue_prompt(self, prompt_id: str) -> bool:
+        """Remove a pending job from ComfyUI's queue.
+
+        POST /queue {"delete": [id]} only removes jobs still waiting; the
+        running job needs POST /interrupt instead."""
+        try:
+            response = requests.post(
+                f"{self.host}/queue",
+                json={"delete": [str(prompt_id)]},
+                timeout=10,
+            )
+            if response.status_code == 200:
+                with self._ws_lock:
+                    self._job_labels.pop(str(prompt_id), None)
+                return True
+        except Exception:
+            pass
+        return False
 
     def get_progress(self) -> Dict:
         """Get current generation progress from ComfyUI.
@@ -473,6 +507,7 @@ class ComfyUIClient:
         prompt_id = self.queue_prompt(workflow)
         if not prompt_id:
             return {"success": False, "error": "Failed to queue prompt - check ComfyUI connection and model availability"}
+        self.register_job(prompt_id, "Image · basic t2i")
 
         output = self.get_output(prompt_id, timeout=300)
         if not output:
@@ -896,6 +931,7 @@ class ComfyUIClient:
                 return {"success": False, "error": "Failed to queue workflow on ComfyUI" + (f": {qerr}" if qerr else "")}
 
             logger.info("ComfyUI queued [%s] id=%s", workflow_name, prompt_id)
+            self.register_job(prompt_id, f"Image · {workflow_name}")
 
             gstart = time.time()
             output = self.get_output(prompt_id, timeout=1800)
@@ -981,6 +1017,7 @@ class ComfyUIClient:
         prompt_id = self.queue_prompt(workflow)
         if not prompt_id:
             return {"success": False, "error": "Failed to queue prompt"}
+        self.register_job(prompt_id, "Video · basic t2v")
 
         output = self.get_output(prompt_id, timeout=600)
         if not output:
@@ -1094,6 +1131,7 @@ class ComfyUIClient:
         prompt_id = self.queue_prompt(workflow)
         if not prompt_id:
             return {"success": False, "error": "Failed to queue prompt - ComfyUI may not support this model for image-to-image"}
+        self.register_job(prompt_id, "Image · basic i2i")
         
         output = self.get_output(prompt_id, timeout=300)
         if not output:

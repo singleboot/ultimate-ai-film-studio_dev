@@ -250,6 +250,9 @@ class GenerateRequest(BaseModel):
     images: Optional[List[str]] = None
     api_key: Optional[str] = None
 
+class QueueCancelRequest(BaseModel):
+    prompt_id: str
+
 class ProjectCreateRequest(BaseModel):
     name: str
     template_name: Optional[str] = None
@@ -1652,6 +1655,59 @@ def interrupt_comfyui():
     comfyui_client.clear_queue()
     success = comfyui_client.interrupt()
     return {"success": success}
+
+
+@app.get("/api/comfyui/queue")
+def get_comfyui_queue():
+    """Live view of ComfyUI's queue for the dashboard.
+
+    Merges ComfyUI's /queue with the app's job-label registry so each job
+    shows what it is ("Image · image_z_image_turbo"), not a raw prompt_id.
+    Sync on purpose: blocking network I/O against ComfyUI.
+    """
+    try:
+        q = comfyui_client.get_queue()
+        labels = comfyui_client.list_job_labels()
+
+        def _entry(item):
+            # Each queue entry is [number, prompt_id, prompt, extra_data, outputs]
+            pid = str(item[1]) if isinstance(item, (list, tuple)) and len(item) > 1 else "?"
+            return {
+                "prompt_id": pid,
+                "label": labels.get(pid, "ComfyUI job"),
+            }
+
+        running = [_entry(it) for it in (q.get("queue_running") or [])]
+        pending = [_entry(it) for it in (q.get("queue_pending") or [])]
+        return {"success": True, "running": running, "pending": pending, "connected": True}
+    except Exception as e:
+        return {"success": False, "error": str(e), "running": [], "pending": [], "connected": False}
+
+
+@app.post("/api/comfyui/queue/cancel")
+def cancel_comfyui_job(req: QueueCancelRequest):
+    """Cancel a single ComfyUI job from the queue dashboard.
+
+    Pending jobs are dequeued by prompt_id; the running job gets /interrupt.
+    Sync on purpose: blocking network I/O against ComfyUI.
+    """
+    try:
+        q = comfyui_client.get_queue()
+        running_ids = {str(it[1]) for it in (q.get("queue_running") or [])
+                       if isinstance(it, (list, tuple)) and len(it) > 1}
+        pending_ids = {str(it[1]) for it in (q.get("queue_pending") or [])
+                       if isinstance(it, (list, tuple)) and len(it) > 1}
+        pid = str(req.prompt_id)
+        if pid in pending_ids:
+            ok = comfyui_client.dequeue_prompt(pid)
+            return {"success": ok, "action": "dequeued" if ok else "failed"}
+        if pid in running_ids:
+            ok = comfyui_client.interrupt()
+            return {"success": ok, "action": "interrupted" if ok else "failed"}
+        return {"success": False, "action": "not_found",
+                "error": "Job already finished or removed"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @app.get("/api/comfyui/checkpoints")
 async def get_comfyui_checkpoints():
