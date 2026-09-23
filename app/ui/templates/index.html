@@ -12867,6 +12867,16 @@ Project visual language: ${projVL}`;
             ov.addEventListener('click', (e) => { if (e.target === ov) sbTlCenterClose(); });
             ov.innerHTML = `
                 <div id="sb-tl-center-stage" style="position:relative;max-width:min(1100px,92vw);width:92vw;max-height:78vh;min-height:200px;display:flex;align-items:center;justify-content:center;background:#000;border:1px solid var(--border-color);border-radius:12px;box-shadow:0 10px 60px rgba(0,0,0,0.8);overflow:hidden;"></div>
+                <div style="display:flex;align-items:center;gap:5px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:6px 12px;">
+                    <button class="btn btn-secondary" onclick="sbTlCenterGotoStart()" title="Start of timeline (Home)" style="padding:2px 9px;font-size:0.8rem;">⏮</button>
+                    <button class="btn btn-secondary" onclick="sbTlCenterNav(-1)" title="Previous cut (←)" style="padding:2px 9px;font-size:0.8rem;">⏪</button>
+                    <button class="btn btn-primary" id="sb-tl-center-play-btn" onclick="sbTlCenterTogglePlay()" title="Play / Pause (Space)" style="padding:2px 12px;font-size:0.85rem;min-width:38px;">⏸</button>
+                    <button class="btn btn-secondary" onclick="sbTlCenterStop()" title="Stop — back to shot start" style="padding:2px 9px;font-size:0.8rem;">⏹</button>
+                    <button class="btn btn-secondary" onclick="sbTlCenterNav(1)" title="Next cut (→)" style="padding:2px 9px;font-size:0.8rem;">⏩</button>
+                    <button class="btn btn-secondary" onclick="sbTlCenterGotoEnd()" title="End of timeline (End)" style="padding:2px 9px;font-size:0.8rem;">⏭</button>
+                    <span id="sb-tl-center-counter" style="font-size:0.7rem;color:var(--text-secondary);font-variant-numeric:tabular-nums;margin-left:8px;"></span>
+                    <span id="sb-tl-center-tc" style="font-size:0.7rem;color:var(--accent-primary);font-weight:700;font-variant-numeric:tabular-nums;margin-left:8px;">00:00.00</span>
+                </div>
                 <div style="color:#ddd;font-size:0.8rem;display:flex;gap:12px;align-items:center;max-width:92vw;">
                     <span id="sb-tl-center-title" style="font-weight:700;color:var(--accent-primary);"></span>
                     <span id="sb-tl-center-meta" style="color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
@@ -12886,7 +12896,16 @@ Project visual language: ${projVL}`;
             sbTlCenterLoad(sh, sceneIdx);
             ov.style.display = 'flex';
             if (!sbTlCenterKeyHandler) {
-                sbTlCenterKeyHandler = (e) => { if (e.key === 'Escape') sbTlCenterClose(); };
+                sbTlCenterKeyHandler = (e) => {
+                    if (e.key === 'Escape') { sbTlCenterClose(); return; }
+                    const tag = document.activeElement ? document.activeElement.tagName : '';
+                    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+                    if (e.key === ' ') { e.preventDefault(); sbTlCenterTogglePlay(); }
+                    else if (e.key === 'ArrowLeft') { e.preventDefault(); sbTlCenterNav(-1); }
+                    else if (e.key === 'ArrowRight') { e.preventDefault(); sbTlCenterNav(1); }
+                    else if (e.key === 'Home') { e.preventDefault(); sbTlCenterGotoStart(); }
+                    else if (e.key === 'End') { e.preventDefault(); sbTlCenterGotoEnd(); }
+                };
                 document.addEventListener('keydown', sbTlCenterKeyHandler);
             }
             const root = document.getElementById('sb-timeline-root');
@@ -12904,6 +12923,7 @@ Project visual language: ${projVL}`;
             const meta = document.getElementById('sb-tl-center-meta');
             if (title) title.textContent = sh.shot_id || 'SHOT';
             if (meta) meta.textContent = (scene ? (scene.scene_id || '') + ' · ' : '') + sbTlFmtTime(sbTlShotDuration(sh, sbTlCenterSel)) + ' · ' + ((sh.action || '').slice(0, 90) || 'no action text');
+            sbTlCenterUpdateCounter();
             const url = sbTlShotVideoUrl(sh);
             if (url) {
                 const v = document.createElement('video');
@@ -12912,6 +12932,12 @@ Project visual language: ${projVL}`;
                 v.muted = true;
                 v.playsInline = true;
                 v.style.cssText = 'max-width:100%;max-height:78vh;width:auto;height:auto;';
+                v.addEventListener('play', () => sbTlCenterSetPlayBtn(true));
+                v.addEventListener('pause', () => sbTlCenterSetPlayBtn(false));
+                v.addEventListener('timeupdate', () => {
+                    const tc = document.getElementById('sb-tl-center-tc');
+                    if (tc) tc.textContent = sbTlFmtTime(v.currentTime || 0);
+                });
                 v.onerror = () => {
                     v.remove();
                     const img = sbTlShotImageUrl(sh);
@@ -12921,10 +12947,97 @@ Project visual language: ${projVL}`;
                 v.src = url;
                 stage.appendChild(v);
             } else {
+                sbTlCenterSetPlayBtn(false);
                 const img = sbTlShotImageUrl(sh);
                 if (img) sbTlCenterLoadImage(img);
                 else sbTlCenterShowEmpty('no media yet — generate this shot');
             }
+        }
+
+        // ================= Theater transport (NLE-style controls) =================
+        function sbTlCenterVideo() {
+            const stage = document.getElementById('sb-tl-center-stage');
+            return stage ? stage.querySelector('video') : null;
+        }
+
+        function sbTlCenterSetPlayBtn(playing) {
+            const b = document.getElementById('sb-tl-center-play-btn');
+            if (b) b.textContent = playing ? '⏸' : '▶';
+        }
+
+        function sbTlCenterUpdateCounter() {
+            const el = document.getElementById('sb-tl-center-counter');
+            if (!el) return;
+            const idx = sbTlCenterSel ? sbTlCenterSel.split('_').map(Number) : null;
+            let total = 0, cur = -1, flat = [];
+            (screenplayData.scenes || []).forEach((s, si) => (s.shots || []).forEach((sh, hi) => { flat.push(si + '_' + hi); if (sh.storyboard_image || sh._temp_storyboard_image || sh.action) {} }));
+            total = flat.length;
+            cur = idx ? flat.indexOf(sbTlCenterSel) : -1;
+            el.textContent = (cur >= 0 ? (cur + 1) : '–') + ' / ' + total + ' cuts';
+        }
+
+        function sbTlCenterFlatShots() {
+            const flat = [];
+            (screenplayData.scenes || []).forEach((s, si) => (s.shots || []).forEach((sh, hi) => flat.push({ sceneIdx: si, shotIdx: hi, key: si + '_' + hi, sh })));
+            return flat;
+        }
+
+        function sbTlCenterNav(dir) {
+            const flat = sbTlCenterFlatShots();
+            if (!flat.length) return;
+            const i = flat.findIndex(f => f.key === sbTlCenterSel);
+            const next = flat[Math.max(0, Math.min(flat.length - 1, (i < 0 ? 0 : i + dir)))];
+            if (!next || next.key === sbTlCenterSel) return;
+            sbTlCenterSel = next.key;
+            sbTlSelectedShot = next.key;
+            sbTlApplySelectionHalo();
+            sbTlRenderShotInfo();
+            // Sync the timeline playhead to the cut we jumped to
+            sbTlPlayheadSec = sbTlShotStartSec(next.sceneIdx, next.shotIdx);
+            sbTlUpdatePlayhead();
+            const root = document.getElementById('sb-timeline-root');
+            if (root) { const x = sbTlPlayheadSec * sbTlGetPxPerSec(); if (x < root.scrollLeft + 40 || x > root.scrollLeft + root.clientWidth - 80) root.scrollLeft = Math.max(0, x - root.clientWidth * 0.3); }
+            sbTlCenterLoad(next.sh, next.sceneIdx);
+        }
+
+        function sbTlCenterGotoStart() {
+            const flat = sbTlCenterFlatShots();
+            if (!flat.length) return;
+            const f = flat[0];
+            sbTlCenterSel = f.key;
+            sbTlSelectedShot = f.key;
+            sbTlApplySelectionHalo();
+            sbTlRenderShotInfo();
+            sbTlPlayheadSec = 0;
+            sbTlUpdatePlayhead();
+            sbTlCenterLoad(f.sh, f.sceneIdx);
+        }
+
+        function sbTlCenterGotoEnd() {
+            const flat = sbTlCenterFlatShots();
+            if (!flat.length) return;
+            const f = flat[flat.length - 1];
+            sbTlCenterSel = f.key;
+            sbTlSelectedShot = f.key;
+            sbTlApplySelectionHalo();
+            sbTlRenderShotInfo();
+            sbTlPlayheadSec = sbTlShotStartSec(f.sceneIdx, f.shotIdx);
+            sbTlUpdatePlayhead();
+            sbTlCenterLoad(f.sh, f.sceneIdx);
+        }
+
+        function sbTlCenterTogglePlay() {
+            const v = sbTlCenterVideo();
+            if (!v) return;
+            if (v.paused) v.play().catch(() => {}); else v.pause();
+        }
+
+        function sbTlCenterStop() {
+            const v = sbTlCenterVideo();
+            if (v) { v.pause(); try { v.currentTime = 0; } catch (e) {} }
+            sbTlCenterSetPlayBtn(false);
+            const tc = document.getElementById('sb-tl-center-tc');
+            if (tc) tc.textContent = '00:00.00';
         }
 
         function sbTlCenterLoadImage(src) {
@@ -13250,7 +13363,16 @@ Project visual language: ${projVL}`;
             sbTlCenterLoad(sel.sh, sel.sceneIdx);
             ov.style.display = 'flex';
             if (!sbTlCenterKeyHandler) {
-                sbTlCenterKeyHandler = (e) => { if (e.key === 'Escape') sbTlCenterClose(); };
+                sbTlCenterKeyHandler = (e) => {
+                    if (e.key === 'Escape') { sbTlCenterClose(); return; }
+                    const tag = document.activeElement ? document.activeElement.tagName : '';
+                    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+                    if (e.key === ' ') { e.preventDefault(); sbTlCenterTogglePlay(); }
+                    else if (e.key === 'ArrowLeft') { e.preventDefault(); sbTlCenterNav(-1); }
+                    else if (e.key === 'ArrowRight') { e.preventDefault(); sbTlCenterNav(1); }
+                    else if (e.key === 'Home') { e.preventDefault(); sbTlCenterGotoStart(); }
+                    else if (e.key === 'End') { e.preventDefault(); sbTlCenterGotoEnd(); }
+                };
                 document.addEventListener('keydown', sbTlCenterKeyHandler);
             }
         }
