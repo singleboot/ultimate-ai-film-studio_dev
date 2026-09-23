@@ -412,6 +412,8 @@
         .sb-drop-after { box-shadow: 3px 0 0 0 var(--accent-primary); }
         [data-tl-shot] { user-select: none; }
         [data-tl-shot] img, [data-tl-shot] video { -webkit-user-drag: none; }
+        [data-tl-shot].sb-tl-sel { outline: 3px solid #ffd54f !important; outline-offset: -3px; box-shadow: 0 0 14px rgba(255, 213, 79, 0.45); }
+        [data-tl-shot]:hover { filter: brightness(1.18); }
 
         .storyboard-grid {
             display: grid;
@@ -12106,6 +12108,8 @@ Project visual language: ${projVL}`;
         // ================= Duration-based storyboard timeline (NLE-style) =================
         let sbTlDurationCache = {};   // sceneIdx_shotIdx -> seconds (real video duration once probed)
         let sbTlPlayheadSec = 0;
+        let sbTlMonitorBig = false;   // big-monitor toggle (persisted)
+        try { sbTlMonitorBig = localStorage.getItem('sbTlMonitorBig') === '1'; } catch (e) {}
         let sbTlProbing = {};
         let sbTlProbeRenderTimer = null;
         let sbTlPersistTimer = null;
@@ -12263,6 +12267,7 @@ Project visual language: ${projVL}`;
                 if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'i' || ev.key === 'I')) { ev.preventDefault(); sbTlSetRangePoint('in'); return; }
                 if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'o' || ev.key === 'O')) { ev.preventDefault(); sbTlSetRangePoint('out'); return; }
                 if (!typing && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (ev.key === 'Delete' || ev.key === 'Backspace') && typeof sbTlSelectedAudio !== 'undefined' && sbTlSelectedAudio) { ev.preventDefault(); sbTlDeleteAudio(sbTlSelectedAudio); return; }
+                if (!typing && ev.key === 'Escape' && sbTlSelectedShot) { sbTlSelectedShot = null; sbTlApplySelectionHalo(); sbTlRenderShotInfo(); return; }
                 const cur = document.activeElement && document.activeElement.closest ? document.activeElement.closest('[data-tl-shot]') : null;
                 if ((ev.altKey || ev.metaKey) && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && cur) {
                     ev.preventDefault();
@@ -12794,12 +12799,13 @@ Project visual language: ${projVL}`;
                 }
             }
 
-            // Selection halo on the active shot card
+            // Selection halo on the active shot card (user-selected block wins over playhead)
             const root = document.getElementById('sb-timeline-root');
             if (root) {
                 root.querySelectorAll('[data-tl-shot]').forEach(el => {
                     if (el.dataset.tlShot === key) el.style.boxShadow = '0 0 0 2px #ff5252 inset';
                     else if (sbTlCenterSel && el.dataset.tlShot === sbTlCenterSel) el.style.boxShadow = '0 0 0 3px #b39ddb inset';
+                    else if (el.classList.contains('sb-tl-sel')) el.style.boxShadow = '';   // .sb-tl-sel outline shows through
                     else el.style.boxShadow = '';
                 });
             }
@@ -12874,6 +12880,7 @@ Project visual language: ${projVL}`;
             const sh = screenplayData?.scenes?.[sceneIdx]?.shots?.[shotIdx];
             if (!sh) return;
             if (sbTlPlaying) sbTlStopRange();
+            sbTlSelectedShot = sceneIdx + '_' + shotIdx;   // theater selection = block selection
             sbTlCenterSel = sceneIdx + '_' + shotIdx;
             const ov = sbTlCenterEnsureOverlay();
             sbTlCenterLoad(sh, sceneIdx);
@@ -12953,15 +12960,7 @@ Project visual language: ${projVL}`;
             if (sbTlCenterKeyHandler) { document.removeEventListener('keydown', sbTlCenterKeyHandler); sbTlCenterKeyHandler = null; }
         }
 
-        let sbTlCenterPendingOpen = null;
-        function sbTlCenterCardClick(sceneIdx, shotIdx, ev) {
-            if (ev) {
-                ev.stopPropagation();
-                if (ev.button !== undefined && ev.button !== 0) return;
-            }
-            if (sbTlCenterPendingOpen) clearTimeout(sbTlCenterPendingOpen);
-            sbTlCenterPendingOpen = setTimeout(() => { sbTlCenterPendingOpen = null; sbTlCenterOpen(sceneIdx, shotIdx); }, 250);
-        }
+        let sbTlCenterPendingOpen = null;   // (kept for template compatibility; click flow now selects instead of auto-opening the theater)
 
         function renderStoryboardTimeline(container) {
             const projName = currentProject?.name || '';
@@ -13028,8 +13027,8 @@ Project visual language: ${projVL}`;
                     <div id="shot-card-${shotKey}" data-tl-shot="${shotKey}" tabindex="0" draggable="true"
                         title="${escapeHtml(sh.shot_id || '')} · ${sbTlFmtTime(dur)}${hasVideo ? ' (video)' : ''} · drag to reorder"
                         ondragstart="storyboardShotDragStart(event, '${shotKey}')" ondragover="storyboardShotDragOver(event, this)" ondragleave="storyboardShotDragLeave(event, this)" ondrop="storyboardShotDrop(event, this, '${shotKey}')" ondragend="storyboardShotDragEnd()"
-                        onclick="sbTlCenterCardClick(${sceneIdx}, ${shotIdx}, event)"
-                        ondblclick="if (sbTlCenterPendingOpen) { clearTimeout(sbTlCenterPendingOpen); sbTlCenterPendingOpen = null; } expandStoryboardShot(${sceneIdx}, ${shotIdx})"
+                        onclick="sbTlSelectShot(${sceneIdx}, ${shotIdx}, event)"
+                        ondblclick="expandStoryboardShot(${sceneIdx}, ${shotIdx})"
                         style="position:relative;flex:0 0 ${Math.max(dur * pps, 34).toFixed(0)}px;height:100%;border-right:1px solid var(--bg-secondary);outline:2px solid ${borderColor};outline-offset:-2px;overflow:hidden;cursor:pointer;user-select:none;">
                         ${media}
                         ${hasVideo ? `<span style="position:absolute;top:2px;left:2px;font-size:0.5rem;padding:0 3px;border-radius:2px;background:var(--accent-primary);color:#fff;font-weight:700;">🎬</span>` : ''}
@@ -13071,7 +13070,7 @@ Project visual language: ${projVL}`;
 
             container.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:var(--bg-secondary);padding:6px 12px;border-radius:8px;border:1px solid var(--border-color);flex-wrap:wrap;">
-                <span style="font-size:0.75rem;color:var(--text-secondary);">🎞 <strong style="color:var(--accent-primary);">Timeline</strong> — width = duration · drag ruler to scrub · drag empty space to pan · double-click shot to inspect · Alt+←/→ to reorder · scrub the ruler to preview shots · click a shot to play it large</span>
+                <span style="font-size:0.75rem;color:var(--text-secondary);">🎞 <strong style="color:var(--accent-primary);">Timeline</strong> — width = duration · drag ruler to scrub · drag empty space to pan · click a block to select it · double-click to inspect · Alt+←/→ to reorder</span>
                 <span id="sb-tl-time" style="font-size:0.7rem;color:var(--accent-primary);font-weight:700;margin-left:auto;font-variant-numeric:tabular-nums;"><span id="sb-tl-time-main">${sbTlFmtTime(sbTlPlayheadSec)} / ${sbTlFmtTime(totalSec)}</span></span><span id="sb-tl-range-label" style="color:#4caf50;">${rangeLabel}</span></span>
                 <span style="display:inline-flex;align-items:center;gap:5px;">
                     <button class="btn btn-secondary" onclick="storyboardTimelineScrollScene(-1)" style="padding:2px 8px;font-size:0.65rem;" title="Previous scene">⏮</button>
@@ -13083,15 +13082,17 @@ Project visual language: ${projVL}`;
                     <button class="btn btn-secondary" onclick="sbTlClearRange()" style="padding:2px 8px;font-size:0.65rem;" title="Clear the In/Out range">⨯</button>
                     <button class="btn btn-secondary" onclick="sbTlCloseGaps()" style="padding:2px 8px;font-size:0.65rem;" title="Snap every shot in range (or the whole timeline) to its real media length — clears duration overrides and stale timings">⇥ Close Gaps</button>
                     <button class="btn btn-secondary" onclick="sbTlAddAudio()" style="padding:2px 8px;font-size:0.65rem;" title="Add a music or audio clip to the overlay track">♪ Add Audio</button>
+                    <button class="btn btn-secondary" id="sb-tl-monitor-size-btn" onclick="sbTlToggleMonitorSize(event)" style="padding:2px 8px;font-size:0.65rem;" title="Toggle the monitor between small and big playback size">🖥 Big Monitor</button>
                     <span style="color:var(--text-secondary);font-size:0.7rem;">Zoom</span>
                     <input type="range" min="20" max="200" step="5" value="${pps}" oninput="storyboardTimelineZoomLive(this.value)" onchange="storyboardTimelineZoom(this.value)" style="width:110px;">
                 </span>
             </div>
             <div style="display:flex;gap:10px;margin-bottom:8px;align-items:stretch;">
-                <div id="sb-tl-monitor" style="position:relative;width:224px;height:126px;flex-shrink:0;background:#000;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;">
-                    <div id="sb-tl-monitor-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:0 10px;">playhead preview</div>
+                <div id="sb-tl-monitor" style="position:relative;${sbTlMonitorBig ? 'width:min(920px,58vw);aspect-ratio:16/9;' : 'width:224px;height:126px;'}flex-shrink:0;background:#000;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;" ondblclick="sbTlToggleMonitorSize(event)">
+                    <div id="sb-tl-monitor-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:0 10px;">playhead preview — select a block</div>
                     <span id="sb-tl-monitor-id" style="position:absolute;left:4px;bottom:3px;font-size:0.55rem;color:#fff;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
                     <span id="sb-tl-monitor-tc" style="position:absolute;right:4px;top:3px;font-size:0.55rem;color:#ff8a8a;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;font-variant-numeric:tabular-nums;"></span>
+                    <button class="btn btn-secondary" onclick="sbTlOpenTheaterForMonitor(event)" title="Full-screen playback of this shot" style="position:absolute;left:4px;top:3px;z-index:6;padding:0 5px;font-size:0.55rem;line-height:1.4;opacity:0.85;">⛶</button>
                 </div>
                 <div id="sb-tl-shot-info" style="flex:1;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:6px 10px;font-size:0.65rem;color:var(--text-secondary);overflow:hidden;min-width:0;"></div>
             </div>
@@ -13112,6 +13113,164 @@ Project visual language: ${projVL}`;
             sbTlProbeVideoDurations(probeList.slice(0, 24));
             sbTlProbeAudio(audioProbeList.slice(0, 16));
             sbTlUpdateMonitor();
+            sbTlApplySelectionHalo();
+            sbTlRenderShotInfo();
+        }
+
+        // ================= Block selection + per-block actions =================
+        let sbTlSelectedShot = null;   // 'sceneIdx_shotIdx' — the user's chosen block
+
+        function sbTlApplySelectionHalo() {
+            const root = document.getElementById('sb-timeline-root');
+            if (!root) return;
+            root.querySelectorAll('[data-tl-shot]').forEach(el => {
+                el.classList.remove('sb-tl-sel');
+                if (sbTlSelectedShot && el.dataset.tlShot === sbTlSelectedShot) el.classList.add('sb-tl-sel');
+            });
+        }
+
+        function sbTlGetShot(sceneIdx, shotIdx) {
+            return screenplayData && screenplayData.scenes && screenplayData.scenes[sceneIdx]
+                ? (screenplayData.scenes[sceneIdx].shots || [])[shotIdx] || null : null;
+        }
+
+        function sbTlShotStartSec(sceneIdx, shotIdx) {
+            let cursor = 0;
+            const scenes = (screenplayData && screenplayData.scenes) || [];
+            for (let si = 0; si < sceneIdx; si++) {
+                const shots = scenes[si].shots || [];
+                shots.forEach((o, hi) => cursor += sbTlShotDuration(o, si + '_' + hi));
+            }
+            const shots = scenes[sceneIdx] ? (scenes[sceneIdx].shots || []) : [];
+            for (let hi = 0; hi < shotIdx && hi < shots.length; hi++) cursor += sbTlShotDuration(shots[hi], sceneIdx + '_' + hi);
+            return cursor;
+        }
+
+        function sbTlSelectShot(sceneIdx, shotIdx, ev) {
+            if (ev) {
+                ev.stopPropagation();
+                if (ev.button !== undefined && ev.button !== 0) return;
+                if (ev.target.closest('button,span[onclick],input')) return;   // inline buttons handle themselves
+            }
+            const key = sceneIdx + '_' + shotIdx;
+            sbTlSelectedShot = (sbTlSelectedShot === key) ? null : key;   // click again to deselect
+            sbTlApplySelectionHalo();
+            sbTlRenderShotInfo();
+            const sh = sbTlGetShot(sceneIdx, shotIdx);
+            if (sh) {
+                // Jump the monitor to the selected block (keep position if already inside it)
+                const cur = sbTlShotMediaAt(sbTlPlayheadSec);
+                const inside = cur && cur.sceneIdx === sceneIdx && cur.shotIdx === shotIdx;
+                if (!inside) { sbTlPlayheadSec = sbTlShotStartSec(sceneIdx, shotIdx); sbTlUpdatePlayhead(); }
+                sbTlUpdateMonitor();
+            }
+        }
+
+        function sbTlSelectedShotObj() {
+            if (!sbTlSelectedShot) return null;
+            const parts = sbTlSelectedShot.split('_').map(Number);
+            const sh = sbTlGetShot(parts[0], parts[1]);
+            return sh ? { sceneIdx: parts[0], shotIdx: parts[1], sh } : null;
+        }
+
+        function sbTlRenderShotInfo() {
+            const box = document.getElementById('sb-tl-shot-info');
+            if (!box) return;
+            const sel = sbTlSelectedShotObj();
+            if (!sel) {
+                box.innerHTML = '<span style="color:var(--text-secondary);">Click a timeline block to select it — generate just that shot, scrub it in the monitor, or double-click for full details.</span>';
+                return;
+            }
+            const { sceneIdx, shotIdx, sh } = sel;
+            const hasImage = !!(sh.storyboard_image || sh._temp_storyboard_image);
+            const hasVideo = !!(sh.video_clip || sh._temp_video_clip);
+            const scene = screenplayData.scenes[sceneIdx];
+            const sceneId = (scene && (scene.scene_id || ('#' + (scene.scene_number || sceneIdx + 1)))) || '?';
+            const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            box.innerHTML =
+                '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">' +
+                    '<strong style="color:var(--accent-primary);">' + esc(sh.shot_id || ('SHOT_' + sbTlSelectedShot)) + '</strong>' +
+                    '<span>· ' + esc(sceneId) + ' · ' + sbTlFmtTime(sbTlShotDuration(sh, sbTlSelectedShot)) + (hasVideo ? ' · 🎬 video' : (hasImage ? ' · 🖼 image only' : ' · no media')) + '</span>' +
+                    '<span style="margin-left:auto;display:inline-flex;gap:4px;">' +
+                        (!sh.storyboard_image
+                            ? '<button class="btn btn-primary" onclick="sbTlGenerateSelectedImage()" style="padding:2px 10px;font-size:0.65rem;">🎨 Generate Image</button>'
+                            : '<button class="btn btn-secondary" onclick="sbTlGenerateSelectedImage()" style="padding:2px 10px;font-size:0.65rem;">🔄 Redo Image</button>') +
+                        '<button class="btn btn-success" onclick="sbTlApproveSelected()" style="padding:2px 10px;font-size:0.65rem;" ' + (sh._temp_storyboard_image ? '' : 'disabled') + '>✅ Approve</button>' +
+                        (sh.storyboard_image
+                            ? '<button class="btn btn-primary" onclick="sbTlGenerateSelectedVideo()" style="padding:2px 10px;font-size:0.65rem;" title="Render this shot to video with the configured i2v workflow">🎥 Generate Video</button>'
+                            : '') +
+                        '<button class="btn btn-secondary" onclick="sbTlPlaySelected()" style="padding:2px 10px;font-size:0.65rem;" title="Play this shot in the monitor">▶ Play</button>' +
+                        '<button class="btn btn-secondary" onclick="sbTlOpenTheater()" style="padding:2px 10px;font-size:0.65rem;">⛶ Large</button>' +
+                    '</span>' +
+                '</div>' +
+                '<div style="opacity:0.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (esc((sh.action || sh.description || '').slice(0, 160)) || '<span style="opacity:0.6;">no action text</span>') + '</div>' +
+                (sh.video_prompt ? '<div style="opacity:0.65;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🎥 ' + esc(String(sh.video_prompt).slice(0, 140)) + '</div>' : '');
+        }
+
+        function sbTlGenerateSelectedImage() {
+            const sel = sbTlSelectedShotObj();
+            if (!sel) return;
+            const f = sel.sh.storyboard_image ? regenerateShotImage : generateShotImage;
+            f(sel.sceneIdx, sel.shotIdx);
+        }
+
+        function sbTlApproveSelected() {
+            const sel = sbTlSelectedShotObj();
+            if (!sel) return;
+            approveShotImage(sel.sceneIdx, sel.shotIdx);
+        }
+
+        function sbTlGenerateSelectedVideo() {
+            const sel = sbTlSelectedShotObj();
+            if (!sel) return;
+            if (!sel.sh.video_prompt && typeof regenerateShotVideoPrompt === 'function') {
+                notify('No video prompt', 'Generating one from the action first…', '🤖');
+                regenerateShotVideoPrompt(sel.sceneIdx, sel.shotIdx).then(() => generateShotVideo(sel.sceneIdx, sel.shotIdx)).catch(() => {});
+                return;
+            }
+            generateShotVideo(sel.sceneIdx, sel.shotIdx);
+        }
+
+        function sbTlPlaySelected() {
+            const sel = sbTlSelectedShotObj();
+            if (!sel) return;
+            sbTlPlayheadSec = sbTlShotStartSec(sel.sceneIdx, sel.shotIdx);
+            sbTlUpdatePlayhead();
+            sbTlUpdateMonitor();
+            if (!sbTlPlaying) sbTlPlayRange();
+            const root = document.getElementById('sb-timeline-root');
+            if (root) { const x = sbTlPlayheadSec * sbTlGetPxPerSec(); root.scrollLeft = Math.max(0, x - root.clientWidth * 0.3); }
+        }
+
+        function sbTlOpenTheater() {
+            const sel = sbTlSelectedShotObj();
+            if (!sel) { notify('No block selected', 'Click a timeline block first', 'ℹ️'); return; }
+            sbTlCenterSel = sel.sceneIdx + '_' + sel.shotIdx;
+            const ov = sbTlCenterEnsureOverlay();
+            sbTlCenterLoad(sel.sh, sel.sceneIdx);
+            ov.style.display = 'flex';
+            if (!sbTlCenterKeyHandler) {
+                sbTlCenterKeyHandler = (e) => { if (e.key === 'Escape') sbTlCenterClose(); };
+                document.addEventListener('keydown', sbTlCenterKeyHandler);
+            }
+        }
+
+        function sbTlOpenTheaterForMonitor(ev) {
+            if (ev) ev.stopPropagation();
+            if (sbTlSelectedShotObj()) { sbTlOpenTheater(); return; }
+            const pos = sbTlShotMediaAt(sbTlPlayheadSec);
+            if (!pos) return;
+            sbTlSelectedShot = pos.sceneIdx + '_' + pos.shotIdx;
+            sbTlApplySelectionHalo();
+            sbTlRenderShotInfo();
+            sbTlOpenTheater();
+        }
+
+        function sbTlToggleMonitorSize(ev) {
+            if (ev) ev.stopPropagation();
+            sbTlMonitorBig = !sbTlMonitorBig;
+            try { localStorage.setItem('sbTlMonitorBig', sbTlMonitorBig ? '1' : ''); } catch (e) {}
+            renderStoryboard();
         }
 
         function storyboardTimelineFit() {
