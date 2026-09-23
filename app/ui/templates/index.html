@@ -16243,22 +16243,151 @@ Raw JSON only, no markdown.`;
             renderStoryboard();
         }
 
-        async function generateAllStoryboardVideos() {
+        // ── One-click batch video: every eligible shot renders through LTX i2v ──
+        let _sbVidBatch = null;   // { total, completed, failed[], aborted }
+
+        function _collectVideoBatchTargets(failedOnly = false) {
+            const targets = [];
+            if (!screenplayData || !screenplayData.scenes) return targets;
+            const failedKeys = failedOnly ? (window._sbVidBatchFailed || []) : null;
+            screenplayData.scenes.forEach((s, sIdx) => {
+                (s.shots || []).forEach((sh, shIdx) => {
+                    if (sh.video_clip) return;                 // already has an approved video
+                    if (!sh.storyboard_image) return;          // keyframe not generated yet
+                    if (failedKeys && !failedKeys.includes(sIdx + '_' + shIdx)) return;
+                    targets.push({ sIdx, shIdx, sh });
+                });
+            });
+            return targets;
+        }
+
+        async function generateAllStoryboardVideos(failedOnly) {
             if (!requireProject()) return;
 
             if (!screenplayData || !screenplayData.scenes) {
                 notify('No Screenplay', 'Please generate screenplay first.'); return;
             }
-            for (let sIdx = 0; sIdx < screenplayData.scenes.length; sIdx++) {
-                const s = screenplayData.scenes[sIdx];
-                if (!s.shots) continue;
-                for (let shIdx = 0; shIdx < s.shots.length; shIdx++) {
-                    const sh = s.shots[shIdx];
-                    if (sh.video_clip) continue;
-                    if (!sh.storyboard_image) continue;
-                    await generateShotVideo(sIdx, shIdx);
+            if (_sbVidBatch) { notify('Busy', 'A video batch is already running', '⚠️'); return; }
+
+            // After a partial batch the button flips into retry mode
+            const btn = document.getElementById('sb-generate-all-videos-btn');
+            if (failedOnly === undefined && btn && btn.dataset.retry === '1') failedOnly = true;
+            let targets = _collectVideoBatchTargets(!!failedOnly);
+            if (!targets.length) {
+                notify('Nothing to render', failedOnly ? 'No failed videos to retry' : 'No shots need a video (approved keyframes required; approved videos are skipped)', '⚠️');
+                return;
+            }
+
+            // Pre-flight: every shot needs a motion prompt — offer LLM auto-fill
+            const noPrompt = targets.filter(t => !t.sh.video_prompt || !String(t.sh.video_prompt).trim());
+            if (noPrompt.length) {
+                const ok = await showConfirm(
+                    'Generate missing video prompts?',
+                    `${noPrompt.length} of ${targets.length} shots have no video prompt. Generate them with the LLM first? (Declining skips those shots.)`
+                );
+                if (ok) {
+                    for (const t of noPrompt) {
+                        try { await regenerateShotVideoPrompt(t.sIdx, t.shIdx); } catch (e) { /* keep going */ }
+                    }
+                    renderStoryboard();
                 }
             }
+
+            targets = _collectVideoBatchTargets(!!failedOnly).filter(t => t.sh.video_prompt && String(t.sh.video_prompt).trim());
+            if (!targets.length) { notify('Nothing to render', 'No shots with an approved keyframe + video prompt', '⚠️'); return; }
+
+            _sbVidBatch = { total: targets.length, completed: 0, failed: [], aborted: false };
+            window._sbVidBatchFailed = [];
+            window._sceneAbortController = new AbortController();
+            showAbortButton();
+
+            if (btn) { btn.disabled = true; btn.textContent = `⏳ 0/${targets.length}`; }
+            const pb = document.getElementById('storyboard-progress');
+            const title = document.getElementById('sb-progress-title');
+            const pct = document.getElementById('sb-progress-pct');
+            const bar = document.getElementById('sb-progress-bar');
+            if (pb) pb.style.display = 'block';
+            if (pct) pct.textContent = '0%';
+            if (bar) bar.style.width = '0%';
+
+            for (const t of targets) {
+                if (!_sbVidBatch || _sbVidBatch.aborted) break;
+                const { sIdx, shIdx, sh } = t;
+                const key = sIdx + '_' + shIdx;
+                if (title) title.textContent = `Video ${_sbVidBatch.completed + 1}/${_sbVidBatch.total} — ${sh.shot_id || 'shot'}`;
+                showShotSpinner(sIdx, shIdx, 'Rendering video…');
+                const seed = Math.floor(Math.random() * 999999999) + 1;
+                try {
+                    const res = await fetch('/api/comfyui/generate/i2v', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        signal: window._sceneAbortController.signal,
+                        body: JSON.stringify({
+                            prompt: sh.video_prompt,
+                            seed: seed,
+                            project_path: currentProject?.path || '',
+                            input_image: `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`,
+                            scene_index: sIdx,
+                            steps: storyboardVideoSteps(),
+                            refine: llmEnhanceEnabled()
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        sh._temp_video_clip = data.filename;
+                        sh._temp_video_subfolder = data.subfolder || '';
+                        sh.video_status = 'generated';
+                        renderStoryboard();   // each video appears as it lands
+                    } else {
+                        _sbVidBatch.failed.push(key);
+                        window._sbVidBatchFailed.push(key);
+                        notify('I2V Failed', `Shot ${sh.shot_id}: ${data.error || 'Generation failed'}`, '❌');
+                    }
+                } catch (e) {
+                    if (e.name === 'AbortError') {
+                        hideShotSpinner(sIdx, shIdx);   // don't leave the card spinning
+                        if (_sbVidBatch) _sbVidBatch.aborted = true;
+                        break;
+                    }
+                    _sbVidBatch.failed.push(key);
+                    window._sbVidBatchFailed.push(key);
+                    notify('Error', `Shot ${sh.shot_id}: ${e.message}`, '❌');
+                }
+                hideShotSpinner(sIdx, shIdx);
+                if (!_sbVidBatch) break;
+                _sbVidBatch.completed++;
+                const donePct = Math.round(_sbVidBatch.completed / _sbVidBatch.total * 100);
+                if (bar) bar.style.width = donePct + '%';
+                if (pct) pct.textContent = donePct + '%';
+                if (btn) btn.textContent = `⏳ ${_sbVidBatch.completed}/${_sbVidBatch.total}`;
+                scheduleSaveState();   // progress survives a crash/reload
+            }
+
+            const summary = _sbVidBatch ? { ..._sbVidBatch } : null;
+            _sbVidBatch = null;
+            window._sceneAbortController = null;
+            hideAbortButton();
+            if (pb) pb.style.display = 'none';
+            renderStoryboard();
+
+            if (btn) {
+                btn.disabled = false;
+                if (summary && summary.failed.length > 0) {
+                    btn.textContent = `↻ Retry Failed (${summary.failed.length})`;
+                    btn.title = 'Regenerate only the shots whose video failed';
+                    btn.dataset.retry = '1';
+                } else {
+                    btn.textContent = '🎥 Gen Vid';
+                    btn.title = 'Generate all videos';
+                    btn.dataset.retry = '';
+                }
+            }
+            if (summary) {
+                const okCount = summary.completed - summary.failed.length;
+                if (summary.aborted) notify('Batch stopped', `${okCount} video(s) rendered before stop`, '⏹');
+                else if (summary.failed.length === 0) notify('Batch complete', `${okCount}/${summary.total} videos rendered — review and ✔️ App Vid`, '✅', 5000);
+                else notify('Partial', `${okCount}/${summary.total} rendered, ${summary.failed.length} failed — the button now retries failures only`, '⚠️', 6000);
+            }
+            scheduleSaveState();
         }
 
         async function generateAllStoryboardVideoPrompts() {
