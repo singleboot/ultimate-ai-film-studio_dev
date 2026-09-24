@@ -12110,8 +12110,6 @@ Project visual language: ${projVL}`;
         // ================= Duration-based storyboard timeline (NLE-style) =================
         let sbTlDurationCache = {};   // sceneIdx_shotIdx -> seconds (real video duration once probed)
         let sbTlPlayheadSec = 0;
-        let sbTlMonitorBig = false;   // big-monitor toggle (persisted)
-        try { sbTlMonitorBig = localStorage.getItem('sbTlMonitorBig') === '1'; } catch (e) {}
         let sbTlProbing = {};
         let sbTlProbeRenderTimer = null;
         let sbTlPersistTimer = null;
@@ -12192,13 +12190,13 @@ Project visual language: ${projVL}`;
             let step = 60;
             for (const c of candidates) { if (c * pps >= 80) { step = c; break; } }
             const minorStep = step / 5;
-            let html = `<div id="sb-tl-ruler" style="position:relative;height:26px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color);width:${Math.max(totalSec * pps + 40, 100)}px;cursor:ew-resize;flex-shrink:0;">`;
+            let html = `<div id="sb-tl-ruler" style="position:relative;height:32px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color);width:${Math.max(totalSec * pps + 40, 100)}px;cursor:ew-resize;flex-shrink:0;">`;
             let mi = 0;
             for (let t = 0; t <= totalSec + 0.0001; t += minorStep) {
                 const isMajor = (mi % 5) === 0;
                 const x = t * pps;
-                html += `<div style="position:absolute;left:${x.toFixed(1)}px;top:${isMajor ? 0 : 14}px;width:1px;height:${isMajor ? 12 : 6}px;background:var(--text-secondary);opacity:${isMajor ? 0.9 : 0.4};"></div>`;
-                if (isMajor) html += `<div style="position:absolute;left:${(x + 3).toFixed(1)}px;top:1px;font-size:0.6rem;color:var(--text-secondary);white-space:nowrap;">${sbTlFmtTime(t)}</div>`;
+                html += `<div style="position:absolute;left:${x.toFixed(1)}px;top:${isMajor ? 0 : 16}px;width:1px;height:${isMajor ? 16 : 8}px;background:var(--text-secondary);opacity:${isMajor ? 0.9 : 0.4};"></div>`;
+                if (isMajor) html += `<div style="position:absolute;left:${(x + 3).toFixed(1)}px;top:1px;font-size:0.65rem;color:var(--text-secondary);white-space:nowrap;">${sbTlFmtTime(t)}</div>`;
                 mi++;
             }
             html += `</div>`;
@@ -13240,20 +13238,19 @@ Project visual language: ${projVL}`;
                     <button class="btn btn-secondary" onclick="sbTlClearRange()" style="padding:2px 8px;font-size:0.65rem;" title="Clear the In/Out range">⨯</button>
                     <button class="btn btn-secondary" onclick="sbTlCloseGaps()" style="padding:2px 8px;font-size:0.65rem;" title="Snap every shot in range (or the whole timeline) to its real media length — clears duration overrides and stale timings">⇥ Close Gaps</button>
                     <button class="btn btn-secondary" onclick="sbTlAddAudio()" style="padding:2px 8px;font-size:0.65rem;" title="Add a music or audio clip to the overlay track">♪ Add Audio</button>
-                    <button class="btn btn-secondary" id="sb-tl-monitor-size-btn" onclick="sbTlToggleMonitorSize(event)" style="padding:2px 8px;font-size:0.65rem;" title="Toggle the monitor between small and big playback size">🖥 Big Monitor</button>
                     <span style="color:var(--text-secondary);font-size:0.7rem;">Zoom</span>
                     <input type="range" min="20" max="200" step="5" value="${pps}" oninput="storyboardTimelineZoomLive(this.value)" onchange="storyboardTimelineZoom(this.value)" style="width:110px;">
                 </span>
             </div>
-            <div style="display:flex;gap:10px;margin-bottom:8px;align-items:stretch;">
-                <div id="sb-tl-monitor" style="position:relative;${sbTlMonitorBig ? 'width:min(920px,58vw);aspect-ratio:16/9;' : 'width:224px;height:126px;'}flex-shrink:0;background:#000;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;" ondblclick="sbTlToggleMonitorSize(event)">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:8px;">
+                <div id="sb-tl-monitor" style="position:relative;width:min(920px,92%);aspect-ratio:16/9;background:#000;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,0.35);">
                     <div id="sb-tl-monitor-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:0 10px;">playhead preview — click ▶ to play</div>
                     <span id="sb-tl-monitor-id" style="position:absolute;left:4px;bottom:3px;font-size:0.55rem;color:#fff;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
                     <span id="sb-tl-monitor-tc" style="position:absolute;right:4px;top:3px;font-size:0.55rem;color:#ff8a8a;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;font-variant-numeric:tabular-nums;"></span>
                     <button class="btn btn-secondary" onclick="sbTlOpenTheaterForMonitor(event)" title="Full-screen playback of this shot" style="position:absolute;left:4px;top:3px;z-index:6;padding:0 5px;font-size:0.55rem;line-height:1.4;opacity:0.85;">⛶</button>
                     <button id="sb-tl-mon-play" onclick="sbTlTogglePlay(event)" ondblclick="event.stopPropagation()" title="Play from the playhead (Space when the timeline is focused) — drives the timeline playhead in sync">▶</button>
                 </div>
-                <div id="sb-tl-shot-info" style="flex:1;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:6px 10px;font-size:0.65rem;color:var(--text-secondary);overflow:hidden;min-width:0;"></div>
+                <div id="sb-tl-shot-info" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:6px 10px;font-size:0.65rem;color:var(--text-secondary);overflow:hidden;min-width:0;"></div>
             </div>
             <div id="sb-timeline-root" tabindex="0" data-total-sec="${totalSec}" style="position:relative;overflow-x:auto;overflow-y:hidden;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:8px;">
                 <div id="sb-tl-scroll-inner" style="position:relative;width:${laneWidth}px;">
@@ -13440,13 +13437,6 @@ Project visual language: ${projVL}`;
             sbTlApplySelectionHalo();
             sbTlRenderShotInfo();
             sbTlOpenTheater();
-        }
-
-        function sbTlToggleMonitorSize(ev) {
-            if (ev) ev.stopPropagation();
-            sbTlMonitorBig = !sbTlMonitorBig;
-            try { localStorage.setItem('sbTlMonitorBig', sbTlMonitorBig ? '1' : ''); } catch (e) {}
-            renderStoryboard();
         }
 
         function storyboardTimelineFit() {
