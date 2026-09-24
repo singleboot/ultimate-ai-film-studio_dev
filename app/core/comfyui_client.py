@@ -29,6 +29,32 @@ KREA2_T2I_STYLE_SUFFIX = (
 )
 
 
+_RESOLUTION_SELECTOR_ASPECTS = {
+    (16, 9): "16:9 (Widescreen)",
+    (9, 16): "9:16 (Portrait Widescreen)",
+    (4, 3): "4:3 (Standard)",
+    (3, 4): "3:4 (Portrait Standard)",
+    (3, 2): "3:2 (Photo)",
+    (2, 3): "2:3 (Portrait Photo)",
+    (1, 1): "1:1 (Square)",
+    (21, 9): "21:9 (Ultrawide)",
+}
+
+
+def _resolution_to_selector(w: int, h: int):
+    """Map a WxH request to ResolutionSelector's (aspect label, megapixels).
+    Picks the closest aspect option and keeps the megapixel count near the
+    requested pixel budget."""
+    ratio = w / h
+    best_label, best_delta = "1:1 (Square)", float("inf")
+    for (rw, rh), label in _RESOLUTION_SELECTOR_ASPECTS.items():
+        delta = abs((rw / rh) - ratio)
+        if delta < best_delta:
+            best_label, best_delta = label, delta
+    mp = max(1, round((w * h) / 1_000_000))
+    return best_label, mp
+
+
 def _project_style_dna() -> str:
     """The active project's locked Style DNA sentence, or '' when unset.
     main.py stamps _ACTIVE_PROJECT_PATH on this module whenever a storyboard
@@ -698,6 +724,17 @@ class ComfyUIClient:
                         inputs["prompt"] = prompt
                         debug_log.append(f"Overwrote TextEncodeQwenImageEditPlus {nid}: '{prompt[:50]}...'")
 
+            # Step B2: Qwen Image 2.1 edit workflows use TextEncodeQwenImage21
+            # (Qwen3-VL text encoder, prompt + negative_prompt + autogrow images).
+            for nid, nd in workflow.items():
+                if not isinstance(nd, dict):
+                    continue
+                if nd.get("class_type") == "TextEncodeQwenImage21":
+                    inputs = nd.get("inputs", {})
+                    if "prompt" in inputs and isinstance(inputs["prompt"], str):
+                        inputs["prompt"] = prompt
+                        debug_log.append(f"Overwrote TextEncodeQwenImage21 {nid} prompt: '{prompt[:50]}...'")
+
             # Step C: Krea2 edit workflows use Krea2EditGroundedEncode instead of
             # CLIPTextEncode. Overwrite the positive node (non-empty prompt); leave
             # the negative node (empty prompt) untouched so it stays a clean negative.
@@ -770,6 +807,11 @@ class ComfyUIClient:
                             workflow[next_neg]["inputs"][next_neg_key] = conn_neg
 
             # Phase 2b: inject image into LoadImage / PixaromaLoadImageMini nodes
+            # Extra LoadImage nodes beyond the provided inputs are bypassed by
+            # rewiring their conditioning so a stale demo image can't leak into
+            # the render (e.g. the stock denim reference in Qwen 2.1 edit).
+            load_bypass = len(input_images or []) if not slot_nodes else None
+            load_seen = 0
             if not slot_nodes and input_images:
                 load_image_nodes = []
                 for node_id, node_data in workflow.items():
@@ -778,6 +820,29 @@ class ComfyUIClient:
                     if node_data.get("class_type") in ("LoadImage", "PixaromaLoadImageMini"):
                         load_image_nodes.append(node_id)
                 load_image_nodes.sort(key=int)
+
+                uploaded_names = []
+
+                def _bypass_loadimage(nid, why, valid_image=None):
+                    """Neutralize a surplus LoadImage: rewire its consumers to the
+                    other ref, and point the node itself at a valid uploaded file —
+                    ComfyUI validates every LoadImage even when the node is unused,
+                    so a stale demo filename would fail the whole queue."""
+                    try:
+                        other = next((o for o in load_image_nodes if o != nid), None)
+                        for oid, ond in workflow.items():
+                            if not isinstance(ond, dict):
+                                continue
+                            for ikey, ival in ond.get("inputs", {}).items():
+                                if isinstance(ival, list) and len(ival) == 2 and str(ival[0]) == str(nid):
+                                    if other is not None:
+                                        ond["inputs"][ikey] = [str(other), int(ival[1])]
+                                        debug_log.append(f"Bypassed surplus LoadImage {nid}: {oid}.{ikey} -> {other} ({why})")
+                        if valid_image:
+                            workflow[nid]["inputs"]["image"] = valid_image
+                            debug_log.append(f"Surplus LoadImage {nid} -> placeholder file {valid_image} (validation)")
+                    except Exception as e:
+                        debug_log.append(f"LoadImage bypass failed for {nid}: {e}")
                 debug_log.append(f"Found {len(load_image_nodes)} image input nodes: {load_image_nodes}")
                 # Removed duplication logic to prevent over-conditioning IPAdapter
                 for idx, nid in enumerate(load_image_nodes):
@@ -794,6 +859,7 @@ class ComfyUIClient:
                             return {"success": False, "error": err}
                         debug_log.append(f"LoadImage {nid} <- uploaded: {uploaded_name}")
                         workflow[nid]["inputs"]["image"] = uploaded_name
+                        uploaded_names.append(uploaded_name)
                         # Keep the Pixaroma LoadImageMini display state in sync so the
                         # node still shows the actual image if inspected later.
                         if workflow[nid].get("class_type") == "PixaromaLoadImageMini":
@@ -807,7 +873,13 @@ class ComfyUIClient:
                                 except Exception:
                                     pass
                     else:
-                        debug_log.append(f"LoadImage {nid} <- no input image provided")
+                        _bypass_loadimage(nid, "no input image provided", uploaded_names[0] if uploaded_names else None)
+
+            # Surplus LoadImage nodes when more inputs arrived than slots: drop
+            # the tail so only the first N refs are honored.
+            if not slot_nodes and load_bypass is not None:
+                for nid in load_image_nodes[load_bypass:]:
+                    _bypass_loadimage(nid, f"surplus beyond {load_bypass} provided refs", uploaded_names[0] if uploaded_names else None)
 
             # Phase 3: set seed
             if seed is not None:
@@ -891,6 +963,12 @@ class ComfyUIClient:
                                 inputs["width"] = w
                                 inputs["height"] = h
                                 debug_log.append(f"{ct} {node_id} -> {w}x{h}")
+                            elif ct == "ResolutionSelector":
+                                # Qwen 2.1 edit sizes the output via aspect label + megapixels
+                                ar, mp = _resolution_to_selector(w, h)
+                                inputs["aspect_ratio"] = ar
+                                inputs["megapixels"] = str(mp)
+                                debug_log.append(f"ResolutionSelector {node_id} -> {ar} @ {mp}MP (from {w}x{h})")
                 except (ValueError, IndexError):
                     debug_log.append(f"Failed to parse resolution: {resolution}")
 
