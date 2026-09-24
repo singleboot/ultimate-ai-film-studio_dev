@@ -1255,6 +1255,58 @@ def verify_scene_consistency(data: dict):
     logger.info(f"POST /api/orchestrator/verify-scene-consistency: {data.get('scene_id')}")
     return orchestrator.verify_scene_consistency(data)
 
+
+@app.post("/api/orchestrator/derive-style-dna")
+async def derive_style_dna_endpoint(data: dict):
+    """Derive a one-sentence Style DNA from a golden reference frame via the vision LLM."""
+    image_path = data.get("image_path", "")
+    if not image_path:
+        return {"success": False, "error": "image_path is required"}
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+
+    img_bytes = None
+    try:
+        if image_path.startswith("ComfyUI/output/"):
+            import requests as _rq
+            host = comfyui_client.host if comfyui_client else "http://127.0.0.1:8188"
+            r = _rq.get(f"{host}/view", params={"filename": image_path.split("/")[-1]}, timeout=15)
+            if r.status_code == 200:
+                img_bytes = r.content
+        if img_bytes is None:
+            p = Path(image_path)
+            if not p.is_absolute():
+                pp = data.get("project_path") or (project_manager.get_current_project_path() if project_manager else None)
+                if pp:
+                    p = Path(str(pp)) / image_path
+            if p.exists():
+                img_bytes = p.read_bytes()
+    except Exception as e:
+        logger.warning("derive-style-dna: failed to load image %s: %s", image_path, e)
+    if not img_bytes:
+        return {"success": False, "error": f"Could not load image: {image_path}"}
+
+    import base64 as _b64
+    img_b64 = _b64.b64encode(img_bytes).decode("utf-8")
+    prompt = (
+        "You are a cinematographer looking at a single frame of a film. "
+        "Describe ONLY its visual style — never its content, characters or story. "
+        "Cover: color palette, lighting quality and direction, contrast, film grain and texture, "
+        "lens and depth of field, color grade, and era or film-stock feel. "
+        "Write ONE imperative style sentence (max 30 words) that can prefix every prompt of a film "
+        "so all its shots share this exact look. "
+        'Reply with ONLY a JSON object: {"style_dna": "<the sentence>"}'
+    )
+    result = orchestrator._call_llm(prompt, system_suffix="Output ONLY valid JSON.", json_output=True, images=[img_b64])
+    if result.get("success"):
+        d = result.get("data")
+        sd = d.get("style_dna") if isinstance(d, dict) else ""
+        sd = (sd or "").strip()
+        if sd:
+            return {"success": True, "style_dna": sd}
+        return {"success": False, "error": "VLM returned no style_dna field", "raw": (result.get("raw") or "")[:300]}
+    return {"success": False, "error": result.get("error", "VLM call failed")}
+
 @app.post("/api/orchestrator/regenerate-shot-with-reference")
 def regenerate_shot_with_reference(data: dict):
     """Regenerate a shot with a golden reference image and feedback."""
