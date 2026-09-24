@@ -810,7 +810,7 @@ class ComfyUIClient:
             # Extra LoadImage nodes beyond the provided inputs are bypassed by
             # rewiring their conditioning so a stale demo image can't leak into
             # the render (e.g. the stock denim reference in Qwen 2.1 edit).
-            load_bypass = len(input_images or []) if not slot_nodes else None
+            load_bypass = len(input_images) if (not slot_nodes and input_images) else None
             load_seen = 0
             if not slot_nodes and input_images:
                 load_image_nodes = []
@@ -877,7 +877,7 @@ class ComfyUIClient:
 
             # Surplus LoadImage nodes when more inputs arrived than slots: drop
             # the tail so only the first N refs are honored.
-            if not slot_nodes and load_bypass is not None:
+            if not slot_nodes and load_bypass:
                 for nid in load_image_nodes[load_bypass:]:
                     _bypass_loadimage(nid, f"surplus beyond {load_bypass} provided refs", uploaded_names[0] if uploaded_names else None)
 
