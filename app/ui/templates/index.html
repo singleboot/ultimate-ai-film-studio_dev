@@ -409,6 +409,8 @@
         .sb-drop-before { box-shadow: -3px 0 0 0 var(--accent-primary); }
 #sb-tl-monitor { position: relative; overflow: hidden; }
 #sb-tl-monitor img, #sb-tl-monitor video { position: absolute; inset: 0; }
+#sb-tl-mon-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.55); color: #fff; font-size: 1.05rem; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 7; padding: 0; opacity: 0.92; transition: opacity 0.15s, background 0.15s; }
+#sb-tl-mon-play:hover { background: rgba(0,0,0,0.78); opacity: 1; }
         .sb-drop-after { box-shadow: 3px 0 0 0 var(--accent-primary); }
         [data-tl-shot] { user-select: none; }
         [data-tl-shot] img, [data-tl-shot] video { -webkit-user-drag: none; }
@@ -12115,6 +12117,8 @@ Project visual language: ${projVL}`;
         let sbTlPersistTimer = null;
         let sbTlCacheProject = null;
         let sbTlMonitorPendingSeek = null;
+        let sbTlPlaySyncRaf = 0;       // rAF id for the playback loop (playhead ↔ monitor sync)
+        let sbTlPlayLastTs = 0;        // last rAF timestamp, for wall-clock advance without video
 
         function sbTlSchedulePersist() {
             clearTimeout(sbTlPersistTimer);
@@ -12238,6 +12242,18 @@ Project visual language: ${projVL}`;
                     ruler.addEventListener('pointermove', move);
                     ruler.addEventListener('pointerup', up);
                     ruler.addEventListener('pointercancel', up);
+                });
+            }
+            // Space toggles playback while the timeline has focus
+            if (!root.dataset.playKeysBound) {
+                root.dataset.playKeysBound = '1';
+                root.addEventListener('keydown', (e) => {
+                    if (e.code !== 'Space' && e.key !== ' ') return;
+                    const tag = e.target && e.target.tagName;
+                    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (sbTlPlaying) sbTlStopRange(); else sbTlPlayRange();
                 });
             }
             // Grab-to-pan on empty space (tracks, gaps, container)
@@ -12782,7 +12798,7 @@ Project visual language: ${projVL}`;
                 }
             } else {
                 // No video yet: fall back to the storyboard image
-                if (sbTlMonitorKey !== key || (!sbTlMonitorVideo && !mon.querySelector('img'))) {
+                if (sbTlMonitorKey !== key || (sbTlPlaying && !mon.querySelector('img')) || (!sbTlMonitorVideo && !mon.querySelector('img'))) {
                     sbTlMonitorKey = key;
                     if (sbTlMonitorVideo && sbTlMonitorVideo.parentNode === mon) { mon.removeChild(sbTlMonitorVideo); sbTlMonitorVideo = null; }
                     mon.querySelectorAll('img').forEach(i => i.remove());
@@ -12813,26 +12829,50 @@ Project visual language: ${projVL}`;
 
         function sbTlPlayRange() {
             const root = document.getElementById('sb-timeline-root');
-            const total = root ? parseFloat(root.dataset.totalSec || '0') : 0;
+            let total = root ? parseFloat(root.dataset.totalSec || '0') : 0;
             if (total <= 0) return;
             sbTlPlaying = true;
             const btn = document.getElementById('sb-tl-play-btn');
             if (btn) { btn.textContent = '⏸'; btn.className = 'btn btn-primary'; }
-            const step = () => {
+            const monBtn = document.getElementById('sb-tl-mon-play');
+            if (monBtn) { monBtn.textContent = '⏸'; monBtn.title = 'Pause (Space when the timeline is focused)'; }
+            cancelAnimationFrame(sbTlPlaySyncRaf);
+            sbTlPlayLastTs = 0;
+            let lastKey = null;
+            const step = (ts) => {
                 if (!sbTlPlaying) return;
-                sbTlPlayheadSec += 0.1;
+                const rootNow = document.getElementById('sb-timeline-root');
+                if (rootNow) total = parseFloat(rootNow.dataset.totalSec || '0');   // stays correct across zoom/fit re-renders
+                if (sbTlPlayLastTs) {
+                    const adv = Math.min(0.25, Math.max(0, (ts - sbTlPlayLastTs) / 1000));   // clamp tab-switch jumps
+                    const v = sbTlMonitorVideo;
+                    const pos = sbTlShotMediaAt(sbTlPlayheadSec);
+                    const posKey = pos ? (pos.sceneIdx + '_' + pos.shotIdx) : null;
+                    if (v && posKey && sbTlMonitorKey === posKey && v.duration > 0 && !v.paused && v.readyState >= 2) {
+                        // Frame-accurate: the timeline playhead rides the monitor video's own clock
+                        sbTlPlayheadSec = Math.min(total, sbTlShotStartSec(pos.sceneIdx, pos.shotIdx) + v.currentTime);
+                    } else {
+                        // Image-only shots or still-loading video: advance on wall-clock
+                        sbTlPlayheadSec = Math.min(total, sbTlPlayheadSec + adv);
+                    }
+                }
+                sbTlPlayLastTs = ts;
                 if (sbTlPlayheadSec >= total) { sbTlStopRange(); sbTlPlayheadSec = total; sbTlUpdatePlayhead(); sbTlUpdateMonitor(); return; }
                 sbTlUpdatePlayhead();
-                sbTlUpdateMonitor();
+                const tcEl = document.getElementById('sb-tl-monitor-tc');
+                if (tcEl) tcEl.textContent = sbTlFmtTime(sbTlPlayheadSec);
+                const pos2 = sbTlShotMediaAt(sbTlPlayheadSec);
+                const k2 = pos2 ? (pos2.sceneIdx + '_' + pos2.shotIdx) : null;
+                if (k2 !== lastKey) { lastKey = k2; sbTlUpdateMonitor(); }
                 // Follow: keep playhead in view
                 const r = document.getElementById('sb-timeline-root');
                 if (r) {
                     const x = sbTlPlayheadSec * sbTlGetPxPerSec();
                     if (x < r.scrollLeft + 40 || x > r.scrollLeft + r.clientWidth - 80) r.scrollLeft = Math.max(0, x - r.clientWidth * 0.3);
                 }
+                sbTlPlaySyncRaf = requestAnimationFrame(step);
             };
-            clearInterval(sbTlPlayTimer);
-            sbTlPlayTimer = setInterval(step, 100);
+            sbTlPlaySyncRaf = requestAnimationFrame(step);
             sbTlUpdateMonitor();
             // If the current shot's video is already loaded, start it playing too
             const pos0 = sbTlShotMediaAt(sbTlPlayheadSec);
@@ -12843,9 +12883,14 @@ Project visual language: ${projVL}`;
             sbTlPlaying = false;
             clearInterval(sbTlPlayTimer);
             sbTlPlayTimer = null;
+            cancelAnimationFrame(sbTlPlaySyncRaf);
+            sbTlPlaySyncRaf = 0;
+            sbTlPlayLastTs = 0;
             if (sbTlMonitorVideo) sbTlMonitorVideo.pause();
             const btn = document.getElementById('sb-tl-play-btn');
             if (btn) { btn.textContent = '▶'; btn.className = 'btn btn-secondary'; }
+            const monBtn = document.getElementById('sb-tl-mon-play');
+            if (monBtn) { monBtn.textContent = '▶'; monBtn.title = 'Play from the playhead (Space when the timeline is focused) — drives the timeline playhead in sync'; }
         }
 
         function sbTlTogglePlay(ev) {
@@ -13202,10 +13247,11 @@ Project visual language: ${projVL}`;
             </div>
             <div style="display:flex;gap:10px;margin-bottom:8px;align-items:stretch;">
                 <div id="sb-tl-monitor" style="position:relative;${sbTlMonitorBig ? 'width:min(920px,58vw);aspect-ratio:16/9;' : 'width:224px;height:126px;'}flex-shrink:0;background:#000;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;" ondblclick="sbTlToggleMonitorSize(event)">
-                    <div id="sb-tl-monitor-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:0 10px;">playhead preview — select a block</div>
+                    <div id="sb-tl-monitor-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:0.65rem;text-align:center;padding:0 10px;">playhead preview — click ▶ to play</div>
                     <span id="sb-tl-monitor-id" style="position:absolute;left:4px;bottom:3px;font-size:0.55rem;color:#fff;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
                     <span id="sb-tl-monitor-tc" style="position:absolute;right:4px;top:3px;font-size:0.55rem;color:#ff8a8a;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;font-variant-numeric:tabular-nums;"></span>
                     <button class="btn btn-secondary" onclick="sbTlOpenTheaterForMonitor(event)" title="Full-screen playback of this shot" style="position:absolute;left:4px;top:3px;z-index:6;padding:0 5px;font-size:0.55rem;line-height:1.4;opacity:0.85;">⛶</button>
+                    <button id="sb-tl-mon-play" onclick="sbTlTogglePlay(event)" ondblclick="event.stopPropagation()" title="Play from the playhead (Space when the timeline is focused) — drives the timeline playhead in sync">▶</button>
                 </div>
                 <div id="sb-tl-shot-info" style="flex:1;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:6px 10px;font-size:0.65rem;color:var(--text-secondary);overflow:hidden;min-width:0;"></div>
             </div>
@@ -13227,6 +13273,14 @@ Project visual language: ${projVL}`;
             sbTlProbeAudio(audioProbeList.slice(0, 16));
             sbTlUpdateMonitor();
             sbTlApplySelectionHalo();
+            if (sbTlPlaying) {
+                // A zoom/fit/size re-render rebuilt the monitor mid-playback — restore its state
+                const pBtn = document.getElementById('sb-tl-play-btn');
+                if (pBtn) { pBtn.textContent = '⏸'; pBtn.className = 'btn btn-primary'; }
+                const mBtn = document.getElementById('sb-tl-mon-play');
+                if (mBtn) mBtn.textContent = '⏸';
+                if (sbTlMonitorVideo) sbTlMonitorVideo.play().catch(() => {});
+            }
             sbTlRenderShotInfo();
         }
 
