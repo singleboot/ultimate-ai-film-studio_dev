@@ -411,6 +411,11 @@
 #sb-tl-monitor img, #sb-tl-monitor video { position: absolute; inset: 0; }
 #sb-tl-mon-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.55); color: #fff; font-size: 1.05rem; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 7; padding: 0; opacity: 0.92; transition: opacity 0.15s, background 0.15s; }
 #sb-tl-mon-play:hover { background: rgba(0,0,0,0.78); opacity: 1; }
+#sb-tl-mon-play.ghosted { opacity: 0; pointer-events: none; }
+#sb-tl-mon-chrome { position: absolute; inset: 0; z-index: 4; cursor: pointer; }
+#sb-tl-monitor.playing #sb-tl-mon-play { opacity: 0.95; }
+#sb-tl-monitor.playing.cinema-idle #sb-tl-mon-play { opacity: 0.18; }
+#sb-tl-monitor.playing.cinema-idle video, #sb-tl-monitor.playing.cinema-idle img { filter: brightness(0.82); }
         .sb-drop-after { box-shadow: 3px 0 0 0 var(--accent-primary); }
         [data-tl-shot] { user-select: none; }
         [data-tl-shot] img, [data-tl-shot] video { -webkit-user-drag: none; }
@@ -1595,6 +1600,7 @@
                 <input type="number" id="sb-global-video-steps" style="width:40px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;" value="8" min="1" max="50" step="1">
                 <label style="color:var(--text-secondary);display:flex;align-items:center;gap:3px;cursor:pointer;" title="Refine prompts with the LLM agent before generation"><input type="checkbox" id="sb-llm-enhance" style="width:auto;margin:0;accent-color:var(--accent-primary);"> ✨ LLM</label>
                 <select id="sb-ref-type" style="background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.65rem;" title="Choose what character reference to use for storyboard generation"><option value="portrait">Portrait</option><option value="sheet">Sheet</option><option value="both" selected>Both</option></select>
+                <input type="text" id="sb-style-dna" placeholder="Style DNA — one style sentence every shot obeys" style="width:36ch;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.65rem;" title="Style DNA: set this once per project and every generated shot is steered into the same visual style. Saved with the project.">
 
                 <label style="color:var(--text-secondary);display:flex;align-items:center;gap:3px;cursor:pointer;" title="Use the previous shot's approved frame as the character reference (Krea 2 char+bg workflow) so the character stays consistent across consecutive shots"><input type="checkbox" id="sb-prev-frame-ref" style="width:auto;margin:0;accent-color:var(--accent-primary);"> ↩ Prev</label>
                 <button class="btn btn-secondary" onclick="storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">📥 Apply</button>
@@ -8523,7 +8529,7 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                 const model = imgSettings.model || '';
                 const host = imgSettings.host || '';
                 const apiKey = imgSettings.apiKey || '';
-                const workflowName = settings.workflows?.sheet || 'image_flux2_klein_image_sheets';
+                const workflowName = settings.workflows?.sheet || 'image_flux2_klein_charactersheet_v2';
 
                 notify('Generating', `Sending to ${provider}...`, '🎨');
 
@@ -12003,6 +12009,10 @@ Project visual language: ${projVL}`;
             if (savedChars.length) {
                 enrichedPrompt += `\n\nCharacter reference images provided: ${savedChars.map(c => `"${c.savedImage}.png" (${c.name}: ${c.description})`).join(', ')}. The character should match the appearance shown in these reference images.`;
             }
+            const _styleDna = styleDnaText();
+            if (_styleDna && !enrichedPrompt.includes(_styleDna.slice(0, 40))) {
+                enrichedPrompt += `\n\nSTYLE (apply exactly this look to every shot): ${_styleDna}`;
+            }
             btn.disabled = true;
             btn.textContent = '⏳...';
             showSceneT2ISpinner(index);
@@ -12833,7 +12843,8 @@ Project visual language: ${projVL}`;
             const btn = document.getElementById('sb-tl-play-btn');
             if (btn) { btn.textContent = '⏸'; btn.className = 'btn btn-primary'; }
             const monBtn = document.getElementById('sb-tl-mon-play');
-            if (monBtn) { monBtn.textContent = '⏸'; monBtn.title = 'Pause (Space when the timeline is focused)'; }
+            if (monBtn) { monBtn.textContent = '⏸'; monBtn.title = 'Pause (Space when the timeline is focused)'; monBtn.classList.remove('ghosted'); }
+            sbTlApplyMonitorChrome();
             cancelAnimationFrame(sbTlPlaySyncRaf);
             sbTlPlayLastTs = 0;
             let lastKey = null;
@@ -12888,12 +12899,41 @@ Project visual language: ${projVL}`;
             const btn = document.getElementById('sb-tl-play-btn');
             if (btn) { btn.textContent = '▶'; btn.className = 'btn btn-secondary'; }
             const monBtn = document.getElementById('sb-tl-mon-play');
-            if (monBtn) { monBtn.textContent = '▶'; monBtn.title = 'Play from the playhead (Space when the timeline is focused) — drives the timeline playhead in sync'; }
+            if (monBtn) { monBtn.textContent = '▶'; monBtn.title = 'Play from the playhead (Space when the timeline is focused) — drives the timeline playhead in sync'; monBtn.classList.remove('ghosted'); }
+            sbTlApplyMonitorChrome();
         }
 
         function sbTlTogglePlay(ev) {
             if (ev) ev.stopPropagation();
             if (sbTlPlaying) sbTlStopRange(); else sbTlPlayRange();
+        }
+
+        // --- Monitor cinema chrome: overlays fade while playing, click/move wakes them ---
+
+        function sbTlApplyMonitorChrome() {
+            const mon = document.getElementById('sb-tl-monitor');
+            if (!mon) return;
+            const playing = !!sbTlPlaying;
+            mon.classList.toggle('playing', playing);
+            [['sb-tl-monitor-placeholder'], ['sb-tl-monitor-id'], ['sb-tl-monitor-tc']].forEach(([id]) => {
+                const el = document.getElementById(id);
+                if (el && el.style) el.style.opacity = playing ? '0' : '';
+            });
+            const th = mon.querySelector('button[title^="Full-screen"]');
+            if (th && th.style) th.style.opacity = playing ? '0' : '';
+        }
+
+        function sbTlBindMonitorChrome() {
+            const mon = document.getElementById('sb-tl-monitor');
+            if (!mon || mon.dataset.chromeBound) return;
+            mon.dataset.chromeBound = '1';
+            mon.addEventListener('mousemove', () => { if (sbTlPlaying) mon.classList.remove('cinema-idle'); });
+            mon.addEventListener('mouseleave', () => { if (sbTlPlaying) mon.classList.add('cinema-idle'); });
+            mon.addEventListener('click', (ev) => {
+                if (ev.target.closest('button')) return;   // real buttons handle themselves
+                if (!sbTlPlaying) return;
+                mon.classList.remove('cinema-idle');       // wake the overlays while playing
+            });
         }
 
 
@@ -13248,7 +13288,8 @@ Project visual language: ${projVL}`;
                     <span id="sb-tl-monitor-id" style="position:absolute;left:4px;bottom:3px;font-size:0.55rem;color:#fff;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
                     <span id="sb-tl-monitor-tc" style="position:absolute;right:4px;top:3px;font-size:0.55rem;color:#ff8a8a;background:rgba(0,0,0,0.65);padding:0 4px;border-radius:2px;z-index:5;font-variant-numeric:tabular-nums;"></span>
                     <button class="btn btn-secondary" onclick="sbTlOpenTheaterForMonitor(event)" title="Full-screen playback of this shot" style="position:absolute;left:4px;top:3px;z-index:6;padding:0 5px;font-size:0.55rem;line-height:1.4;opacity:0.85;">⛶</button>
-                    <button id="sb-tl-mon-play" onclick="sbTlTogglePlay(event)" ondblclick="event.stopPropagation()" title="Play from the playhead (Space when the timeline is focused) — drives the timeline playhead in sync">▶</button>
+                    <div id="sb-tl-mon-chrome" ondblclick="sbTlTogglePlay(event)"></div>
+                    <button id="sb-tl-mon-play" class="ghosted" onclick="sbTlTogglePlay(event)" ondblclick="event.stopPropagation()" title="Play from the playhead (Space when the timeline is focused) — drives the timeline playhead in sync">▶</button>
                 </div>
                 <div id="sb-tl-shot-info" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:6px 10px;font-size:0.65rem;color:var(--text-secondary);overflow:hidden;min-width:0;"></div>
             </div>
@@ -13270,12 +13311,14 @@ Project visual language: ${projVL}`;
             sbTlProbeAudio(audioProbeList.slice(0, 16));
             sbTlUpdateMonitor();
             sbTlApplySelectionHalo();
+            sbTlBindMonitorChrome();
             if (sbTlPlaying) {
                 // A zoom/fit/size re-render rebuilt the monitor mid-playback — restore its state
                 const pBtn = document.getElementById('sb-tl-play-btn');
                 if (pBtn) { pBtn.textContent = '⏸'; pBtn.className = 'btn btn-primary'; }
                 const mBtn = document.getElementById('sb-tl-mon-play');
-                if (mBtn) mBtn.textContent = '⏸';
+                if (mBtn) { mBtn.textContent = '⏸'; mBtn.classList.remove('ghosted'); }
+                sbTlApplyMonitorChrome();
                 if (sbTlMonitorVideo) sbTlMonitorVideo.play().catch(() => {});
             }
             sbTlRenderShotInfo();
@@ -13467,6 +13510,7 @@ Project visual language: ${projVL}`;
             if (!container) return;
             initPrevFrameRefToggle();
             initRefTypeSelector();
+            initStyleDna();
 
             if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.length) {
                 container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
@@ -14084,6 +14128,12 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const btn = document.getElementById(`shot-t2i-btn-${sceneIdx}-${shotIdx}`);
 
             let enrichedPrompt = sh.storyboard_prompt || sh.image_prompt || '';
+            // Style DNA: one locked style sentence shared by every shot in this project
+            const styleDna = styleDnaText();
+            if (styleDna && currentProject) {
+                if (!currentProject.settings) currentProject.settings = {};
+                if (currentProject.settings.styleDna !== styleDna) { currentProject.settings.styleDna = styleDna; scheduleSaveState(); }
+            }
             if (!enrichedPrompt) {
                 // Fallback prompt construction from shot metadata
                 const action = Array.isArray(sh.action) ? sh.action.join(', ') : (sh.action || '');
@@ -14129,6 +14179,9 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             }
             if (savedChars.length) {
                 enrichedPrompt += `\n\nCharacter reference images provided: ${savedChars.map(c => `"${c.savedImage}.png" (${c.name}: ${c.description})`).join(', ')}. The character should match the appearance shown in these reference images.`;
+            }
+            if (styleDna && !enrichedPrompt.includes(styleDna.slice(0, 40))) {
+                enrichedPrompt += `\n\nSTYLE (apply exactly this look to every shot): ${styleDna}`;
             }
 
             if (btn) {
@@ -15198,6 +15251,23 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             const saved = localStorage.getItem('sb_prev_frame_ref');
             if (saved !== null) el.checked = saved === '1';
             el.onchange = () => localStorage.setItem('sb_prev_frame_ref', el.checked ? '1' : '0');
+        }
+
+        function initStyleDna() {
+            const el = document.getElementById('sb-style-dna');
+            if (!el) return;
+            el.value = (currentProject?.settings?.styleDna || '');
+            el.onchange = () => {
+                if (!currentProject) currentProject = {};
+                if (!currentProject.settings) currentProject.settings = {};
+                currentProject.settings.styleDna = el.value.trim();
+                scheduleSaveState();
+            };
+        }
+
+        function styleDnaText() {
+            const el = document.getElementById('sb-style-dna');
+            return ((el && el.value.trim()) || (currentProject?.settings?.styleDna || '')).trim();
         }
 
         function initRefTypeSelector() {

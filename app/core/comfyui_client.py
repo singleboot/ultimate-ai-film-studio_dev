@@ -29,6 +29,23 @@ KREA2_T2I_STYLE_SUFFIX = (
 )
 
 
+def _project_style_dna() -> str:
+    """The active project's locked Style DNA sentence, or '' when unset.
+    main.py stamps _ACTIVE_PROJECT_PATH on this module whenever a storyboard
+    generation starts, so short-prompt padding reuses the project's look
+    instead of the built-in default."""
+    try:
+        pp = globals().get("_ACTIVE_PROJECT_PATH")
+        if pp:
+            f = Path(pp) / "project_state.json"
+            if f.exists():
+                sd = (json.loads(f.read_text(encoding="utf-8")).get("projectSettings") or {}).get("styleDna", "")
+                return (sd or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _is_krea2_workflow(workflow: Dict) -> bool:
     """True if the workflow loads the krea2 turbo UNet (which has the black-prompt defect)."""
     for nd in workflow.values():
@@ -598,7 +615,10 @@ class ComfyUIClient:
         if not workflow_path.exists():
             workflow_path = base / (workflow_name + ".json")
         if not workflow_path.exists():
-            return self.generate_image(prompt, "model.safetensors", 1024, 1024)
+            # Fail loudly: the old silent fallback here generated a generic
+            # 1024x1024 image with no storyboard workflow, no aspect ratio and
+            # no reference images — a classic source of off-style shots.
+            return {"success": False, "error": f"Workflow not found: {workflow_name}"}
 
         try:
             with open(workflow_path, 'r', encoding='utf-8') as f:
@@ -606,8 +626,12 @@ class ComfyUIClient:
 
             # Krea2 fp8 turbo stack renders pure-black images for short prompts.
             # Pad style-only detail so short prompts clear the threshold.
+            # The pad reuses the project's Style DNA so every padded prompt steers
+            # toward the same look instead of the built-in default.
             if _is_krea2_workflow(workflow) and len(prompt.strip()) < KREA2_T2I_MIN_PROMPT_CHARS:
-                padded = prompt.rstrip() + KREA2_T2I_STYLE_SUFFIX
+                style_dna = _project_style_dna()
+                pad = f" {style_dna}" if style_dna else KREA2_T2I_STYLE_SUFFIX
+                padded = prompt.rstrip() + pad
                 logger.info("[generate_with_workflow] krea2 short prompt (%d chars) padded to %d chars", len(prompt), len(padded))
                 prompt = padded
 

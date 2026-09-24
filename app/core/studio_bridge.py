@@ -37,6 +37,14 @@ class StudioBridge:
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ settings --
+    def _style_dna(self, project_path: str) -> str:
+        """The project's locked Style DNA sentence, or '' when unset."""
+        try:
+            state = self._load_state(project_path)
+            return ((state.get("projectSettings") or {}).get("styleDna") or "").strip()
+        except Exception:
+            return ""
+
     def _workflow_for(self, kind: str) -> str:
         try:
             settings_path = Path(__file__).parent.parent / "data" / "settings.json"
@@ -159,8 +167,10 @@ class StudioBridge:
         try:
             provider, model = self._provider()
             wf = self.jobs[job_id]["workflow"]
+            style_dna = self._style_dna(project_path)
+            full_prompt = (prompt + "\n\nSTYLE (apply exactly this look to every shot): " + style_dna) if (style_dna and style_dna not in prompt) else prompt
             res = self.image_engine.generate_image(
-                provider_id=provider, model=model, prompt=prompt,
+                provider_id=provider, model=model, prompt=full_prompt,
                 workflow_name=wf, seed=None, resolution="1024x576",
             ) if self.image_engine else {"success": False, "error": "image engine unavailable"}
             if not res.get("success"):

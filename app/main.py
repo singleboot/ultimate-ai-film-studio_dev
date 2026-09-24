@@ -233,6 +233,7 @@ telegram_bot = TelegramBotService(str(SETTINGS_FILE), agent_creator) if HAS_LLM 
 # ComfyUI client - ALWAYS use placeholder to avoid auto-connect issues
 # User can manually connect ComfyUI when they want to use it
 from core.comfyui_client import ComfyUIClient
+import core.comfyui_client as _comfyui_client_module  # for the Style DNA project stamp
 comfyui_client = ComfyUIClient()
 image_engine = ImageEngine(comfyui_client=comfyui_client, settings_path=str(SETTINGS_FILE)) if HAS_LLM else None
 orchestrator = CinematicOrchestrator(llm_engine=llm_engine) if HAS_LLM else None
@@ -2032,6 +2033,7 @@ async def generate_consistent_shot(request: Request):
     workflow_name = data.get("workflow_name") or settings.get("workflows", {}).get("i2i", "")
     if not workflow_name:
         return {"success": False, "error": "No I2I workflow assigned in Settings"}
+    _comfyui_client_module._ACTIVE_PROJECT_PATH = str(project_path) if project_path else None  # Style DNA source for short-prompt padding
 
     abs_paths = []
     for rel in input_images:

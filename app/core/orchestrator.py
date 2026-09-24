@@ -277,6 +277,9 @@ class CinematicOrchestrator:
                     elif prov == "omniroute": prov_model = "auto"
                     elif prov == "agnes": prov_model = "agnes-2.5-flash"
                     else: prov_model = prov_cfg.get("default_model", "")
+                # Vision calls keep a vision-capable model on every provider attempt
+                if kwargs.get("images") and prov in ("omniroute", "agnes"):
+                    prov_model = "gemini-2.5-flash"
                 print(chr(10) + "[FALLBACK] Trying: " + prov + "/" + prov_model)
                 logger.info("Fallback to %s/%s (attempt %d)", prov, prov_model, attempt_idx + 1)
                 self.set_progress(self._progress.get("pct", 0), "Fallback: " + prov, prov_model)
