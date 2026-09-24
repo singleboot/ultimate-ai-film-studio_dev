@@ -1579,6 +1579,7 @@
                 <span style="font-size:0.8rem;color:var(--text-secondary);white-space:nowrap;margin-right:auto;" id="sb-description-container"><span id="storyboard-count-label">0</span> shots <span id="sb-cost-summary" style="font-size:0.65rem;color:var(--text-secondary);margin-left:8px;"></span></span>
                 <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all images">🎨 Gen Img</button>
                 <button class="btn btn-secondary" type="button" onclick="storyboardUpscaleAll()" style="padding:4px 8px;font-size:0.7rem;" title="Upscale all images to 4K">🔍 4K All</button>
+                <button class="btn btn-secondary" type="button" id="sb-verify-all-btn" onclick="sbVerifyAllScenes()" style="padding:4px 8px;font-size:0.7rem;" title="Re-grade every generated shot with the vision LLM, scene by scene — one report listing all failing shots">👁️ Verify All</button>
                 <button class="btn btn-secondary" type="button" onclick="regenerateAllInconsistent()" style="padding:4px 8px;font-size:0.7rem;color:#f59e0b;" title="Regenerate all shots that failed QC (score < 7)">🔄 Regen Failed</button>
                 <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:4px 8px;font-size:0.7rem;" title="Approve all images">✅ App Img</button>
                 <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:4px 8px;font-size:0.7rem;opacity:0.4;pointer-events:none;" title="Generate all videos">🎥 Gen Vid</button>
@@ -19030,7 +19031,147 @@ Output all prompts in one block, separated by blank lines.`;
             } catch(e) {}
         });
 
-        async function verifySceneConsistency(sceneIdx, signal = null) {
+        // ================= Verify All Scenes: batch VLM re-grade with one report =================
+        let sbVerifyAllRunning = false;
+        let sbVerifyAllAbort = null;
+
+        async function sbPreflightLLMKey() {
+            try {
+                const s = await fetch('/api/settings').then(r => r.json());
+                return { ok: !!((s.llm || {}).apiKey), provider: (s.llm || {}).provider || 'omniroute' };
+            } catch (e) { return { ok: true, provider: '?' }; }   // can't check → don't block
+        }
+
+        function sbVerifyAllEnsureModal() {
+            let ov = document.getElementById('sb-verify-all-overlay');
+            if (ov) { ov.style.display = 'flex'; return ov; }
+            ov = document.createElement('div');
+            ov.id = 'sb-verify-all-overlay';
+            ov.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;';
+            ov.innerHTML = `
+                <div style="width:min(760px,94vw);max-height:84vh;display:flex;flex-direction:column;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;box-shadow:0 12px 60px rgba(0,0,0,0.7);overflow:hidden;">
+                    <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border-color);">
+                        <strong style="color:var(--accent-primary);">👁️ Verify All Scenes</strong>
+                        <span id="sb-va-provider" style="font-size:0.65rem;color:var(--text-secondary);"></span>
+                        <span style="margin-left:auto;display:inline-flex;gap:6px;">
+                            <button class="btn btn-danger" id="sb-va-stop-btn" onclick="sbVerifyAllStop()" style="padding:3px 10px;font-size:0.7rem;display:none;">✕ Stop</button>
+                            <button class="btn btn-secondary" onclick="sbVerifyAllClose()" style="padding:3px 10px;font-size:0.7rem;">Close</button>
+                        </span>
+                    </div>
+                    <div style="padding:8px 16px;border-bottom:1px solid var(--border-color);">
+                        <div id="sb-va-progress-text" style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:4px;">Idle</div>
+                        <div style="height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;"><div id="sb-va-progress-bar" style="height:100%;width:0%;background:var(--accent-primary);transition:width 0.2s;"></div></div>
+                        <div id="sb-va-summary" style="font-size:0.7rem;margin-top:6px;font-variant-numeric:tabular-nums;"></div>
+                    </div>
+                    <div id="sb-va-report" style="flex:1;overflow-y:auto;padding:10px 16px;font-size:0.7rem;display:flex;flex-direction:column;gap:8px;"></div>
+                </div>`;
+            document.body.appendChild(ov);
+            return ov;
+        }
+
+        function sbVerifyAllStop() { if (sbVerifyAllAbort) sbVerifyAllAbort.abort(); }
+
+        function sbVerifyAllClose() {
+            if (sbVerifyAllRunning) { sbVerifyAllStop(); return; }   // first click stops the run
+            const ov = document.getElementById('sb-verify-all-overlay');
+            if (ov) ov.remove();
+        }
+
+        function sbVerifyAllGotoShot(sceneIdx, shotIdx) {
+            if (typeof getStoryboardViewMode === 'function' && getStoryboardViewMode() !== 'timeline') setStoryboardView('timeline');
+            const root = document.getElementById('sb-timeline-root');
+            if (root) {
+                sbTlSelectedShot = null;                    // deterministic select (sbTlSelectShot toggles)
+                sbTlSelectShot(sceneIdx, shotIdx, null);
+                const x = sbTlShotStartSec(sceneIdx, shotIdx) * sbTlGetPxPerSec();
+                root.scrollLeft = Math.max(0, x - root.clientWidth * 0.3);
+            }
+            sbTlRenderShotInfo();
+        }
+
+        async function sbVerifyAllScenes() {
+            if (sbVerifyAllRunning) return;
+            if (!requireProject()) return;
+            if (!screenplayData || !screenplayData.scenes) { notify('No Screenplay', 'Generate a screenplay first.', '⚠️'); return; }
+            const pre = await sbPreflightLLMKey();
+            if (!pre.ok) {
+                notify('LLM offline', 'No API key set for ' + pre.provider + '. Open Settings → LLM, paste your key, then run Verify All again.', '🔑');
+                return;
+            }
+            const plan = [];
+            screenplayData.scenes.forEach((s, i) => {
+                const valid = (s.shots || []).filter(sh => sh._temp_storyboard_image || sh.storyboard_image);
+                plan.push({ sceneIdx: i, sceneId: s.scene_id || s.scene_number || ('#' + (i + 1)), total: (s.shots || []).length, validCount: valid.length });
+            });
+            const withMedia = plan.filter(p => p.validCount > 0);
+            if (!withMedia.length) { notify('No Images', 'No generated images to verify yet.', '⚠️'); return; }
+
+            const ov = sbVerifyAllEnsureModal();
+            document.getElementById('sb-va-provider').textContent = 'via ' + pre.provider;
+            const report = document.getElementById('sb-va-report');
+            report.innerHTML = plan.map(p => `<div id="sb-va-scene-${p.sceneIdx}" style="border:1px solid var(--border-color);border-radius:8px;padding:8px 10px;background:var(--bg-tertiary);">
+                    <div style="display:flex;align-items:center;gap:8px;"><strong style="color:var(--accent-primary);">${escapeHtml(String(p.sceneId))}</strong>
+                    <span style="color:var(--text-secondary);">${p.validCount}/${p.total} shots with images</span>
+                    <span id="sb-va-scene-status-${p.sceneIdx}" style="margin-left:auto;color:var(--text-secondary);">queued</span></div>
+                    <div id="sb-va-scene-detail-${p.sceneIdx}" style="margin-top:6px;display:flex;flex-direction:column;gap:4px;"></div>
+                </div>`).join('');
+            const stopBtn = document.getElementById('sb-va-stop-btn');
+            stopBtn.style.display = 'inline-block';
+            sbVerifyAllRunning = true;
+            sbVerifyAllAbort = new AbortController();
+            const t0 = Date.now();
+            let doneShots = 0, failedTotal = 0, sceneNo = 0;
+            const totalShots = withMedia.reduce((a, p) => a + p.validCount, 0);
+
+            const setProgress = (txt, pct) => {
+                document.getElementById('sb-va-progress-text').textContent = txt;
+                document.getElementById('sb-va-progress-bar').style.width = pct + '%';
+            };
+            const setSummary = () => {
+                const el = document.getElementById('sb-va-summary');
+                if (el) el.innerHTML = `Scenes ${sceneNo}/${withMedia.length} · shots checked ${doneShots}/${totalShots} · <span style="color:${failedTotal ? '#ff6b6b' : '#4caf50'};">failed ${failedTotal}</span> · ${Math.round((Date.now() - t0) / 1000)}s`;
+            };
+            setSummary();
+
+            for (const p of withMedia) {
+                if (sbVerifyAllAbort.signal.aborted) break;
+                const statusEl = document.getElementById('sb-va-scene-status-' + p.sceneIdx);
+                if (statusEl) { statusEl.textContent = 'verifying…'; statusEl.style.color = 'var(--accent-primary)'; }
+                setProgress(`Scene ${p.sceneId} — verifying ${p.validCount} shots…`, Math.round(sceneNo / withMedia.length * 100));
+                const res = await verifySceneConsistency(p.sceneIdx, sbVerifyAllAbort.signal, { silent: true });
+                sceneNo++;
+                if (sbVerifyAllAbort.signal.aborted) {
+                    if (statusEl) { statusEl.textContent = 'aborted'; statusEl.style.color = '#f59e0b'; }
+                    break;
+                }
+                const st = document.getElementById('sb-va-scene-status-' + p.sceneIdx);
+                const det = document.getElementById('sb-va-scene-detail-' + p.sceneIdx);
+                if (res && res.ok) {
+                    doneShots += res.total;
+                    failedTotal += res.failed.length;
+                    if (st) { st.textContent = res.failed.length ? `${res.total - res.failed.length}/${res.total} passed` : `all ${res.total} passed ✅`; st.style.color = res.failed.length ? '#ff6b6b' : '#4caf50'; }
+                    if (det) {
+                        det.innerHTML = res.failed.map(f => `<div onclick="sbVerifyAllGotoShot(${p.sceneIdx}, ${f.shotIdx})" style="cursor:pointer;padding:4px 6px;border-radius:5px;background:rgba(220,0,0,0.12);border:1px solid rgba(220,0,0,0.35);" title="Click to jump to this shot on the timeline">
+                                <strong>❌ ${escapeHtml(f.shot_id || ('shot ' + f.shotIdx))}</strong> · ${f.score}/10
+                                <span style="color:var(--text-secondary);"> — ${escapeHtml(String(f.feedback || '').slice(0, 160))}</span>
+                            </div>`).join('') || '<div style="color:#4caf50;">Every shot passed the VLM grade.</div>';
+                    }
+                } else {
+                    if (st) { st.textContent = 'error'; st.style.color = '#f59e0b'; }
+                    if (det) det.innerHTML = `<div style="color:#f59e0b;">⚠ ${escapeHtml((res && res.error) || 'unknown error')}${(res && res.reason === 'no-images') ? ' (no generated images)' : ''}</div>`;
+                }
+                setSummary();
+                setProgress(`Scene ${p.sceneId} done`, Math.round(sceneNo / withMedia.length * 100));
+                scheduleSaveState();
+            }
+            sbVerifyAllRunning = false;
+            stopBtn.style.display = 'none';
+            setProgress(sbVerifyAllAbort.signal.aborted ? 'Stopped' : 'Done', 100);
+            if (!sbVerifyAllAbort.signal.aborted) notify('Verify All finished', `${doneShots} shots graded · ${failedTotal} failed — see the report.`, failedTotal ? '⚠️' : '🏆');
+        }
+
+        async function verifySceneConsistency(sceneIdx, signal = null, opts = {}) {
+            const silent = !!(opts && opts.silent);
             const btn = document.getElementById(`scene-verify-btn-${sceneIdx}`);
             if (btn) {
                 btn.disabled = true;
@@ -19042,9 +19183,9 @@ Output all prompts in one block, separated by blank lines.`;
             
             const validShots = (scene.shots || []).filter(sh => sh._temp_storyboard_image || sh.storyboard_image);
             if (!validShots.length) {
-                notify('No Images', `Scene ${sceneId} has no generated images to verify.`, '⚠️');
+                if (!silent) notify('No Images', `Scene ${sceneId} has no generated images to verify.`, '⚠️');
                 if (btn) { btn.disabled = false; btn.textContent = '👁️ Vrfy Scene'; }
-                return;
+                return { ok: false, reason: 'no-images' };
             }
 
             const payload = {
@@ -19120,17 +19261,27 @@ Output all prompts in one block, separated by blank lines.`;
                         }
                     }
                     
-                    if (passedCount === validShots.length) {
-                        notify('Perfect Consistency', `All ${validShots.length} shots passed the consistency check!`, '🏆');
-                    } else {
-                        notify('Consistency Issues Found', `${validShots.length - passedCount} shots failed verification. Please review the badges manually.`, '⚠️');
+                    const failedList = [];
+                    for (const ev of data.evaluations) {
+                        const eIdx = scene.shots.findIndex(sh => sh.shot_id === ev.shot_id);
+                        if (eIdx !== -1 && ev && ev.passed === false) failedList.push({ shotIdx: eIdx, shot_id: ev.shot_id, score: ev.score, feedback: ev.feedback });
                     }
+                    if (!silent) {
+                        if (passedCount === validShots.length) {
+                            notify('Perfect Consistency', `All ${validShots.length} shots passed the consistency check!`, '🏆');
+                        } else {
+                            notify('Consistency Issues Found', `${validShots.length - passedCount} shots failed verification. Please review the badges manually.`, '⚠️');
+                        }
+                    }
+                    return { ok: true, total: validShots.length, passed: passedCount, failed: failedList };
                 } else {
-                    notify('Verification Failed', data.error || 'Failed to verify scene.', '❌');
+                    if (!silent) notify('Verification Failed', data.error || 'Failed to verify scene.', '❌');
+                    return { ok: false, error: data.error || 'Failed to verify scene.' };
                 }
             } catch (err) {
                 console.error(err);
-                notify('Verification Error', err.message, '❌');
+                if (!silent) notify('Verification Error', err.message, '❌');
+                return { ok: false, error: err.message };
             } finally {
                 if (btn) {
                     btn.disabled = false;
