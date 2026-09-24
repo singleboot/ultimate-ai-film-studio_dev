@@ -19276,16 +19276,14 @@ Output all prompts in one block, separated by blank lines.`;
 
             const payload = {
                 scene_id: sceneId,
+                project_path: currentProject?.path || '',
                 shots: validShots.map(sh => {
-                    // Prefer the officially saved image over the temp image
-                    const img = sh.storyboard_image || sh._temp_storyboard_image;
-                    let path = img;
-                    if (img && !img.includes('/')) {
-                        path = `ComfyUI/output/${img}`;
-                    } else if (img) {
-                        // The image is saved as 'scenes/filename.png', so it's directly in the project path
-                        path = `${currentProject.path}/${img}`;
-                    }
+                    // Saved images live in the project's scenes/ folder; temp ones are ComfyUI outputs
+                    const saved = sh.storyboard_image;
+                    const temp = sh._temp_storyboard_image;
+                    let path = '';
+                    if (saved) path = saved.includes('/') ? `${currentProject.path}/${saved}` : `${currentProject.path}/scenes/${saved}`;
+                    else if (temp) path = temp.includes('/') ? `${currentProject.path}/${temp}` : `ComfyUI/output/${temp}`;
                     return {
                         shot_id: sh.shot_id,
                         image_path: path

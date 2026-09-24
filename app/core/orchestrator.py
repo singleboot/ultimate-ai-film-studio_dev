@@ -214,6 +214,28 @@ class CinematicOrchestrator:
 
         return "\n".join(parts)
 
+    def _pick_local_vision_model(self) -> str:
+        """A local gguf that pairs with an mmproj projector, for vision calls on app_llm.
+        Prefers Q8 over Q4 quantizations of the projector's own model family."""
+        try:
+            md = Path(getattr(self.llm_engine, "_models_dir", ""))
+            if not str(md) or not md.exists():
+                return ""
+            mm = sorted(md.glob("*mmproj*.gguf"))
+            if not mm:
+                return ""
+            stems = []
+            for m in mm:
+                s = m.name.lower().replace("mmproj", "").strip("-_ ")
+                if s:
+                    stems.append(s)
+            candidates = [g for g in md.glob("*.gguf") if "mmproj" not in g.name.lower()]
+            # Prefer: matches a projector family or is a VL/vision model, then Q8 over Q4
+            candidates.sort(key=lambda p: (not (any(s in p.name.lower() for s in stems) or "vl" in p.name.lower() or "vision" in p.name.lower()), "q8" not in p.name.lower(), p.name.lower()))
+            return candidates[0].name if candidates else ""
+        except Exception:
+            return ""
+
     def _call_llm(self, prompt, system_suffix="", json_output=True, use_master=True, **kwargs):
         if not self.llm_engine:
             return {"success": False, "error": "LLM engine not available"}
@@ -259,6 +281,15 @@ class CinematicOrchestrator:
             for p in (fallback_chain or ["omniroute", "agnes", "app_llm"]):
                 if p != provider: provider_list.append(p)
         import re
+        # Attempt-1 model: pick a vision-capable model up front when images are
+        # attached, so the first try (not just fallbacks) can actually see.
+        if kwargs.get("images") and provider_list:
+            if provider_list[0] in ("omniroute", "agnes"):
+                model = "gemini-2.5-flash"
+            elif provider_list[0] == "app_llm":
+                vm = self._pick_local_vision_model()
+                if vm:
+                    model = vm
         title = self._progress.get("title", "Processing")
         arrow = " -> "
         print(chr(10) + "=" * 60)
@@ -272,6 +303,14 @@ class CinematicOrchestrator:
             if attempt_idx > 0:
                 prov_cfg = self.llm_engine.config.get("providers", {}).get(prov, {})
                 prov_host = prov_cfg.get("host", "").replace("localhost", "127.0.0.1")
+            if not self.llm_engine._is_cloud_provider(prov):
+                # Local providers must talk to THEIR OWN configured host — the
+                # settings-level host belongs to the first provider in the
+                # chain (e.g. OmniRoute :20128), not to llama-server :8081.
+                own_cfg = self.llm_engine.config.get("providers", {}).get(prov, {})
+                own_host = own_cfg.get("host", "").replace("localhost", "127.0.0.1")
+                if own_host:
+                    prov_host = own_host
                 if not prov_model or prov_model == model:
                     if prov == "app_llm": prov_model = "gemma-4-E2B-it-Q4_K_M.gguf"
                     elif prov == "omniroute": prov_model = "auto"
@@ -280,6 +319,9 @@ class CinematicOrchestrator:
                 # Vision calls keep a vision-capable model on every provider attempt
                 if kwargs.get("images") and prov in ("omniroute", "agnes"):
                     prov_model = "gemini-2.5-flash"
+                if kwargs.get("images") and prov == "app_llm":
+                    vm = self._pick_local_vision_model()
+                    if vm: prov_model = vm
                 print(chr(10) + "[FALLBACK] Trying: " + prov + "/" + prov_model)
                 logger.info("Fallback to %s/%s (attempt %d)", prov, prov_model, attempt_idx + 1)
                 self.set_progress(self._progress.get("pct", 0), "Fallback: " + prov, prov_model)
@@ -341,15 +383,17 @@ class CinematicOrchestrator:
         if is_healthy: return True
         if not status.get("running") and provider in ("app_llm", "llama_cpp"):
             try:
-                sp = getattr(self.llm_engine, "_settings_path", None)
-                if sp and sp.exists():
-                    import json
-                    gs = json.loads(sp.read_text(encoding="utf-8"))
-                    if gs.get("llm", {}).get("auto_start", True):
-                        self.llm_engine.launch_local_llm(provider, model)
-            except: pass
+                # Read auto_start from the engine's own config; the settings file
+                # path attribute may not exist on every engine build.
+                cfg = getattr(self.llm_engine, "config", None) or {}
+                if (cfg.get("llm") or {}).get("auto_start", True):
+                    logger.info("Auto-starting local LLM %s/%s for preflight", provider, model)
+                    self.llm_engine.launch_local_llm(provider, model)
+            except Exception as e:
+                logger.warning("Local LLM auto-start failed for %s: %s", provider, e)
             if prov_host and health_ep:
-                for _ in range(20):
+                # Loading an 8B vision model takes minutes on first boot — wait long
+                for _ in range(150):
                     try:
                         resp = requests.get(f"{prov_host}{health_ep}", timeout=2)
                         if resp.status_code == 200: return True
@@ -2628,40 +2672,53 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
         import os, base64
         base64_images = []
         valid_shots = []
+        project_path = params.get("project_path", "") or ""
         for s in shots_data:
             path = s.get("image_path", "")
             logger.info(f"Visual Consistency Engine checking image path: {path}")
-            
-            if path.startswith("ComfyUI/output/"):
-                try:
-                    import requests
-                    filename = path.split("/")[-1]
-                    host = "http://127.0.0.1:8188"
+
+            # Candidate resolution: the given path, then the same filename in the
+            # project root and its scenes/ folder (saved storyboard images).
+            filename = path.replace("\\", "/").split("/")[-1]
+            candidates = [path]
+            if project_path:
+                from pathlib import Path as _P
+                candidates += [str(_P(project_path) / filename), str(_P(project_path) / "scenes" / filename)]
+
+            loaded = False
+            for cand in candidates:
+                if loaded:
+                    break
+                if cand.startswith("ComfyUI/output/"):
                     try:
-                        from app.main import comfyui_client
-                        if comfyui_client and comfyui_client.host:
-                            host = comfyui_client.host
-                    except Exception:
-                        pass
-                    
-                    response = requests.get(f"{host}/view", params={"filename": filename}, timeout=10)
-                    if response.status_code == 200:
-                        base64_images.append(base64.b64encode(response.content).decode('utf-8'))
+                        import requests
+                        fname = cand.split("/")[-1]
+                        host = "http://127.0.0.1:8188"
+                        try:
+                            from app.main import comfyui_client
+                            if comfyui_client and comfyui_client.host:
+                                host = comfyui_client.host
+                        except Exception:
+                            pass
+                        response = requests.get(f"{host}/view", params={"filename": fname}, timeout=10)
+                        if response.status_code == 200:
+                            base64_images.append(base64.b64encode(response.content).decode('utf-8'))
+                            valid_shots.append(s.get("shot_id"))
+                            loaded = True
+                        else:
+                            logger.warning(f"Failed to fetch {fname} from ComfyUI: {response.status_code}")
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch from ComfyUI {cand}: {e}")
+                elif cand and os.path.exists(cand):
+                    try:
+                        with open(cand, "rb") as f:
+                            base64_images.append(base64.b64encode(f.read()).decode('utf-8'))
                         valid_shots.append(s.get("shot_id"))
-                        continue
-                    else:
-                        logger.warning(f"Failed to fetch {filename} from ComfyUI: {response.status_code}")
-                except Exception as e:
-                    logger.warning(f"Failed to fetch from ComfyUI {path}: {e}")
-            elif os.path.exists(path):
-                try:
-                    with open(path, "rb") as f:
-                        base64_images.append(base64.b64encode(f.read()).decode('utf-8'))
-                    valid_shots.append(s.get("shot_id"))
-                except Exception as e:
-                    logger.warning(f"Failed to read image {path}: {e}")
-            else:
-                logger.warning(f"Image does not exist locally: {path}")
+                        loaded = True
+                    except Exception as e:
+                        logger.warning(f"Failed to read image {cand}: {e}")
+            if not loaded:
+                logger.warning(f"Image could not be resolved from any candidate: {path}")
         
         if len(base64_images) == 0:
             return {"success": False, "error": "No valid images found for consistency check"}
