@@ -1580,6 +1580,7 @@
                 <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all images">🎨 Gen Img</button>
                 <button class="btn btn-secondary" type="button" onclick="storyboardUpscaleAll()" style="padding:4px 8px;font-size:0.7rem;" title="Upscale all images to 4K">🔍 4K All</button>
                 <button class="btn btn-secondary" type="button" id="sb-verify-all-btn" onclick="sbVerifyAllScenes()" style="padding:4px 8px;font-size:0.7rem;" title="Re-grade every generated shot with the vision LLM, scene by scene — one report listing all failing shots">👁️ Verify All</button>
+                <button class="btn btn-secondary" type="button" id="sb-pace-shots-btn" onclick="sbPaceAllShots()" style="padding:4px 8px;font-size:0.7rem;" title="Ask the LLM to time every shot (2-12s by content and motion) so the timeline shows real pacing instead of a flat 4 seconds">⏱ Pace Shots</button>
                 <button class="btn btn-secondary" type="button" onclick="regenerateAllInconsistent()" style="padding:4px 8px;font-size:0.7rem;color:#f59e0b;" title="Regenerate all shots that failed QC (score < 7)">🔄 Regen Failed</button>
                 <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:4px 8px;font-size:0.7rem;" title="Approve all images">✅ App Img</button>
                 <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:4px 8px;font-size:0.7rem;opacity:0.4;pointer-events:none;" title="Generate all videos">🎥 Gen Vid</button>
@@ -12151,6 +12152,11 @@ Project visual language: ${projVL}`;
             if (sh && sh._duration_override !== undefined) return Math.max(0.5, Math.min(120, sh._duration_override));
             // Persisted probed duration — only valid while it belongs to the shot's current media file
             if (sh && sh._duration_sec !== undefined && sh._duration_src === sbTlShotMediaName(sh)) return Math.max(0.5, Math.min(120, sh._duration_sec));
+            // LLM-estimated pace from the prompt bible — the plan before media exists
+            if (sh && sh.estimated_duration !== undefined && sh.estimated_duration !== null) {
+                const est = parseFloat(sh.estimated_duration);
+                if (!isNaN(est) && est > 0) return Math.max(0.5, Math.min(120, est));
+            }
             if (sbTlDurationCache[key] !== undefined) return sbTlDurationCache[key];
             return 4;
         }
@@ -19173,6 +19179,73 @@ Output all prompts in one block, separated by blank lines.`;
                 root.scrollLeft = Math.max(0, x - root.clientWidth * 0.3);
             }
             sbTlRenderShotInfo();
+        }
+
+        // ================= Pace Shots: LLM-driven dynamic shot timing =================
+        let sbPacing = false;
+
+        async function sbPaceAllShots() {
+            if (sbPacing) return;
+            if (!requireProject()) return;
+            if (!screenplayData || !screenplayData.scenes) { notify('No Screenplay', 'Generate a screenplay first.', '⚠️'); return; }
+            const shots = [];
+            screenplayData.scenes.forEach((s, si) => {
+                (s.shots || []).forEach((sh, hi) => {
+                    // User-set overrides stay; LLM-paced shots are re-timed on each run
+                    if (sh._duration_override !== undefined && !sh._paced) return;
+                    shots.push({
+                        sceneIdx: si, shotIdx: hi,
+                        sceneId: s.scene_id || s.scene_number || ('#' + (si + 1)),
+                        shot_id: sh.shot_id || ('shot_' + si + '_' + hi),
+                        shot_type: sh.shot_type || '',
+                        action: Array.isArray(sh.action) ? sh.action.join(' ') : (sh.action || ''),
+                        emotion: sh.emotion || '',
+                        characters: sh.characters_present || s.characters_present || [],
+                        has_dialogue: !!(s.dialogue && s.dialogue.length)
+                    });
+                });
+            });
+            if (!shots.length) { notify('Nothing To Pace', 'Every shot has a manual duration override. Use Close Gaps to clear them first.', 'ℹ️'); return; }
+            sbPacing = true;
+            const btn = document.getElementById('sb-pace-shots-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Pacing…'; }
+            try {
+                const res = await fetch('/api/orchestrator/pace-shots', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ shots, project_path: currentProject?.path || '' })
+                });
+                const data = await res.json();
+                if (data.success && data.durations) {
+                    let applied = 0;
+                    const durMap = data.durations;
+                    screenplayData.scenes.forEach((s, si) => {
+                        (s.shots || []).forEach((sh, hi) => {
+                            const v = durMap[sh.shot_id];
+                            if (v !== undefined && v !== null) {
+                                const f = parseFloat(v);
+                                if (!isNaN(f) && f > 0) {
+                                    sh.estimated_duration = Math.max(0.5, Math.min(120, f));   // the plan
+                                    sh._duration_override = sh.estimated_duration;             // applied — wins over probed media length
+                                    sh._paced = true;                                          // marked as LLM-timed, not user-timed
+                                    applied++;
+                                }
+                            }
+                        });
+                    });
+                    scheduleSaveState();
+                    if (typeof getStoryboardViewMode === 'function' && getStoryboardViewMode() === 'timeline') renderStoryboard();
+                    const min = Math.min(...Object.values(durMap).map(Number).filter(n => !isNaN(n) && n > 0));
+                    const max = Math.max(...Object.values(durMap).map(Number).filter(n => !isNaN(n) && n > 0));
+                    notify('Pacing Applied', `${applied} shots timed by content — range ${min.toFixed(1)}s–${max.toFixed(1)}s. The timeline widths now follow the story.`, '⏱');
+                } else {
+                    notify('Pacing Failed', data.error || 'LLM did not return durations.', '❌');
+                }
+            } catch (e) {
+                notify('Pacing Error', e.message, '❌');
+            } finally {
+                sbPacing = false;
+                if (btn) { btn.disabled = false; btn.textContent = '⏱ Pace Shots'; }
+            }
         }
 
         async function sbVerifyAllScenes() {

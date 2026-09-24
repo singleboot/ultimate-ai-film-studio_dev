@@ -1249,6 +1249,17 @@ def regenerate_shot(data: dict):
         return {"success": False, "error": "Orchestrator not available"}
     return orchestrator.regenerate_shot(data)
 
+@app.post("/api/orchestrator/pace-shots")
+async def pace_shots_endpoint(data: dict):
+    """Ask the LLM to time every shot by its content so the timeline shows dynamic pacing."""
+    shots = data.get("shots", [])
+    if not shots:
+        return {"success": False, "error": "shots list is required"}
+    if not orchestrator:
+        return {"success": False, "error": "Orchestrator not available"}
+    return orchestrator.pace_shots(shots)
+
+
 @app.post("/api/orchestrator/verify-scene-consistency")
 def verify_scene_consistency(data: dict):
     """Verify visual consistency of all shots in a scene using Vision LLM."""

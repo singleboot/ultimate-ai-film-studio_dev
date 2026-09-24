@@ -312,7 +312,9 @@ class CinematicOrchestrator:
                 if own_host:
                     prov_host = own_host
                 if not prov_model or prov_model == model:
-                    if prov == "app_llm": prov_model = "gemma-4-E2B-it-Q4_K_M.gguf"
+                    if prov == "app_llm":
+                        # The configured default may not exist on disk — pick a real local gguf
+                        prov_model = self._pick_local_vision_model() or "gemma-4-E2B-it-Q4_K_M.gguf"
                     elif prov == "omniroute": prov_model = "auto"
                     elif prov == "agnes": prov_model = "agnes-2.5-flash"
                     else: prov_model = prov_cfg.get("default_model", "")
@@ -1177,6 +1179,7 @@ Format:
 - environmental_motion (string, e.g. drifting dust, rain, smoke)
 - audio (string, describe dialogue delivery or ambience)
 - video_prompt (string, LTX 2.3 motion-only prompt)
+- estimated_duration (number, seconds 2.0-12.0: how long this shot should hold on screen — quick action/tension cuts 2-3s, standard dialogue or reaction 4-6s, establishing shots and slow emotional beats 7-12s; base it on the amount of motion and story content)
 - video_status (string, always "enriched")
 
 Example format:
@@ -1204,7 +1207,7 @@ Example format:
                     for key in ["storyboard_prompt", "cinematic_composition", "lighting_enrichment",
                                 "framing_enrichment", "camera_direction_enrichment", "lens_suggestion",
                                 "atmosphere", "subject_motion", "camera_motion", "environmental_motion",
-                                "audio", "video_prompt", "storyboard_status", "video_status"]:
+                                "audio", "video_prompt", "estimated_duration", "storyboard_status", "video_status"]:
                         if key in enrichment:
                             sh[key] = enrichment[key]
                 if not sh.get("storyboard_status"):
@@ -1901,6 +1904,7 @@ Output example format:
   - camera_motion (string, e.g. dolly push, orbit, handheld, tracking, static)
   - environmental_motion (string, e.g. drifting dust, rain, smoke, wind, flickering lights)
   - audio (string, describe dialogue delivery, ambience, or silence)
+  - estimated_duration (number, seconds 2.0-12.0: how long the motion needs to play — quick cuts 2-3s, dialogue 4-6s, establishing or emotional beats 7-12s)
   - ltx_prompt (string, the COMPLETE LTX 2.3 prompt combining all motion elements)
 
 LTX PROMPT RULES:
@@ -1922,11 +1926,17 @@ LTX PROMPT RULES:
             
             # Map by scene_id and shot_number or shot_id
             prompts_map = {}
+            prompts_meta = {}
             for scene_data in result["data"]:
                 sc_id = scene_data.get("scene_id", "")
                 for sh_data in scene_data.get("shots", []):
                     sh_num = sh_data.get("shot_number")
                     prompts_map[(sc_id, sh_num)] = sh_data.get("ltx_prompt", "")
+                    try:
+                        est = float(sh_data.get("estimated_duration", 0))
+                        prompts_meta[(sc_id, sh_num)] = max(2.0, min(12.0, est))
+                    except (TypeError, ValueError):
+                        pass
 
             enriched_count = 0
             for s in scene_graph:
@@ -1937,6 +1947,9 @@ LTX PROMPT RULES:
                         sh["video_prompt"] = prompts_map[(sc_id, sh_num)]
                         sh["video_status"] = "enriched"
                         enriched_count += 1
+                    est = prompts_meta.get((sc_id, sh_num))
+                    if est:
+                        sh["estimated_duration"] = est
             
             pg["scene_graph"] = scene_graph
             
@@ -2652,6 +2665,52 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
             "prompt": prompt,
             "shot": shot,
         }
+
+    def pace_shots(self, shots: list) -> Dict:
+        """Ask the LLM to time every shot by its content (2-12s) so the
+        timeline reflects real pacing instead of a flat default."""
+        self._reset_progress()
+        self.set_progress(10, f"Timing {len(shots)} shots by content...")
+        durations: Dict[str, float] = {}
+        batch_size = 24
+        total_batches = max(1, (len(shots) + batch_size - 1) // batch_size)
+        for bi in range(total_batches):
+            batch = shots[bi * batch_size:(bi + 1) * batch_size]
+            self.set_progress(10 + int(80 * bi / total_batches), f"Timing shots (batch {bi + 1}/{total_batches})...")
+            listing = "\n".join(
+                f"- {s.get('shot_id')}: [{s.get('shot_type', '')}] {str(s.get('action', ''))[:160]}"
+                f"{' (dialogue in scene)' if s.get('has_dialogue') else ''}"
+                for s in batch
+            )
+            prompt = (
+                "You are a film editor timing a storyboard. For each shot, estimate how many seconds "
+                "it should hold on screen based on its content, motion and story weight.\n\n"
+                f"SHOTS:\n{listing}\n\n"
+                "Rules: quick action or tension cuts 2-3s; standard dialogue, reaction or walk-and-talk "
+                "4-6s; establishing shots, reveals and slow emotional beats 7-12s. Vary the rhythm — "
+                "do NOT give every shot the same number."
+            )
+            suffix = (
+                'You MUST respond with ONLY a JSON object mapping each shot_id to a number of seconds '
+                'between 2.0 and 12.0. Example: {"SHOT_SC_001_001": 3.5, "SHOT_SC_001_002": 6.0}'
+            )
+            result = self._call_llm(prompt, system_suffix=suffix, json_output=True, use_master=False)
+            if result.get("success") and isinstance(result.get("data"), dict):
+                for sid, val in result["data"].items():
+                    try:
+                        v = float(val)
+                        if 1.0 <= v <= 30.0:
+                            durations[sid] = round(max(2.0, min(12.0, v)), 1)
+                    except (TypeError, ValueError):
+                        continue
+            else:
+                logger.warning("pace_shots batch %d/%d failed — %s", bi + 1, total_batches, result.get("error", "unknown"))
+        if not durations:
+            self.set_progress(0, "Failed", "LLM returned no durations")
+            return {"success": False, "error": "LLM returned no durations"}
+        self.set_progress(100, "Pacing complete!")
+        logger.info("pace_shots: %d/%d shots timed", len(durations), len(shots))
+        return {"success": True, "durations": durations}
 
     def verify_scene_consistency(self, params: Dict) -> Dict:
         """Visual Consistency Engine: Verify shots in a scene using VLM."""
