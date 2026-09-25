@@ -4309,14 +4309,9 @@ def wangp_generate_image_wait(data: dict = Body(...)):
     return _wangp_wait_and_ingest(_apply_stored_loras(data, "image"), default_wait=1500)
 
 
-@app.post("/api/wangp/generate/video/wait")
-def wangp_generate_video_wait(data: dict = Body(...)):
-    """i2v/t2v through WanGP: submit, wait, ingest the mp4 into ComfyUI's output
-    folder. Accepts input_image (absolute or project-relative path) like the
-    ComfyUI i2v endpoint; it is mapped to WanGP's image_start frame injection.
-    Returns the ComfyUI-style {success, filename, subfolder} shape so existing
-    video flows work unchanged.
-    """
+def _wangp_video_payload(data: dict) -> dict:
+    """Build a WanGP video job payload from the UI-shaped request body
+    (input_image -> image_start frame injection)."""
     payload = {
         "prompt": data.get("prompt", ""),
         "media": "video",
@@ -4333,7 +4328,35 @@ def wangp_generate_video_wait(data: dict = Body(...)):
         payload["extra"] = {"image_start": [str(p)]}
     if data.get("ref_images"):
         payload["ref_images"] = data["ref_images"]
-    return _wangp_wait_and_ingest(_apply_stored_loras(payload, "video"), default_wait=5400)
+    return payload
+
+
+@app.post("/api/wangp/generate/video")
+async def wangp_generate_video(request: Request):
+    """Submit-only i2v/t2v: returns {job_id} immediately so the UI can poll live
+    progress via /api/wangp/job/{job_id} (phase/percent) and ingest the result
+    with /api/wangp/job/{job_id}/ingest once done."""
+    data = await request.json()
+    bridge = _wangp_bridge_host()
+    try:
+        import requests as _rq
+        sub = _rq.post(f"{bridge}/generate", json=_apply_stored_loras(_wangp_video_payload(data), "video"), timeout=60).json()
+    except Exception as e:
+        return {"success": False, "error": f"WanGP bridge unreachable: {e}", "engine": "wangp"}
+    if not sub.get("job_id"):
+        return {"success": False, "error": sub.get("error", "no job_id"), "engine": "wangp"}
+    return {"success": True, "job_id": sub["job_id"], "engine": "wangp"}
+
+
+@app.post("/api/wangp/generate/video/wait")
+def wangp_generate_video_wait(data: dict = Body(...)):
+    """i2v/t2v through WanGP: submit, wait, ingest the mp4 into ComfyUI's output
+    folder. Accepts input_image (absolute or project-relative path) like the
+    ComfyUI i2v endpoint; it is mapped to WanGP's image_start frame injection.
+    Returns the ComfyUI-style {success, filename, subfolder} shape so existing
+    video flows work unchanged.
+    """
+    return _wangp_wait_and_ingest(_apply_stored_loras(_wangp_video_payload(data), "video"), default_wait=5400)
 
 
 @app.post("/api/wangp/generate/audio/wait")
@@ -4354,33 +4377,20 @@ def wangp_generate_audio_wait(data: dict = Body(...)):
     return _wangp_wait_and_ingest(_apply_stored_loras(payload, "tts"), default_wait=1500)
 
 
-def _wangp_wait_and_ingest(data: dict, default_wait: int):
-    """Shared submit -> poll -> ingest-into-ComfyUI-output routine for WanGP jobs."""
-    import requests as _rq
+def _wangp_ingest_job(job: dict, job_id: str):
+    """Copy a finished WanGP job's first output into ComfyUI's output folder
+    (WanGP_NNNNN_ numbering) so it is servable via /api/comfyui/view. Returns
+    the ComfyUI-shaped {success, filename, subfolder} result."""
     import shutil
-    bridge = _wangp_bridge_host()
-    try:
-        sub = _rq.post(f"{bridge}/generate", json=data, timeout=60).json()
-    except Exception as e:
-        return {"success": False, "error": f"WanGP bridge unreachable: {e}", "engine": "wangp"}
-    job_id = sub.get("job_id")
-    if not job_id:
-        return {"success": False, "error": sub.get("error", "no job_id"), "engine": "wangp"}
-
-    deadline = time.time() + int(data.get("wait_timeout", default_wait))
-    job = {}
-    while time.time() < deadline:
-        try:
-            job = _rq.get(f"{bridge}/job/{job_id}", timeout=15).json()
-        except Exception:
-            job = {}
-        if job.get("status") in ("done", "error"):
-            break
-        time.sleep(3)
-
-    if job.get("status") != "done" or not job.get("files"):
-        return {"success": False, "error": job.get("error", "WanGP job did not finish in time"),
-                "engine": "wangp", "job_id": job_id, "phase": job.get("phase")}
+    status = job.get("status")
+    if status == "error":
+        return {"success": False, "error": job.get("error", "WanGP job failed"),
+                "engine": "wangp", "job_id": job_id}
+    if status != "done" or not job.get("files"):
+        err = job.get("error") or ("WanGP job finished but produced no output" if status == "done"
+                                   else "WanGP job not finished yet")
+        return {"success": False, "pending": status != "done", "status": status,
+                "phase": job.get("phase"), "error": err, "engine": "wangp", "job_id": job_id}
 
     out_dir = _comfyui_output_dir()
     if not out_dir or not out_dir.exists():
@@ -4404,6 +4414,49 @@ def _wangp_wait_and_ingest(data: dict, default_wait: int):
     logger.info("WanGP ingest: %s -> %s", src.name, dest.name)
     return {"success": True, "filename": dest.name, "subfolder": "",
             "engine": "wangp", "provider_used": "wangp", "job_id": job_id}
+
+
+@app.post("/api/wangp/job/{job_id}/ingest")
+def wangp_job_ingest(job_id: str):
+    """Ingest a (finished) WanGP job's output into ComfyUI's output folder.
+    Companion to the submit-only /api/wangp/generate/video endpoint: the UI
+    polls /api/wangp/job/{id} for live progress, then calls this once done."""
+    bridge = _wangp_bridge_host()
+    try:
+        import requests as _rq
+        job = _rq.get(f"{bridge}/job/{job_id}", timeout=15).json()
+    except Exception as e:
+        return {"success": False, "error": f"WanGP bridge unreachable: {e}",
+                "engine": "wangp", "job_id": job_id}
+    return _wangp_ingest_job(job, job_id)
+
+
+def _wangp_wait_and_ingest(data: dict, default_wait: int):
+    """Shared submit -> poll -> ingest-into-ComfyUI-output routine for WanGP jobs."""
+    import requests as _rq
+    bridge = _wangp_bridge_host()
+    try:
+        sub = _rq.post(f"{bridge}/generate", json=data, timeout=60).json()
+    except Exception as e:
+        return {"success": False, "error": f"WanGP bridge unreachable: {e}", "engine": "wangp"}
+    job_id = sub.get("job_id")
+    if not job_id:
+        return {"success": False, "error": sub.get("error", "no job_id"), "engine": "wangp"}
+
+    deadline = time.time() + int(data.get("wait_timeout", default_wait))
+    job = {}
+    while time.time() < deadline:
+        try:
+            job = _rq.get(f"{bridge}/job/{job_id}", timeout=15).json()
+        except Exception:
+            job = {}
+        if job.get("status") in ("done", "error"):
+            break
+        time.sleep(3)
+
+    if job.get("status") not in ("done", "error"):
+        job = {**job, "error": "WanGP job did not finish in time"}
+    return _wangp_ingest_job(job, job_id)
 
 
 @app.get("/api/wangp/model/{model_type}")

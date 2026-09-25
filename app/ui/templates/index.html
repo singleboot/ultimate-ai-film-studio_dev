@@ -12052,9 +12052,11 @@ Project visual language: ${projVL}`;
             return e[kind] === 'wangp';
         }
 
-        // WanGP video (i2v) through the studio proxy; waits and ingests into
-        // ComfyUI's output folder, returning the same shape as the ComfyUI endpoint.
-        async function wangpWaitVideo(opts) {
+        // WanGP video (i2v) through the studio proxy: submit-only, then poll the
+        // bridge job for live progress (phase / percent) via onProgress, then
+        // ingest the finished file into ComfyUI's output folder. Returns the same
+        // shape as the ComfyUI endpoint.
+        async function wangpWaitVideo(opts, onProgress) {
             const engines = await getEngines();
             const payload = { prompt: opts.prompt || '', wait_timeout: 5400 };
             if (opts.seed != null) payload.seed = opts.seed;
@@ -12062,11 +12064,48 @@ Project visual language: ${projVL}`;
             if (opts.project_path) payload.project_path = opts.project_path;
             const m = engines.wangpModels?.video;
             if (m) payload.model_type = m;
-            const res = await fetch('/api/wangp/generate/video/wait', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
+            const signal = opts.signal || null;
+            const report = (txt, pct) => { try { if (onProgress) onProgress({ text: txt, pct: pct }); } catch (e) {} };
+            const fetchJson = async (url, fetchOpts) => {
+                const r = await fetch(url, Object.assign({}, fetchOpts, signal ? { signal } : {}));
+                return await r.json();
+            };
+            // 1) Submit (instant — bridge queues the job and inits the session in background)
+            report('Submitting to WanGP...');
+            const sub = await fetchJson('/api/wangp/generate/video', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            return await res.json();
+            if (!sub.success || !sub.job_id) {
+                return { success: false, error: sub.error || 'WanGP submit failed' };
+            }
+            // 2) Poll job status every 3s, reporting phase + percent to the spinner
+            const deadline = Date.now() + 5400 * 1000;
+            let job = null;
+            while (Date.now() < deadline) {
+                if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+                await new Promise(r => setTimeout(r, 3000));
+                try { job = await fetchJson('/api/wangp/job/' + encodeURIComponent(sub.job_id)); }
+                catch (e) { if (e.name === 'AbortError') throw e; continue; }
+                const st = job.status || 'queued';
+                if (st === 'done' || st === 'error') break;
+                let txt = 'Rendering on WanGP...';
+                const phase = job.phase ? String(job.phase).replace(/[_-]+/g, ' ').trim() : '';
+                if (phase) txt = phase.charAt(0).toUpperCase() + phase.slice(1);
+                if (job.step && job.steps) txt += ` (step ${job.step}/${job.steps})`;
+                let pct = job.pct;
+                if (typeof pct === 'number' && isFinite(pct)) {
+                    while (pct > 100) pct = pct / 10;         // bridge may report 0-1000 / 0-10000 scale
+                    pct = Math.max(0, Math.min(99, Math.round(pct)));
+                    txt += ` \u2014 ${pct}%`;
+                }
+                report(txt, pct);
+            }
+            // 3) Ingest the finished output into ComfyUI's output folder
+            report(job && job.status === 'done' ? 'Ingesting result...' : 'Waiting for WanGP...');
+            return await fetchJson('/api/wangp/job/' + encodeURIComponent(sub.job_id) + '/ingest', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+            });
         }
 
         // Populate the WanGP model pickers from the live catalog (grouped by family,
@@ -15404,7 +15443,9 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                 try {
                     let data;
                     if (await isWanGP('i2v')) {
-                        data = await wangpWaitVideo({ prompt: sh.video_prompt, seed, input_image: inputImagePath, project_path: currentProject?.path || '' });
+                        data = await wangpWaitVideo({ prompt: sh.video_prompt, seed, input_image: inputImagePath, project_path: currentProject?.path || '', signal }, p => {
+                            updateShotSpinnerPhase(sceneIdx, shotIdx, p && p.text ? p.text : 'Rendering on WanGP...');
+                        });
                     } else {
                         const res = await fetch('/api/comfyui/generate/i2v', {
                             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -15792,7 +15833,9 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                 body.refine = llmEnhanceEnabled();
                 let data;
                 if (await isWanGP('i2v')) {
-                    data = await wangpWaitVideo({ prompt: body.prompt, seed: body.seed, input_image: body.input_image, project_path: body.project_path });
+                    data = await wangpWaitVideo({ prompt: body.prompt, seed: body.seed, input_image: body.input_image, project_path: body.project_path }, p => {
+                        updateShotSpinnerPhase(sceneIdx, shotIdx, p && p.text ? p.text : 'Rendering on WanGP...');
+                    });
                 } else {
                     const res = await fetch('/api/comfyui/generate/i2v', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -17311,7 +17354,9 @@ Raw JSON only, no markdown.`;
                 try {
                     let data;
                     if (await isWanGP('i2v')) {
-                        data = await wangpWaitVideo({ prompt: sh.video_prompt, seed, input_image: `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`, project_path: currentProject?.path || '' });
+                        data = await wangpWaitVideo({ prompt: sh.video_prompt, seed, input_image: `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`, project_path: currentProject?.path || '', signal: window._sceneAbortController.signal }, p => {
+                            updateShotSpinnerPhase(sIdx, shIdx, p && p.text ? p.text : 'Rendering video...');
+                        });
                     } else {
                         const res = await fetch('/api/comfyui/generate/i2v', {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -18704,13 +18749,15 @@ Output all prompts in one block, separated by blank lines.`;
             btn.textContent = 'Animating...';
 
             const previewContainer = document.getElementById('ai-nle-preview-container');
-            const originalContent = previewContainer.innerHTML;
-            previewContainer.innerHTML = originalContent + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#ff6600;font-size:0.55rem;text-align:center;padding:2px;">⌛ Generating Video...</div>';
+            const originalContent = previewContainer.innerHTML;                    previewContainer.innerHTML = originalContent + '<div id="nle-i2v-progress" style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#ff6600;font-size:0.55rem;text-align:center;padding:2px;">⌛ Generating Video...</div>';
 
             try {
                 let data;
                 if (await isWanGP('i2v')) {
-                    data = await wangpWaitVideo({ prompt: prompt, seed, input_image: nleTempImageFile, project_path: currentProject?.path || '' });
+                    data = await wangpWaitVideo({ prompt: prompt, seed, input_image: nleTempImageFile, project_path: currentProject?.path || '' }, p => {
+                        const el = document.getElementById('nle-i2v-progress');
+                        if (el && p && p.text) el.textContent = p.text.substring(0, 90);
+                    });
                 } else {
                     const res = await fetch('/api/comfyui/generate/i2v', {
                         method: 'POST',
