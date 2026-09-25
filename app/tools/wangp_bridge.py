@@ -49,7 +49,7 @@ class GenerateRequest(BaseModel):
     model_type: str | None = None          # default chosen per media kind
     media: str = "image"                   # "image" | "video"
     ref_images: list[str] | None = None    # absolute paths (i2i / i2v)
-    video_length: int | None = None
+    video_length: int | str | None = None  # frame count, or seconds like "10s"
     duration_seconds: float | None = None
     extra: dict | None = None              # raw WanGP settings passthrough
 
