@@ -106,10 +106,9 @@ def _default_settings(sess, media, model_type):
         return {"model_type": model_type}
     return {
         "image": {"model_type": "qwen_image_21_7B"},
-        # MiniMax H3 VDN 8-Step 33B: video + real generated audio, only 8 denoise
-        # steps (Grouped Row Denoising) - far faster than the 20-step Ref2VA and
-        # still fits the 12GB card. User pick for shot videos.
-        "video": {"model_type": "minimax_h3_vdn"},
+        # LTX 2.5 Distilled 22B: video + real generated audio, 8 steps, much faster
+        # than the MiniMax H3 variants on a 12GB card (user pick after timing both).
+        "video": {"model_type": "ltx2_25_22B_distilled"},
         # Zero-shot text-only TTS (small download); voice-clone models that need a
         # reference clip (IndexTTS2/2.5, MiniMax H3 Voice Clone) stay in the picker.
         "audio": {"model_type": "qwen3_tts_customvoice"},
