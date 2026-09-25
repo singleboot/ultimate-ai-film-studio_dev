@@ -1959,13 +1959,10 @@ async def generate_t2i_endpoint(request: Request):
 
     def _run_generation():
         final_prompt = _refine_prompt_via_agent("prompt_engineer_t2i", prompt, data.get("refine", False))
-        cl = load_settings().get("comfyLoras") or {}
-        lora = cl.get("image") or None
-        lstrength = cl.get("image_strength")
+        names, strengths = _comfy_lora_stack("image")
         return comfyui_client.generate_with_workflow(
             final_prompt, workflow_name, seed=seed, steps=steps, resolution=resolution,
-            loras=[lora] if lora else None,
-            lora_strength=(float(lstrength) if lstrength is not None else None))
+            loras=names, lora_strengths=strengths)
 
     return await loop.run_in_executor(None, _run_generation)
 
@@ -2153,10 +2150,8 @@ async def generate_consistent_shot(request: Request):
     max_retries = 2
     current_prompt = prompt
     best_result = None
-    # ComfyUI LoRA override for the storyboard image engine (task: image/i2i)
-    _cl = (settings.get("comfyLoras") or {})
-    _img_lora = _cl.get("image") or None
-    _img_lora_strength = _cl.get("image_strength")
+    # ComfyUI LoRA stack override for the storyboard image engine (task: image/i2i)
+    _img_loras, _img_lora_strengths = _comfy_lora_stack("image")
     
     for attempt in range(max_retries + 1):
         if attempt > 0:
@@ -2189,8 +2184,7 @@ async def generate_consistent_shot(request: Request):
                     current_prompt, workflow_name, seed=seed, steps=steps, cfg=cfg,
                     input_images=abs_paths if abs_paths else None,
                     aspect_ratio=aspect_ratio, resolution=resolution,
-                    loras=[_img_lora] if _img_lora else None,
-                    lora_strength=(float(_img_lora_strength) if _img_lora_strength is not None else None)
+                    loras=_img_loras, lora_strengths=_img_lora_strengths
                 )
             )
             best_result = result
@@ -4243,6 +4237,30 @@ async def wangp_job(job_id: str):
         return r.json()
     except Exception as e:
         return {"status": "error", "error": str(e)}
+
+
+def _comfy_lora_stack(task: str):
+    """Normalized ComfyUI LoRA stack for a task from settings.comfyLoras.
+    Accepts the list shape (image: [names], image_strengths: [..]) and the
+    legacy single shape (image: 'name', image_strength: 1.0).
+    Returns (names, strengths) — either may be None when nothing is set."""
+    cl = load_settings().get("comfyLoras") or {}
+    raw = cl.get(task)
+    if not raw:
+        return None, None
+    names = raw if isinstance(raw, list) else [raw]
+    names = [n for n in names if n]
+    if not names:
+        return None, None
+    strengths = cl.get(f"{task}_strengths")
+    if not isinstance(strengths, list) or len(strengths) < len(names):
+        single = cl.get(f"{task}_strength")
+        strengths = [float(single) if single is not None else 1.0] * len(names)
+    try:
+        strengths = [float(s) for s in strengths[:len(names)]]
+    except (TypeError, ValueError):
+        strengths = [1.0] * len(names)
+    return names, strengths
 
 
 def _comfyui_output_dir() -> Path | None:

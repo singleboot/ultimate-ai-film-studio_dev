@@ -2135,10 +2135,9 @@
                                             <span style="font-size:0.75rem;">1</span>
                                         </div>
                                         <div class="form-group" style="margin-bottom:6px;">
-                                            <label class="form-label" style="font-size:0.75rem;">ComfyUI LoRA — Image (applied to t2i + storyboard)</label>
-                                            <select class="form-select" id="comfy-lora-image" style="font-size:0.75rem;"><option value="">— none —</option></select>
-                                            <input type="range" min="0" max="2" step="0.05" value="1" id="comfy-lora-image-strength" oninput="this.nextElementSibling.textContent = this.value" style="width:60%;display:inline-block;">
-                                            <span style="font-size:0.75rem;">1</span>
+                                            <label class="form-label" style="font-size:0.75rem;">ComfyUI LoRAs — Image (stack, applied to t2i + storyboard)</label>
+                                            <select class="form-select" id="comfy-lora-image" multiple size="4" style="font-size:0.75rem;"></select>
+                                            <div id="comfy-lora-image-strengths" style="margin-top:4px;"></div>
                                         </div>
                                     </div>
                                     <div id="uploaded-workflows" style="margin-top:8px;">
@@ -4803,9 +4802,17 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     if (si) { si.value = wl.image_strength ?? 1; si.nextElementSibling.textContent = si.value; }
                     if (sv) { sv.value = wl.video_strength ?? 1; sv.nextElementSibling.textContent = sv.value; }
                     const cl = s.comfyLoras || {};
-                    safeSetValue('comfy-lora-image', cl.image || '');
-                    const cs = document.getElementById('comfy-lora-image-strength');
-                    if (cs) { cs.value = cl.image_strength ?? 1; cs.nextElementSibling.textContent = cs.value; }
+                    const csel = document.getElementById('comfy-lora-image');
+                    if (csel) {
+                        const picked = Array.isArray(cl.image) ? cl.image : (cl.image ? [cl.image] : []);
+                        const strengths = Array.isArray(cl.image_strengths) ? cl.image_strengths : [];
+                        [...csel.options].forEach(o => {
+                            const idx = picked.indexOf(o.value);
+                            o.selected = idx >= 0;
+                            if (idx >= 0) o.dataset.strength = strengths[idx] ?? 1;
+                        });
+                        renderComfyLoraStrengthRows();
+                    }
                 });
                 // Populate default sheet prompts from currentProject.settings if available
                 const settingCharSheet = document.getElementById('setting-char-sheet-prompt');
@@ -4971,8 +4978,8 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     video_strength: parseFloat(document.getElementById('wangp-lora-video-strength')?.value || '1')
                 },
                 comfyLoras: {
-                    image: document.getElementById('comfy-lora-image')?.value || '',
-                    image_strength: parseFloat(document.getElementById('comfy-lora-image-strength')?.value || '1')
+                    image: [...document.querySelectorAll('#comfy-lora-image option:checked')].map(o => o.value),
+                    image_strengths: [...document.querySelectorAll('#comfy-lora-image option:checked')].map(o => parseFloat(o.dataset.strength || '1'))
                 },
                 telegram: {
                     bot_token: document.getElementById('telegram-bot-token').value
@@ -12120,13 +12127,42 @@ Project visual language: ${projVL}`;
             if (csel) {
                 try {
                     const data = await fetch('/api/comfyui/loras').then(r => r.json());
-                    while (csel.options.length > 1) csel.remove(1);
+                    while (csel.options.length) csel.remove(0);
                     (data.loras || []).forEach(n => {
                         const o = document.createElement('option'); o.value = n; o.textContent = n;
                         csel.appendChild(o);
                     });
                 } catch (e) { console.warn('ComfyUI lora list failed', e); }
+                csel.addEventListener('change', () => renderComfyLoraStrengthRows());
             }
+        }
+
+        // One strength row per selected ComfyUI LoRA (stack order = selection order).
+        function renderComfyLoraStrengthRows() {
+            const box = document.getElementById('comfy-lora-image-strengths');
+            const sel = document.getElementById('comfy-lora-image');
+            if (!box || !sel) return;
+            const chosen = [...sel.selectedOptions];
+            box.innerHTML = '';
+            chosen.forEach((o, i) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:2px;';
+                const name = document.createElement('span');
+                name.textContent = (i + 1) + '. ' + o.value.split(/[\\/]/).pop().replace('.safetensors', '');
+                name.title = o.value;
+                name.style.cssText = 'font-size:0.7rem;color:var(--text-secondary);width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                const rng = document.createElement('input');
+                rng.type = 'range'; rng.min = '0'; rng.max = '2'; rng.step = '0.05';
+                rng.value = o.dataset.strength || '1';
+                rng.dataset.lora = o.value;
+                rng.style.cssText = 'width:35%;display:inline-block;';
+                const val = document.createElement('span');
+                val.textContent = rng.value;
+                val.style.cssText = 'font-size:0.7rem;font-variant-numeric:tabular-nums;';
+                rng.addEventListener('input', () => { val.textContent = rng.value; o.dataset.strength = rng.value; });
+                row.append(name, rng, val);
+                box.appendChild(row);
+            });
         }
 
         // TTS test bench: synthesize the typed line through WanGP and play it.

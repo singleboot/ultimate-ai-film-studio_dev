@@ -632,7 +632,7 @@ class ComfyUIClient:
         
         return workflow
 
-    def generate_with_workflow(self, prompt: str, workflow_name: str, negative_prompt: str = None, seed: int = None, input_images: List[str] = None, aspect_ratio: str = None, resolution: str = None, steps: int = None, cfg: float = None, loras: List[str] = None, lora_strength: float = None) -> Dict:
+    def generate_with_workflow(self, prompt: str, workflow_name: str, negative_prompt: str = None, seed: int = None, input_images: List[str] = None, aspect_ratio: str = None, resolution: str = None, steps: int = None, cfg: float = None, loras: List[str] = None, lora_strength: float = None, lora_strengths: List[float] = None) -> Dict:
         """Generate using a custom workflow JSON from the workflows folder.
         UAIImageSlot nodes get their image_path set directly from input_images paths.
         Unused slots default to empty string (1x1 black image = bypass)."""
@@ -1015,28 +1015,65 @@ class ComfyUIClient:
                     elif needed in avail_loras:
                         debug_log.append(f"LoraLoaderModelOnly '{needed}' found, keeping as-is")
 
-            # Phase 5b: LoRA override — rewire the workflow's LoraLoader node(s) to
-            # the user-selected LoRA(s). Single selection updates the first loader
-            # in place (chains keep their structure); multiple selections are
-            # appended as parallel loaders fed from the model input of the first.
+            # Phase 5b: LoRA override — stack the user-selected LoRA(s) into the
+            # workflow. Selections fill the workflow's existing LoraLoader(s) in
+            # order; any surplus LoRAs are added as NEW chained
+            # LoraLoaderModelOnly nodes spliced above the first loader's model
+            # input (or above the first KSampler when the workflow has no
+            # loader), so arbitrary stack depth works regardless of graph.
             if loras:
+                if lora_strengths is not None and isinstance(lora_strengths, list):
+                    strengths = [float(s) for s in lora_strengths]
+                elif lora_strength is not None:
+                    strengths = [float(lora_strength)] * len(loras)
+                else:
+                    strengths = [1.0] * len(loras)
+
+                def _st(i):
+                    return strengths[i] if i < len(strengths) else 1.0
+
                 loaders = [(nid, nd) for nid, nd in workflow.items()
                            if isinstance(nd, dict) and nd.get("class_type") in ("LoraLoader", "LoraLoaderModelOnly")]
-                if loaders:
-                    nid0, nd0 = loaders[0]
-                    nd0["inputs"]["lora_name"] = loras[0]
-                    if lora_strength is not None:
-                        nd0["inputs"]["strength_model"] = float(lora_strength)
-                        nd0["inputs"]["strength_clip"] = float(lora_strength)
-                    debug_log.append(f"LoraLoader override: {nid0} -> {loras[0]} (strength={lora_strength})")
-                    for extra_nid, extra_lora in zip([n for n, _ in loaders[1:]], loras[1:]):
-                        workflow[extra_nid]["inputs"]["lora_name"] = extra_lora
-                        if lora_strength is not None:
-                            workflow[extra_nid]["inputs"]["strength_model"] = float(lora_strength)
-                            workflow[extra_nid]["inputs"]["strength_clip"] = float(lora_strength)
-                        debug_log.append(f"LoraLoader override: {extra_nid} -> {extra_lora}")
-                else:
-                    debug_log.append(f"LoRA override requested but workflow has no LoraLoader node")
+                for i, (nid, nd) in enumerate(loaders[:len(loras)]):
+                    nd["inputs"]["lora_name"] = loras[i]
+                    st = _st(i)
+                    nd["inputs"]["strength_model"] = st
+                    if nd.get("class_type") == "LoraLoader":
+                        nd["inputs"]["strength_clip"] = st
+                    debug_log.append(f"LoraLoader override: {nid} -> {loras[i]} (strength={st})")
+
+                surplus = loras[len(loaders):]
+                if surplus:
+                    if loaders:
+                        anchor_nid, anchor_nd = loaders[0]
+                        prev = anchor_nd["inputs"].get("model")
+                    else:
+                        anchor_nid = anchor_nd = None
+                        for nid, nd in workflow.items():
+                            if isinstance(nd, dict) and "KSampler" in str(nd.get("class_type", "")):
+                                anchor_nid, anchor_nd = nid, nd
+                                break
+                        if anchor_nd is None:
+                            debug_log.append("LoRA stack requested but no loader/KSampler found to attach to")
+                            surplus = []
+                        else:
+                            prev = anchor_nd["inputs"].get("model")
+                    for j, extra in enumerate(surplus):
+                        i = len(loaders) + j
+                        new_id = f"lora_stack_{i}"
+                        workflow[new_id] = {
+                            "class_type": "LoraLoaderModelOnly",
+                            "inputs": {
+                                "lora_name": extra,
+                                "strength_model": _st(i),
+                                "model": prev,
+                            },
+                        }
+                        debug_log.append(f"LoraLoader stack insert: {new_id} -> {extra} (strength={_st(i)})")
+                        prev = [new_id, 0]
+                    if anchor_nd is not None and surplus:
+                        anchor_nd["inputs"]["model"] = prev
+                        debug_log.append(f"LoraLoader stack rewired {anchor_nid}.model -> {prev}")
 
             # Log final state of key nodes before queueing
             for nid in ["269", "149", "121", "110", "320:319", "320:303", "320:313"]:
