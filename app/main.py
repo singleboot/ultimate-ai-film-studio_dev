@@ -4231,6 +4231,78 @@ async def wangp_job(job_id: str):
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
+
+def _comfyui_output_dir() -> Path | None:
+    """Best-effort ComfyUI output folder: explicit setting, else derived from
+    ComfyUI's /system_stats argv (its main.py path implies <dir>/output)."""
+    s = load_settings()
+    p = (s.get("comfyui") or {}).get("output_dir")
+    if p:
+        return Path(p)
+    try:
+        import requests as _rq
+        st = _rq.get(f"{comfyui_client.host}/system_stats", timeout=5).json()
+        argv = (st.get("system") or {}).get("argv") or []
+        if argv:
+            return Path(argv[0]).parent / "output"
+    except Exception:
+        pass
+    return None
+
+
+@app.post("/api/wangp/generate/image/wait")
+def wangp_generate_image_wait(data: dict = Body(...)):
+    """Submit an image job to WanGP, wait for it, and ingest the result into
+    ComfyUI's output folder so existing UI flows (preview via /view, upscale,
+    save-image) work unchanged. Returns {success, filename, engine:'wangp'}.
+    """
+    import requests as _rq
+    import shutil
+    bridge = _wangp_bridge_host()
+    try:
+        sub = _rq.post(f"{bridge}/generate", json=data, timeout=60).json()
+    except Exception as e:
+        return {"success": False, "error": f"WanGP bridge unreachable: {e}", "engine": "wangp"}
+    job_id = sub.get("job_id")
+    if not job_id:
+        return {"success": False, "error": sub.get("error", "no job_id"), "engine": "wangp"}
+
+    deadline = time.time() + int(data.get("wait_timeout", 1500))
+    job = {}
+    while time.time() < deadline:
+        try:
+            job = _rq.get(f"{bridge}/job/{job_id}", timeout=15).json()
+        except Exception:
+            job = {}
+        if job.get("status") in ("done", "error"):
+            break
+        time.sleep(3)
+
+    if job.get("status") != "done" or not job.get("files"):
+        return {"success": False, "error": job.get("error", "WanGP job did not finish in time"),
+                "engine": "wangp", "job_id": job_id, "phase": job.get("phase")}
+
+    out_dir = _comfyui_output_dir()
+    if not out_dir or not out_dir.exists():
+        return {"success": False, "error": "ComfyUI output folder not found for ingest",
+                "engine": "wangp", "job_id": job_id}
+    src = Path(job["files"][0])
+    if not src.exists():
+        return {"success": False, "error": f"WanGP output missing: {src}", "engine": "wangp", "job_id": job_id}
+    try:
+        existing = [f for f in out_dir.glob("WanGP_*") if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        idx = 1
+        for f in existing:
+            stem = f.stem.split("_")[-1]
+            if stem.isdigit():
+                idx = max(idx, int(stem) + 1)
+        dest = out_dir / f"WanGP_{idx:05d}_{src.stem[:40].replace(' ', '_')}{src.suffix or '.png'}"
+        shutil.copyfile(src, dest)
+    except Exception as e:
+        return {"success": False, "error": f"Ingest failed: {e}", "engine": "wangp", "job_id": job_id}
+    logger.info("WanGP ingest: %s -> %s", src.name, dest.name)
+    return {"success": True, "filename": dest.name, "engine": "wangp", "provider_used": "wangp", "job_id": job_id}
+
 @app.post("/api/settings")
 async def save_settings_endpoint(data: dict):
     """Save settings, preserving genres and other non-overlapping keys."""

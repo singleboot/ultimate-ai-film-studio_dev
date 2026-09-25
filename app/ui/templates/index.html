@@ -2081,6 +2081,20 @@
                                             <label class="form-label" style="font-size:0.75rem;">4K Upscale Workflow</label>
                                             <select class="form-select" id="wf-upscale" style="font-size:0.8rem;"><option value="">-- Select --</option></select>
                                         </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">Text-to-Image Engine</label>
+                                            <select class="form-select" id="engine-t2i" style="font-size:0.8rem;">
+                                                <option value="comfyui">ComfyUI</option>
+                                                <option value="wangp">WanGP</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">Image-to-Image Engine (Storyboard)</label>
+                                            <select class="form-select" id="engine-i2i" style="font-size:0.8rem;">
+                                                <option value="comfyui">ComfyUI</option>
+                    <option value="wangp">WanGP</option>
+                                            </select>
+                                        </div>
                                     </div>
                                     <div id="uploaded-workflows" style="margin-top:8px;">
                                         <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Uploaded:</div>
@@ -4722,6 +4736,10 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                         if (el && s.workflows[k]) el.value = s.workflows[k];
                     });
                 }
+                if (s.engines) {
+                    safeSetValue('engine-t2i', s.engines.t2i || 'comfyui');
+                    safeSetValue('engine-i2i', s.engines.i2i || 'comfyui');
+                }
                 // Populate default sheet prompts from currentProject.settings if available
                 const settingCharSheet = document.getElementById('setting-char-sheet-prompt');
                 if (settingCharSheet) settingCharSheet.value = currentProject?.settings?.character_sheet_prompt || '';
@@ -4868,6 +4886,10 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     sheet: document.getElementById('wf-sheet').value,
                     loc_sheet: document.getElementById('wf-loc_sheet').value,
                     upscale: document.getElementById('wf-upscale').value
+                },
+                engines: {
+                    t2i: document.getElementById('engine-t2i')?.value || 'comfyui',
+                    i2i: document.getElementById('engine-i2i')?.value || 'comfyui'
                 },
                 telegram: {
                     bot_token: document.getElementById('telegram-bot-token').value
@@ -11925,6 +11947,98 @@ Project visual language: ${projVL}`;
                 || (asset.savedImage && asset.savedImage.includes('/' + id + '.'));
         }
 
+        // === GENERATION ENGINE ROUTING (ComfyUI vs WanGP) ===
+        let _engineCache = { data: null, at: 0 };
+        async function getEngines() {
+            if (_engineCache.data && Date.now() - _engineCache.at < 30000) return _engineCache.data;
+            try {
+                const s = await fetch('/api/settings').then(r => r.json());
+                _engineCache = { data: s.engines || {}, at: Date.now() };
+            } catch (e) { _engineCache = { data: {}, at: Date.now() }; }
+            return _engineCache.data;
+        }
+        async function isWanGP(kind) {
+            const e = await getEngines();
+            return e[kind] === 'wangp';
+        }
+
+        // Submit to WanGP through the studio proxy and wait for the ingested file.
+        // The backend copies the result into ComfyUI's output folder (WanGP_*.png),
+        // so preview / upscale / save flows work exactly like a ComfyUI render.
+        async function wangpWaitImage(prompt, seed, steps, resolution, refImages) {
+            const payload = { prompt, media: 'image' };
+            if (seed != null) payload.seed = seed;
+            if (steps) payload.steps = steps;
+            if (resolution) payload.resolution = resolution;
+            if (refImages && refImages.length) payload.ref_images = refImages;
+            const res = await fetch('/api/wangp/generate/image/wait', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            return await res.json();
+        }
+
+        // Storyboard shot render through WanGP (mirrors the ComfyUI post-success flow).
+        async function generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, enrichedPrompt, seedOverride, stepsOverride, imgResolution, inputImages) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            try {
+                updateShotSpinnerPhase(sceneIdx, shotIdx, '🎨 Rendering on WanGP...');
+                const base = (currentProject?.path || '').replace(/[\\/]+$/, '');
+                const absRefs = base ? (inputImages || []).map(p => /^[a-zA-Z]:/.test(p) ? p : base + '/' + p.replace(/^[\\/]+/, '')) : [];
+                const data = await wangpWaitImage(enrichedPrompt, seedOverride, stepsOverride || null, imgResolution, absRefs);
+                if (!data.success) {
+                    hideShotSpinner(sceneIdx, shotIdx);
+                    notify('❌ WanGP Failed', data.error || 'Generation failed', '❌', 5000);
+                    return false;
+                }
+                const tempFilename = data.filename;
+                const cardName = `scene_${sceneIdx + 1}_shot_${shotIdx + 1}`;
+                try {
+                    const saveRes = await fetch('/api/projects/save-image', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        signal: abortSignal,
+                        body: JSON.stringify({
+                            project_name: currentProject?.name || '',
+                            project_path: currentProject?.path || '',
+                            stage: 'scenes',
+                            filename: tempFilename,
+                            card_name: cardName
+                        })
+                    });
+                    const saveData = await saveRes.json();
+                    if (saveData.success) {
+                        const savedFilename = saveData.path.split(/[\\/]/).pop();
+                        sh._temp_storyboard_image = 'scenes/' + savedFilename;
+                    } else {
+                        sh._temp_storyboard_image = tempFilename;
+                    }
+                } catch(e) {
+                    sh._temp_storyboard_image = tempFilename;
+                }
+                sh.storyboard_status = 'generated';
+                sh.storyboard_history = sh.storyboard_history || [];
+                if (!sh.storyboard_history.includes(tempFilename)) {
+                    sh.storyboard_history.push(tempFilename);
+                }
+                sh.consistency_eval = null;   // VLM consistency loop is ComfyUI-side
+                sh._gen_provider = 'wangp';
+                sh._gen_time_ms = Date.now() - (window._shotGenStartMs || Date.now());
+                updateShotPreview(sceneIdx, shotIdx);
+                hideShotSpinner(sceneIdx, shotIdx);
+                scheduleSaveState();
+                const imgEl = document.getElementById(`shot-preview-img-${sceneIdx}-${shotIdx}`);
+                if (imgEl && !imgEl.complete) {
+                    await new Promise(resolve => { imgEl.onload = resolve; imgEl.onerror = resolve; });
+                }
+                return true;
+            } catch (e) {
+                hideShotSpinner(sceneIdx, shotIdx);
+                if (e.name !== 'AbortError') notify('Error', e.message, '❌');
+                return false;
+            }
+        }
+
         function getSavedInputImages(targetChars = null, targetLocation = null) {
             const paths = [];
             const push = (p) => { if (p && !paths.includes(p)) paths.push(p); };
@@ -14242,6 +14356,12 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps;
             const seedOverride = sh._genSeed || seed;
 
+            // Engine routing: WanGP renders the shot through the bridge (refs become
+            // image_refs; no VLM consistency loop on that path yet).
+            if (await isWanGP('i2i')) {
+                return await generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, enrichedPrompt, seedOverride, stepsOverride, imgResolution, inputImages);
+            }
+
             try {
                 updateShotSpinnerPhase(sceneIdx, shotIdx, '🎨 Rendering on GPU...');
                 const res = await fetch('/api/orchestrator/generate-consistent-shot', {
@@ -16112,11 +16232,16 @@ Respond with raw JSON only, no markdown, no backticks.`;
             const t2iResEl = document.getElementById('sel-img-resolution');
             const t2iResolution = t2iResEl ? t2iResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
             try {
-                const res = await fetch('/api/comfyui/generate/t2i', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: t2iResolution })
-                });
-                const data = await res.json();
+                let data;
+                if (await isWanGP('t2i')) {
+                    data = await wangpWaitImage(prompt, seed, null, t2iResolution, null);
+                } else {
+                    const res = await fetch('/api/comfyui/generate/t2i', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ prompt: prompt, seed: seed, resolution: t2iResolution })
+                    });
+                    data = await res.json();
+                }
                 hideT2ISpinner(type, index);
                 if (data.success) {
                     showT2IPreview(type, index, data.filename);
@@ -18279,13 +18404,18 @@ Output all prompts in one block, separated by blank lines.`;
             previewContainer.innerHTML = '<div style="color:#ff6600;font-size:0.65rem;text-align:center;">⌛ Generating Image...</div>';
 
             try {
-                const res = await fetch('/api/comfyui/generate/t2i', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ prompt: prompt, seed: seed, resolution: resolution, refine: llmEnhanceEnabled() })
-                });
-                const data = await res.json();
-                
+                let data;
+                if (await isWanGP('t2i')) {
+                    data = await wangpWaitImage(prompt, seed, null, resolution, null);
+                } else {
+                    const res = await fetch('/api/comfyui/generate/t2i', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ prompt: prompt, seed: seed, resolution: resolution, refine: llmEnhanceEnabled() })
+                    });
+                    data = await res.json();
+                }
+
                 if (data.success) {
                     nleTempImageFile = data.filename;
                     nleTempVideoFile = null; // Clear old video
