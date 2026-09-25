@@ -4186,6 +4186,136 @@ async def get_settings():
     return load_settings()
 
 
+# ---------------- Generation event log (studio console) ----------------
+# Ring buffer of generation activity across both engines (ComfyUI + WanGP),
+# shown in the UI's Generation Console and served by GET /api/gen-log.
+
+from collections import deque
+
+_gen_events: deque = deque(maxlen=400)
+_gen_event_seq = 0
+_gen_job_labels: dict = {}   # job_id -> {"model": str, "task": str}
+
+
+def _log_gen_event(engine: str, task: str, status: str, detail: str = "", job_id: str = ""):
+    """Append one event; consecutive progress posts for a job update one line."""
+    global _gen_event_seq
+    if status == "progress" and job_id:
+        for ev in reversed(_gen_events):
+            if ev.get("job_id") == job_id and ev.get("status") == "progress":
+                ev["ts"] = time.strftime("%H:%M:%S")
+                ev["detail"] = (detail or "")[:220]
+                return
+    _gen_event_seq += 1
+    _gen_events.append({
+        "seq": _gen_event_seq,
+        "ts": time.strftime("%H:%M:%S"),
+        "engine": engine,
+        "task": task,
+        "status": status,
+        "detail": (detail or "")[:220],
+        "job_id": job_id,
+    })
+    logger.info("gen[%s/%s] %s %s", engine, task, status, detail)
+
+
+def _gen_remember_job(job_id: str, model: str = "", task: str = ""):
+    if not job_id:
+        return
+    info = _gen_job_labels.setdefault(job_id, {"model": "", "task": ""})
+    if model:
+        info["model"] = model
+    if task:
+        info["task"] = task
+    if len(_gen_job_labels) > 200:
+        _gen_job_labels.pop(next(iter(_gen_job_labels)))
+
+
+def _classify_task(path: str) -> str:
+    p = path.lower()
+    if "i2v" in p or "t2v" in p or "/video" in p:
+        return "video"
+    if "audio" in p or "tts" in p:
+        return "audio"
+    if "i2i" in p or "t2i" in p or "/image" in p:
+        return "image"
+    return "gen"
+
+
+@app.middleware("http")
+async def _gen_event_middleware(request: Request, call_next):
+    """Record engine activity for generation endpoints into the console log."""
+    path = request.url.path
+    ingest = path.startswith("/api/wangp/job/") and path.endswith("/ingest")
+    watch = (
+        path.startswith("/api/comfyui/generate/")
+        or path.startswith("/api/wangp/generate/")
+        or ingest
+    )
+    if not watch:
+        return await call_next(request)
+    engine = "wangp" if path.startswith("/api/wangp") else "comfyui"
+    task = _classify_task(path)
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        _log_gen_event(engine, task, "error", f"endpoint crashed: {e}")
+        raise
+    body = b""
+    async for chunk in response.body_iterator:
+        body += chunk
+    try:
+        data = json.loads(body) if body else {}
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    jid = str(data.get("job_id") or "")
+    if jid:
+        task = (_gen_job_labels.get(jid) or {}).get("task") or task
+    if ingest:
+        if data.get("success"):
+            _log_gen_event(engine, task, "done", str(data.get("filename") or "output saved"), jid)
+        else:
+            _log_gen_event(engine, task, "error", str(data.get("error") or "ingest failed"), jid)
+    elif data.get("success") is False and data.get("error"):
+        _log_gen_event(engine, task, "error", str(data.get("error")), jid)
+    elif jid and (path.endswith("/generate/video") or path.endswith("/generate/image")):
+        model = str(((data.get("settings") or {}).get("model_type")) or "")
+        _gen_remember_job(jid, model=model, task=task)
+        _log_gen_event(engine, task, "queued", model or "queued on bridge", jid)
+    else:
+        status = "done" if data.get("success") else "error"
+        detail = str(data.get("filename") or data.get("error") or "")
+        _log_gen_event(engine, task, status, detail, jid)
+    return Response(content=body, status_code=response.status_code,
+                    headers=dict(response.headers), media_type=response.media_type)
+
+
+@app.post("/api/wangp/progress")
+async def wangp_progress(data: dict = Body(...)):
+    """Client-reported live WanGP job progress (phase/percent) for the console."""
+    jid = str(data.get("job_id") or "")
+    _gen_remember_job(jid, model=str(data.get("model") or ""), task=str(data.get("task") or ""))
+    _log_gen_event("wangp", str(data.get("task") or "video"), "progress",
+                   str(data.get("phase") or ""), jid)
+    return {"ok": True}
+
+
+@app.get("/api/gen-log")
+async def gen_log():
+    """Recent generation events (newest first) for the UI console."""
+    return {"events": list(_gen_events)[::-1]}
+
+
+@app.delete("/api/gen-log")
+async def gen_log_clear():
+    """Clear the generation console log."""
+    _gen_events.clear()
+    _gen_job_labels.clear()
+    return {"ok": True}
+
+
 # ---------------- WanGP bridge (alternate generation engine) ----------------
 
 def _wangp_bridge_host() -> str:
