@@ -5629,6 +5629,7 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
         // === GENERATION CONSOLE (ComfyUI / WanGP activity log) ===
         const _genConsoleMax = 400;
         const _genLog = [];                          // {ts, engine, task, status, detail}
+        let _genLastSeq = 0;                         // newest server event seq processed
         let _genConsoleOpen = false;
         let _genActiveCount = 0;                     // queued/progress lines not yet done/error
         let _genConsoleDirty = false;                // new events while closed
@@ -5667,13 +5668,30 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
 
         // Push one event; queued/progress events for the same engine+task update the active line.
         function genConsoleEvent(ev) {
+            if (ev.seq && ev.seq > 0) _genLastSeq = Math.max(_genLastSeq, ev.seq);
             if (ev.status === 'progress' || ev.status === 'queued') {
                 const cur = _genLog.find(l => l.engine === ev.engine && l.task === ev.task && (l.status === 'queued' || l.status === 'progress'));
                 if (cur && !(cur.status === 'progress' && ev.status === 'queued')) {
                     cur.status = ev.status === 'progress' ? 'progress' : cur.status;
-                    cur.ts = ev.ts || cur.ts; cur.detail = ev.detail || cur.detail; _genRenderConsole(); return;
+                    cur.ts = ev.ts || cur.ts; cur.detail = ev.detail || cur.detail;
+                    cur.job_id = ev.job_id || cur.job_id || '';
+                    _genRenderConsole(); return;
                 }
             }
+            // Terminal event -> close the matching active line in place so a
+            // finished job doesn't leave a stale queued line above its result.
+            if (ev.status === 'done' || ev.status === 'error') {
+                const cur = _genLog.find(l =>
+                    l.engine === ev.engine && l.task === ev.task && (l.status === 'queued' || l.status === 'progress')
+                    && (!ev.job_id || !l.job_id || l.job_id === ev.job_id));
+                if (cur) {
+                    cur.status = ev.status; cur.ts = ev.ts || cur.ts; cur.detail = ev.detail || cur.detail;
+                    _genActiveCount = Math.max(0, _genActiveCount - 1);
+                    if (!_genConsoleOpen) _genConsoleDirty = true;
+                    _genRenderConsole(); return;
+                }
+            }
+            ev.job_id = ev.job_id || '';
             _genLog.unshift(ev);
             if (_genLog.length > _genConsoleMax) _genLog.pop();
             if (ev.status === 'queued') _genActiveCount++;
@@ -5685,9 +5703,35 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
         async function pollGenLog() {
             try {
                 const data = await fetch('/api/gen-log').then(r => r.json());
-                const fresh = (data.events || []).filter(e => e.seq > (_genLog[0]?.seq || 0));
+                // Server returns newest-first; process oldest-first so lines
+                // merge/close correctly and the seq watermark stays valid.
+                const fresh = (data.events || []).filter(e => e.seq > _genLastSeq).reverse();
                 fresh.forEach(ev => genConsoleEvent(ev));
             } catch (e) { /* server restarting */ }
+        }
+
+        // Real-time progress: merge the server's live snapshot into the active
+        // console lines (comfy = websocket-derived step/percent, wangp = bridge
+        // job phase). Display-only merge — never creates or closes lines.
+        async function pollGenProgress() {
+            let rows = null;
+            try {
+                rows = (await fetch('/api/gen-progress').then(r => r.json())).progress || [];
+            } catch (e) { return; }
+            const seen = new Set();
+            rows.forEach(rw => {
+                if (!rw || !rw.engine || !rw.phase) return;
+                seen.add(rw.engine + '\u00b7' + rw.task);
+                const cur = _genLog.find(l => l.engine === rw.engine && l.task === rw.task && (l.status === 'queued' || l.status === 'progress'));
+                if (cur) { cur.status = 'progress'; cur.detail = rw.phase; _genRenderConsole(); }
+            });
+            // An active line with no live snapshot anymore -> back to queued
+            _genLog.forEach(l => {
+                if (l.status === 'progress' && !seen.has(l.engine + '\u00b7' + l.task)) {
+                    l.status = 'queued';
+                    _genRenderConsole();
+                }
+            });
         }
 
         function toggleGenConsole(force) {
@@ -5709,14 +5753,17 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
 
         // === SERVICE STATUS POLLING ===
         let _statusInterval = null;
+        let _statusInterval2 = null;
 
         function startStatusPolling() {
             if (_statusInterval) clearInterval(_statusInterval);
+            if (_statusInterval2) clearInterval(_statusInterval2);
             pollServiceStatus();
             pollGenLog();
+            pollGenProgress();
             checkWanGPStatus();
             _statusInterval = setInterval(pollServiceStatus, 5000);
-            _statusInterval2 = setInterval(() => { pollGenLog(); checkWanGPStatus(); }, 4000);
+            _statusInterval2 = setInterval(() => { pollGenLog(); pollGenProgress(); checkWanGPStatus(); }, 2000);
         }
 
         async function pollServiceStatus() {
@@ -12244,8 +12291,6 @@ Project visual language: ${projVL}`;
                     txt += ` \u2014 ${pct}%`;
                 }
                 report(txt, pct);
-                fetch('/api/wangp/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ job_id: sub.job_id, task: 'video', phase: txt }) }).catch(() => {});
             }
             // 3) Ingest the finished output into ComfyUI's output folder
             report(job && job.status === 'done' ? 'Ingesting result...' : 'Waiting for WanGP...');

@@ -1,5 +1,6 @@
 import os
 import json
+import re as _re_mod
 import shutil
 import platform
 import logging
@@ -4186,6 +4187,60 @@ async def get_settings():
     return load_settings()
 
 
+# ---------------- ComfyUI live progress -> gen console ----------------
+
+_comfy_prog_lock = threading.Lock()
+_comfy_prog_label = {"model": "", "task": "gen"}
+
+
+@app.get("/api/gen-progress")
+async def gen_progress():
+    """Current live progress line(s), one per active engine, for the console.
+
+    ComfyUI: sampled from the websocket event cache in comfyui_client
+    (step/percent of the running node). WanGP: active bridge jobs with their
+    phase. The UI merges these into its active console lines in real time."""
+    out = []
+    try:
+        p = comfyui_client.get_progress() or {}
+        if p.get("running"):
+            cur, mx = p.get("current", 0), p.get("max", 0)
+            node = p.get("node_type") or ""
+            pct = int(round(cur * 100.0 / mx)) if mx else None
+            txt = f"{node or 'Executing'} step {cur}/{mx}" + (f" \u2014 {pct}%" if pct is not None else "")
+            with _comfy_prog_lock:
+                model = _comfy_prog_label.get("model") or ""
+                task = _comfy_prog_label.get("task") or "gen"
+            if model:
+                txt = f"{model}: {txt}"
+            out.append({"engine": "comfyui", "task": task, "phase": txt})
+    except Exception:
+        pass
+    try:
+        r = requests.get(f"{_wangp_bridge_host()}/health", timeout=3).json()
+        for jid, j in (r.get("jobs") or {}).items():
+            if jid == "count" or not isinstance(j, dict):
+                continue
+            if j.get("status") in ("done", "error"):
+                continue
+            # Normalize the phase the same way the UI does so both progress
+            # sources produce identical text.
+            ph = _re_mod.sub(r"[_\-]+", " ", str(j.get("phase") or j.get("status") or "working")).strip()
+            ph = ph[:1].upper() + ph[1:] if ph else "Working"
+            if j.get("step") and j.get("steps"):
+                ph += f" (step {j['step']}/{j['steps']})"
+            pct = j.get("pct")
+            if isinstance(pct, (int, float)):
+                while pct > 100:
+                    pct /= 10
+                ph += f" \u2014 {max(0, min(99, round(pct)))}%"
+            task = (_gen_job_labels.get(str(jid)) or {}).get("task") or "video"
+            out.append({"engine": "wangp", "task": task, "phase": ph})
+    except Exception:
+        pass
+    return {"progress": out}
+
+
 # ---------------- Generation event log (studio console) ----------------
 # Ring buffer of generation activity across both engines (ComfyUI + WanGP),
 # shown in the UI's Generation Console and served by GET /api/gen-log.
@@ -4256,6 +4311,14 @@ async def _gen_event_middleware(request: Request, call_next):
         return await call_next(request)
     engine = "wangp" if path.startswith("/api/wangp") else "comfyui"
     task = _classify_task(path)
+    if engine == "comfyui" and request.method == "POST":
+        # Pre-log the queued line so the live progress endpoint has an active
+        # line to attach to while the blocking handler runs, and point the
+        # progress label at this task immediately (the model name follows on
+        # response).
+        with _comfy_prog_lock:
+            _comfy_prog_label["task"] = task
+        _log_gen_event(engine, task, "queued", "dispatched to ComfyUI")
     try:
         response = await call_next(request)
     except Exception as e:
@@ -4273,6 +4336,20 @@ async def _gen_event_middleware(request: Request, call_next):
     jid = str(data.get("job_id") or "")
     if jid:
         task = (_gen_job_labels.get(jid) or {}).get("task") or task
+    if engine == "comfyui" and data.get("success"):
+        # ComfyUI endpoints block until the workflow finishes; rotate the live
+        # label so the next run's progress line names the new workflow/model.
+        model = ""
+        if path.endswith("/generate/t2i"):
+            model = str(data.get("workflow") or data.get("model") or "")
+        elif path.endswith("/generate/i2v"):
+            model = str(data.get("workflow") or data.get("model") or "")
+        if model:
+            model = str(model).replace(".json", "")
+        with _comfy_prog_lock:
+            if model:
+                _comfy_prog_label["model"] = model
+            _comfy_prog_label["task"] = task
     if ingest:
         if data.get("success"):
             _log_gen_event(engine, task, "done", str(data.get("filename") or "output saved"), jid)
