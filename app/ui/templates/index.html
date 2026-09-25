@@ -14236,7 +14236,10 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             const imgResEl = document.getElementById('sel-img-resolution');
             const imgResolution = imgResEl ? imgResEl.value : (currentProject?.settings?.imgResolution || '1024x576');
             const cfgOverride = sh._genCfg || parseFloat(document.getElementById('storyboard-expand-cfg')?.value) || currentProject?.settings?.cfg || 1.0;
-            const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps || 10;
+            // No hard-coded step default: when the user/project hasn't chosen a
+            // step count, omit it so the assigned workflow's own KSampler steps
+            // apply (e.g. Qwen Image 2.1 wants its native 25, not a turbo-style 10).
+            const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps;
             const seedOverride = sh._genSeed || seed;
 
             try {

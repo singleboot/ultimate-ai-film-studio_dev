@@ -1913,7 +1913,7 @@ def generate_image(
     return result
 
 # Default ComfyUI workflow presets used when Settings has no workflow assigned yet.
-DEFAULT_T2I_WORKFLOW = "image_krea2_turbo_t2i_v2.json"
+DEFAULT_T2I_WORKFLOW = "image_qwen_image_2_1_t2i.json"
 # LTX-2.5-Distilled i2v with native audio generation — the installed model
 # outclasses the old MiniMax/LTX2.3 paths (which needed missing GGUFs).
 DEFAULT_I2V_WORKFLOW = "video_ltx2_5_i2v.json"
