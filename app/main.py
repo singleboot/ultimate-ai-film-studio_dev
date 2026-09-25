@@ -1949,7 +1949,8 @@ async def generate_t2i_endpoint(request: Request):
     settings = load_settings()
     workflow_name = data.get("workflow_name") or settings.get("workflows", {}).get("t2i", "") or DEFAULT_T2I_WORKFLOW
     resolution = data.get("resolution")
-    logger.info("POST /api/comfyui/generate/t2i — workflow=%s, seed=%s", workflow_name, seed)
+    steps = data.get("steps")
+    logger.info("POST /api/comfyui/generate/t2i — workflow=%s, seed=%s, steps=%s", workflow_name, seed, steps)
 
     # Run blocking refinement + generation in a worker thread so the event loop
     # stays free (progress polling and other requests keep working).
@@ -1958,7 +1959,7 @@ async def generate_t2i_endpoint(request: Request):
 
     def _run_generation():
         final_prompt = _refine_prompt_via_agent("prompt_engineer_t2i", prompt, data.get("refine", False))
-        return comfyui_client.generate_with_workflow(final_prompt, workflow_name, seed=seed, resolution=resolution)
+        return comfyui_client.generate_with_workflow(final_prompt, workflow_name, seed=seed, steps=steps, resolution=resolution)
 
     return await loop.run_in_executor(None, _run_generation)
 
