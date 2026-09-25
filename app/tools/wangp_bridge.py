@@ -51,6 +51,8 @@ class GenerateRequest(BaseModel):
     ref_images: list[str] | None = None    # absolute paths (i2i / i2v)
     video_length: int | str | None = None  # frame count, or seconds like "10s"
     duration_seconds: float | None = None
+    loras: list[str] | None = None         # absolute/relative paths to .safetensors
+    lora_strength: float | None = None     # applied to all activated loras (default 1.0)
     extra: dict | None = None              # raw WanGP settings passthrough
 
     @property
@@ -179,6 +181,19 @@ def generate(req: GenerateRequest):
         settings["duration_seconds"] = req.duration_seconds
     if req.ref_images:
         settings["image_refs"] = req.ref_images
+    if req.loras:
+        # Resolve relative names against WanGP's loras root (WanGP resolves
+        # remaining relative paths against the caller's CWD, which is wrong here).
+        lora_paths = []
+        for lp in req.loras:
+            p = Path(lp)
+            if not p.is_absolute():
+                p = WANGP_ROOT / "loras" / lp
+            lora_paths.append(str(p))
+        settings["activated_loras"] = lora_paths
+        # per-index multipliers string, e.g. "1.0" applies to every lora
+        strength = req.lora_strength if req.lora_strength is not None else 1.0
+        settings["loras_multipliers"] = " ".join([str(strength)] * len(req.loras))
     if req.extra:
         settings.update(req.extra)
 
@@ -235,6 +250,23 @@ def models(query: str = "", family: str = "", available: str = "", task: str = "
             "inputs": inputs,
         })
     return {"models": out}
+
+
+@app.get("/loras")
+def loras():
+    """List LoRA files under WanGP's loras folder, grouped by subfolder."""
+    root = WANGP_ROOT / "loras"
+    groups = {}
+    if root.exists():
+        for p in sorted(root.rglob("*.safetensors")):
+            rel = p.relative_to(root).as_posix()
+            fam = rel.split("/")[0] if "/" in rel else "(root)"
+            groups.setdefault(fam, []).append({
+                "path": str(p),
+                "rel": rel,
+                "size_mb": round(p.stat().st_size / 1e6, 1),
+            })
+    return {"families": groups}
 
 
 @app.get("/model/{model_type}")

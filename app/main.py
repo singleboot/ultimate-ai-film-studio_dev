@@ -1959,7 +1959,13 @@ async def generate_t2i_endpoint(request: Request):
 
     def _run_generation():
         final_prompt = _refine_prompt_via_agent("prompt_engineer_t2i", prompt, data.get("refine", False))
-        return comfyui_client.generate_with_workflow(final_prompt, workflow_name, seed=seed, steps=steps, resolution=resolution)
+        cl = load_settings().get("comfyLoras") or {}
+        lora = cl.get("image") or None
+        lstrength = cl.get("image_strength")
+        return comfyui_client.generate_with_workflow(
+            final_prompt, workflow_name, seed=seed, steps=steps, resolution=resolution,
+            loras=[lora] if lora else None,
+            lora_strength=(float(lstrength) if lstrength is not None else None))
 
     return await loop.run_in_executor(None, _run_generation)
 
@@ -2147,6 +2153,10 @@ async def generate_consistent_shot(request: Request):
     max_retries = 2
     current_prompt = prompt
     best_result = None
+    # ComfyUI LoRA override for the storyboard image engine (task: image/i2i)
+    _cl = (settings.get("comfyLoras") or {})
+    _img_lora = _cl.get("image") or None
+    _img_lora_strength = _cl.get("image_strength")
     
     for attempt in range(max_retries + 1):
         if attempt > 0:
@@ -2178,7 +2188,9 @@ async def generate_consistent_shot(request: Request):
                 lambda: comfyui_client.generate_with_workflow(
                     current_prompt, workflow_name, seed=seed, steps=steps, cfg=cfg,
                     input_images=abs_paths if abs_paths else None,
-                    aspect_ratio=aspect_ratio, resolution=resolution
+                    aspect_ratio=aspect_ratio, resolution=resolution,
+                    loras=[_img_lora] if _img_lora else None,
+                    lora_strength=(float(_img_lora_strength) if _img_lora_strength is not None else None)
                 )
             )
             best_result = result
@@ -4251,6 +4263,24 @@ def _comfyui_output_dir() -> Path | None:
     return None
 
 
+def _apply_stored_loras(payload: dict, task: str) -> dict:
+    """Attach the user's saved WanGP LoRA selection + strength for this task.
+    Request-supplied loras win over stored defaults."""
+    if payload.get("loras"):
+        return payload
+    s = load_settings()
+    sel = (s.get("wangpLoras") or {}).get(task) or []
+    if sel:
+        payload["loras"] = sel
+        strength = (s.get("wangpLoras") or {}).get(f"{task}_strength")
+        if strength is not None:
+            try:
+                payload["lora_strength"] = float(strength)
+            except (TypeError, ValueError):
+                pass
+    return payload
+
+
 @app.post("/api/wangp/generate/image/wait")
 def wangp_generate_image_wait(data: dict = Body(...)):
     """Submit an image job to WanGP, wait for it, and ingest the result into
@@ -4258,7 +4288,7 @@ def wangp_generate_image_wait(data: dict = Body(...)):
     save-image) work unchanged. Returns {success, filename, engine:'wangp'}.
     """
     data.setdefault("media", "image")
-    return _wangp_wait_and_ingest(data, default_wait=1500)
+    return _wangp_wait_and_ingest(_apply_stored_loras(data, "image"), default_wait=1500)
 
 
 @app.post("/api/wangp/generate/video/wait")
@@ -4285,7 +4315,7 @@ def wangp_generate_video_wait(data: dict = Body(...)):
         payload["extra"] = {"image_start": [str(p)]}
     if data.get("ref_images"):
         payload["ref_images"] = data["ref_images"]
-    return _wangp_wait_and_ingest(payload, default_wait=5400)
+    return _wangp_wait_and_ingest(_apply_stored_loras(payload, "video"), default_wait=5400)
 
 
 @app.post("/api/wangp/generate/audio/wait")
@@ -4303,7 +4333,7 @@ def wangp_generate_audio_wait(data: dict = Body(...)):
             payload[key] = data[key]
     if data.get("extra"):
         payload["extra"] = data["extra"]
-    return _wangp_wait_and_ingest(payload, default_wait=900)
+    return _wangp_wait_and_ingest(_apply_stored_loras(payload, "tts"), default_wait=1500)
 
 
 def _wangp_wait_and_ingest(data: dict, default_wait: int):
@@ -4367,6 +4397,29 @@ async def wangp_model_detail(model_type: str):
         return r.json()
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.get("/api/wangp/loras")
+async def wangp_loras():
+    """WanGP's LoRA library grouped by family folder (ltx2, wan_i2v, minimax_h3...)."""
+    import requests as _rq
+    try:
+        r = _rq.get(f"{_wangp_bridge_host()}/loras", timeout=30)
+        return r.json()
+    except Exception as e:
+        return {"families": {}, "error": str(e)}
+
+
+@app.get("/api/comfyui/loras")
+async def comfyui_loras():
+    """ComfyUI's LoRA list (relative names used by LoraLoader nodes)."""
+    import requests as _rq
+    try:
+        r = _rq.get(f"{comfyui_client.host}/models/loras", timeout=15)
+        names = r.json()
+        return {"loras": names if isinstance(names, list) else []}
+    except Exception as e:
+        return {"loras": [], "error": str(e)}
 
 @app.post("/api/settings")
 async def save_settings_endpoint(data: dict):

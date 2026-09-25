@@ -2122,6 +2122,24 @@
                                                 <audio id="wangp-tts-audio" controls style="height:28px;max-width:220px;"></audio>
                                             </div>
                                         </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">WanGP LoRAs — Image</label>
+                                            <select class="form-select" id="wangp-lora-image" multiple size="4" style="font-size:0.75rem;"></select>
+                                            <input type="range" min="0" max="2" step="0.05" value="1" id="wangp-lora-image-strength" oninput="this.nextElementSibling.textContent = this.value" style="width:60%;display:inline-block;">
+                                            <span style="font-size:0.75rem;">1</span>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">WanGP LoRAs — Video</label>
+                                            <select class="form-select" id="wangp-lora-video" multiple size="4" style="font-size:0.75rem;"></select>
+                                            <input type="range" min="0" max="2" step="0.05" value="1" id="wangp-lora-video-strength" oninput="this.nextElementSibling.textContent = this.value" style="width:60%;display:inline-block;">
+                                            <span style="font-size:0.75rem;">1</span>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">ComfyUI LoRA — Image (applied to t2i + storyboard)</label>
+                                            <select class="form-select" id="comfy-lora-image" style="font-size:0.75rem;"><option value="">— none —</option></select>
+                                            <input type="range" min="0" max="2" step="0.05" value="1" id="comfy-lora-image-strength" oninput="this.nextElementSibling.textContent = this.value" style="width:60%;display:inline-block;">
+                                            <span style="font-size:0.75rem;">1</span>
+                                        </div>
                                     </div>
                                     <div id="uploaded-workflows" style="margin-top:8px;">
                                         <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Uploaded:</div>
@@ -4774,6 +4792,21 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     safeSetValue('wangp-model-tts', s.wangpModels.tts || '');
                 }
                 loadWanGPModels();
+                loadWanGPLoRAs().then(() => {
+                    const wl = s.wangpLoras || {};
+                    const selImg = document.getElementById('wangp-lora-image');
+                    const selVid = document.getElementById('wangp-lora-video');
+                    if (selImg) [...selImg.options].forEach(o => { o.selected = (wl.image || []).includes(o.value); });
+                    if (selVid) [...selVid.options].forEach(o => { o.selected = (wl.video || []).includes(o.value); });
+                    const si = document.getElementById('wangp-lora-image-strength');
+                    const sv = document.getElementById('wangp-lora-video-strength');
+                    if (si) { si.value = wl.image_strength ?? 1; si.nextElementSibling.textContent = si.value; }
+                    if (sv) { sv.value = wl.video_strength ?? 1; sv.nextElementSibling.textContent = sv.value; }
+                    const cl = s.comfyLoras || {};
+                    safeSetValue('comfy-lora-image', cl.image || '');
+                    const cs = document.getElementById('comfy-lora-image-strength');
+                    if (cs) { cs.value = cl.image_strength ?? 1; cs.nextElementSibling.textContent = cs.value; }
+                });
                 // Populate default sheet prompts from currentProject.settings if available
                 const settingCharSheet = document.getElementById('setting-char-sheet-prompt');
                 if (settingCharSheet) settingCharSheet.value = currentProject?.settings?.character_sheet_prompt || '';
@@ -4930,6 +4963,16 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     image: document.getElementById('wangp-model-image')?.value || '',
                     video: document.getElementById('wangp-model-video')?.value || '',
                     tts: document.getElementById('wangp-model-tts')?.value || ''
+                },
+                wangpLoras: {
+                    image: [...document.querySelectorAll('#wangp-lora-image option:checked')].map(o => o.value),
+                    image_strength: parseFloat(document.getElementById('wangp-lora-image-strength')?.value || '1'),
+                    video: [...document.querySelectorAll('#wangp-lora-video option:checked')].map(o => o.value),
+                    video_strength: parseFloat(document.getElementById('wangp-lora-video-strength')?.value || '1')
+                },
+                comfyLoras: {
+                    image: document.getElementById('comfy-lora-image')?.value || '',
+                    image_strength: parseFloat(document.getElementById('comfy-lora-image-strength')?.value || '1')
                 },
                 telegram: {
                     bot_token: document.getElementById('telegram-bot-token').value
@@ -12049,6 +12092,40 @@ Project visual language: ${projVL}`;
                     sel.value = cur;
                     if (sel.value !== cur) sel.value = '';
                 } catch (e) { console.warn('WanGP model list failed for ' + task, e); }
+            }
+        }
+
+        // Populate LoRA pickers for both engines.
+        async function loadWanGPLoRAs() {
+            for (const [elId, task] of [['wangp-lora-image', 'image'], ['wangp-lora-video', 'video']]) {
+                const sel = document.getElementById(elId);
+                if (!sel) continue;
+                try {
+                    const data = await fetch('/api/wangp/loras').then(r => r.json());
+                    while (sel.options.length) sel.remove(0);
+                    const fams = data.families || {};
+                    Object.keys(fams).sort().forEach(fam => {
+                        const og = document.createElement('optgroup'); og.label = fam;
+                        fams[fam].forEach(l => {
+                            const o = document.createElement('option');
+                            o.value = l.path;
+                            o.textContent = `${l.rel.split('/').pop()} (${l.size_mb}MB)`;
+                            og.appendChild(o);
+                        });
+                        sel.appendChild(og);
+                    });
+                } catch (e) { console.warn('WanGP lora list failed', e); }
+            }
+            const csel = document.getElementById('comfy-lora-image');
+            if (csel) {
+                try {
+                    const data = await fetch('/api/comfyui/loras').then(r => r.json());
+                    while (csel.options.length > 1) csel.remove(1);
+                    (data.loras || []).forEach(n => {
+                        const o = document.createElement('option'); o.value = n; o.textContent = n;
+                        csel.appendChild(o);
+                    });
+                } catch (e) { console.warn('ComfyUI lora list failed', e); }
             }
         }
 
