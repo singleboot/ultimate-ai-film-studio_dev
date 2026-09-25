@@ -2092,8 +2092,35 @@
                                             <label class="form-label" style="font-size:0.75rem;">Image-to-Image Engine (Storyboard)</label>
                                             <select class="form-select" id="engine-i2i" style="font-size:0.8rem;">
                                                 <option value="comfyui">ComfyUI</option>
-                    <option value="wangp">WanGP</option>
+                                                <option value="wangp">WanGP</option>
                                             </select>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">Video Engine (I2V)</label>
+                                            <select class="form-select" id="engine-i2v" style="font-size:0.8rem;">
+                                                <option value="comfyui">ComfyUI</option>
+                                                <option value="wangp">WanGP</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">WanGP Image Model</label>
+                                            <select class="form-select" id="wangp-model-image" style="font-size:0.8rem;"><option value="">WanGP default</option></select>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">WanGP Video Model</label>
+                                            <select class="form-select" id="wangp-model-video" style="font-size:0.8rem;"><option value="">WanGP default</option></select>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">WanGP TTS Model</label>
+                                            <select class="form-select" id="wangp-model-tts" style="font-size:0.8rem;"><option value="">WanGP default</option></select>
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:6px;">
+                                            <label class="form-label" style="font-size:0.75rem;">WanGP TTS Test Bench</label>
+                                            <textarea id="wangp-tts-text" class="form-control" rows="2" style="font-size:0.75rem;" placeholder="Type dialogue to speak...">Override code failed... it's not our relay. The whole tri-county line just dropped.</textarea>
+                                            <div style="display:flex;gap:6px;margin-top:4px;align-items:center;">
+                                                <button type="button" class="btn btn-sm btn-primary" id="wangp-tts-btn" onclick="testWanGPTTS(this)">🎤 Speak</button>
+                                                <audio id="wangp-tts-audio" controls style="height:28px;max-width:220px;"></audio>
+                                            </div>
                                         </div>
                                     </div>
                                     <div id="uploaded-workflows" style="margin-top:8px;">
@@ -4739,7 +4766,14 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                 if (s.engines) {
                     safeSetValue('engine-t2i', s.engines.t2i || 'comfyui');
                     safeSetValue('engine-i2i', s.engines.i2i || 'comfyui');
+                    safeSetValue('engine-i2v', s.engines.i2v || 'comfyui');
                 }
+                if (s.wangpModels) {
+                    safeSetValue('wangp-model-image', s.wangpModels.image || '');
+                    safeSetValue('wangp-model-video', s.wangpModels.video || '');
+                    safeSetValue('wangp-model-tts', s.wangpModels.tts || '');
+                }
+                loadWanGPModels();
                 // Populate default sheet prompts from currentProject.settings if available
                 const settingCharSheet = document.getElementById('setting-char-sheet-prompt');
                 if (settingCharSheet) settingCharSheet.value = currentProject?.settings?.character_sheet_prompt || '';
@@ -4889,7 +4923,13 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                 },
                 engines: {
                     t2i: document.getElementById('engine-t2i')?.value || 'comfyui',
-                    i2i: document.getElementById('engine-i2i')?.value || 'comfyui'
+                    i2i: document.getElementById('engine-i2i')?.value || 'comfyui',
+                    i2v: document.getElementById('engine-i2v')?.value || 'comfyui'
+                },
+                wangpModels: {
+                    image: document.getElementById('wangp-model-image')?.value || '',
+                    video: document.getElementById('wangp-model-video')?.value || '',
+                    tts: document.getElementById('wangp-model-tts')?.value || ''
                 },
                 telegram: {
                     bot_token: document.getElementById('telegram-bot-token').value
@@ -11953,13 +11993,95 @@ Project visual language: ${projVL}`;
             if (_engineCache.data && Date.now() - _engineCache.at < 30000) return _engineCache.data;
             try {
                 const s = await fetch('/api/settings').then(r => r.json());
-                _engineCache = { data: s.engines || {}, at: Date.now() };
+                _engineCache = { data: { ...(s.engines || {}), wangpModels: s.wangpModels || {} }, at: Date.now() };
             } catch (e) { _engineCache = { data: {}, at: Date.now() }; }
             return _engineCache.data;
         }
         async function isWanGP(kind) {
             const e = await getEngines();
             return e[kind] === 'wangp';
+        }
+
+        // WanGP video (i2v) through the studio proxy; waits and ingests into
+        // ComfyUI's output folder, returning the same shape as the ComfyUI endpoint.
+        async function wangpWaitVideo(opts) {
+            const engines = await getEngines();
+            const payload = { prompt: opts.prompt || '', wait_timeout: 5400 };
+            if (opts.seed != null) payload.seed = opts.seed;
+            if (opts.input_image) payload.input_image = opts.input_image;
+            if (opts.project_path) payload.project_path = opts.project_path;
+            const m = engines.wangpModels?.video;
+            if (m) payload.model_type = m;
+            const res = await fetch('/api/wangp/generate/video/wait', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            return await res.json();
+        }
+
+        // Populate the WanGP model pickers from the live catalog (grouped by family,
+        // availability marked: \u2713 on disk, ~ partial, \u2b07 will download).
+        async function loadWanGPModels() {
+            const tasks = [['wangp-model-image', 'image'], ['wangp-model-video', 'video'], ['wangp-model-tts', 'tts']];
+            for (const [elId, task] of tasks) {
+                const sel = document.getElementById(elId);
+                if (!sel) continue;
+                const cur = sel.value;
+                try {
+                    const res = await fetch('/api/wangp/models?task=' + task);
+                    const data = await res.json();
+                    const models = (data.models || []).slice().sort((a, b) =>
+                        (a.status === 'available' ? 0 : 1) - (b.status === 'available' ? 0 : 1) || a.name.localeCompare(b.name));
+                    while (sel.options.length > 1) sel.remove(1);
+                    const byFam = {};
+                    models.forEach(m => { const f = m.family || 'Other'; (byFam[f] = byFam[f] || []).push(m); });
+                    Object.keys(byFam).sort().forEach(fam => {
+                        const og = document.createElement('optgroup'); og.label = fam;
+                        byFam[fam].forEach(m => {
+                            const o = document.createElement('option');
+                            o.value = m.model_type;
+                            const mark = m.status === 'available' ? '\u2713 ' : (m.status === 'partial' ? '~ ' : '\u2b07 ');
+                            o.textContent = mark + m.name;
+                            og.appendChild(o);
+                        });
+                        sel.appendChild(og);
+                    });
+                    sel.value = cur;
+                    if (sel.value !== cur) sel.value = '';
+                } catch (e) { console.warn('WanGP model list failed for ' + task, e); }
+            }
+        }
+
+        // TTS test bench: synthesize the typed line through WanGP and play it.
+        async function testWanGPTTS(btn) {
+            const text = document.getElementById('wangp-tts-text')?.value?.trim();
+            if (!text) { notify('No Text', 'Type something for the TTS bench'); return; }
+            const audio = document.getElementById('wangp-tts-audio');
+            const old = btn.textContent;
+            btn.disabled = true; btn.textContent = '\u23f3 Synthesizing...';
+            try {
+                const engines = await getEngines();
+                const payload = { prompt: text, wait_timeout: 900 };
+                const m = engines.wangpModels?.tts;
+                if (m) payload.model_type = m;
+                const res = await fetch('/api/wangp/generate/audio/wait', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    if (audio) {
+                        audio.src = '/api/comfyui/view?filename=' + encodeURIComponent(data.filename);
+                        audio.play().catch(() => {});
+                    }
+                    notify('TTS Ready', data.filename, '\ud83c\udf99');
+                } else {
+                    notify('TTS Failed', data.error || 'Generation failed', '\u26a0\ufe0f');
+                }
+            } catch (e) {
+                notify('Error', e.message, '\u26a0\ufe0f');
+            }
+            btn.disabled = false; btn.textContent = old;
         }
 
         // Submit to WanGP through the studio proxy and wait for the ingested file.
@@ -15167,21 +15289,26 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                 const inputImagePath = `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`;
                 const seed = Math.floor(Math.random() * 999999999) + 1;
                 try {
-                    const res = await fetch('/api/comfyui/generate/i2v', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        signal,
-                        body: JSON.stringify({
-                            prompt: sh.video_prompt,
-                            seed: seed,
-                            project_path: currentProject?.path || '',
-                            input_image: inputImagePath,
-                            scene_index: sceneIdx,
-                            steps: storyboardVideoSteps(),
-                            refine: llmEnhanceEnabled()
-                        })
-                    });
+                    let data;
+                    if (await isWanGP('i2v')) {
+                        data = await wangpWaitVideo({ prompt: sh.video_prompt, seed, input_image: inputImagePath, project_path: currentProject?.path || '' });
+                    } else {
+                        const res = await fetch('/api/comfyui/generate/i2v', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            signal,
+                            body: JSON.stringify({
+                                prompt: sh.video_prompt,
+                                seed: seed,
+                                project_path: currentProject?.path || '',
+                                input_image: inputImagePath,
+                                scene_index: sceneIdx,
+                                steps: storyboardVideoSteps(),
+                                refine: llmEnhanceEnabled()
+                            })
+                        });
+                        data = await res.json();
+                    }
                     hideShotSpinner(sceneIdx, shotIdx);
-                    const data = await res.json();
                     if (data.success) {
                         sh._temp_video_clip = data.filename;
                         sh._temp_video_subfolder = data.subfolder || '';
@@ -15550,11 +15677,16 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                 };
                 body.steps = storyboardVideoSteps();
                 body.refine = llmEnhanceEnabled();
-                const res = await fetch('/api/comfyui/generate/i2v', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(body)
-                });
-                const data = await res.json();
+                let data;
+                if (await isWanGP('i2v')) {
+                    data = await wangpWaitVideo({ prompt: body.prompt, seed: body.seed, input_image: body.input_image, project_path: body.project_path });
+                } else {
+                    const res = await fetch('/api/comfyui/generate/i2v', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(body)
+                    });
+                    data = await res.json();
+                }
                 hideShotSpinner(sceneIdx, shotIdx);
                 if (data.success) {
                     sh._temp_video_clip = data.filename;
@@ -17064,20 +17196,25 @@ Raw JSON only, no markdown.`;
                 showShotSpinner(sIdx, shIdx, 'Rendering video…');
                 const seed = Math.floor(Math.random() * 999999999) + 1;
                 try {
-                    const res = await fetch('/api/comfyui/generate/i2v', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        signal: window._sceneAbortController.signal,
-                        body: JSON.stringify({
-                            prompt: sh.video_prompt,
-                            seed: seed,
-                            project_path: currentProject?.path || '',
-                            input_image: `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`,
-                            scene_index: sIdx,
-                            steps: storyboardVideoSteps(),
-                            refine: llmEnhanceEnabled()
-                        })
-                    });
-                    const data = await res.json();
+                    let data;
+                    if (await isWanGP('i2v')) {
+                        data = await wangpWaitVideo({ prompt: sh.video_prompt, seed, input_image: `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`, project_path: currentProject?.path || '' });
+                    } else {
+                        const res = await fetch('/api/comfyui/generate/i2v', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            signal: window._sceneAbortController.signal,
+                            body: JSON.stringify({
+                                prompt: sh.video_prompt,
+                                seed: seed,
+                                project_path: currentProject?.path || '',
+                                input_image: `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`,
+                                scene_index: sIdx,
+                                steps: storyboardVideoSteps(),
+                                refine: llmEnhanceEnabled()
+                            })
+                        });
+                        data = await res.json();
+                    }
                     if (data.success) {
                         sh._temp_video_clip = data.filename;
                         sh._temp_video_subfolder = data.subfolder || '';
@@ -18458,20 +18595,25 @@ Output all prompts in one block, separated by blank lines.`;
             previewContainer.innerHTML = originalContent + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.8);color:#ff6600;font-size:0.55rem;text-align:center;padding:2px;">⌛ Generating Video...</div>';
 
             try {
-                const res = await fetch('/api/comfyui/generate/i2v', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        seed: seed,
-                        project_path: currentProject?.path || '',
-                        input_image: nleTempImageFile,
-                        scene_index: 0,
-                        steps: steps,
-                        refine: llmEnhanceEnabled()
-                    })
-                });
-                const data = await res.json();
-                
+                let data;
+                if (await isWanGP('i2v')) {
+                    data = await wangpWaitVideo({ prompt: prompt, seed, input_image: nleTempImageFile, project_path: currentProject?.path || '' });
+                } else {
+                    const res = await fetch('/api/comfyui/generate/i2v', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            seed: seed,
+                            project_path: currentProject?.path || '',
+                            input_image: nleTempImageFile,
+                            scene_index: 0,
+                            steps: steps,
+                            refine: llmEnhanceEnabled()
+                        })
+                    });
+                    data = await res.json();
+                }
+
                 if (data.success) {
                     nleTempVideoFile = data.filename;
                     const videoUrl = `/api/comfyui/view?filename=${encodeURIComponent(data.filename)}${data.subfolder ? '&subfolder=' + encodeURIComponent(data.subfolder) : ''}`;

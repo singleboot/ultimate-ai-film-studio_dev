@@ -47,11 +47,18 @@ class GenerateRequest(BaseModel):
     resolution: str | None = "1280x720"
     steps: int | None = None
     model_type: str | None = None          # default chosen per media kind
-    media: str = "image"                   # "image" | "video"
+    media: str = "image"                   # "image" | "video" | "audio"
     ref_images: list[str] | None = None    # absolute paths (i2i / i2v)
     video_length: int | str | None = None  # frame count, or seconds like "10s"
     duration_seconds: float | None = None
     extra: dict | None = None              # raw WanGP settings passthrough
+
+    @property
+    def media_norm(self) -> str:
+        m = (self.media or "image").lower()
+        if m in ("tts", "audio"):
+            return "audio"
+        return m
 
 
 def _session():
@@ -97,8 +104,15 @@ def _record_job(job_id, info):
 def _default_settings(sess, media, model_type):
     if model_type:
         return {"model_type": model_type}
-    # Qwen Image 2.1 7B is our studio default for images; LTX 2.5 distilled for video
-    return {"model_type": "qwen_image_21_7B" if media == "image" else "ltx2_22B_distilled"}
+    return {
+        "image": {"model_type": "qwen_image_21_7B"},
+        # MiniMax H3 Ref2VA Pruned 20B: video + real generated audio, refs/start-frame,
+        # native 832x480 @ 24fps, 20 steps - the 12GB-card H3 variant.
+        "video": {"model_type": "minimax_h3_ref2va_pruned"},
+        # Zero-shot text-only TTS (small download); voice-clone models that need a
+        # reference clip (IndexTTS2/2.5, MiniMax H3 Voice Clone) stay in the picker.
+        "audio": {"model_type": "qwen3_tts_customvoice"},
+    }.get(media, {"model_type": "qwen_image_21_7B"})
 
 
 def _run_job(job_id: str, settings: dict):
@@ -148,9 +162,9 @@ def health():
 @app.post("/generate")
 def generate(req: GenerateRequest):
     sess = _session()
-    settings = _default_settings(sess, req.media, req.model_type)
+    settings = _default_settings(sess, req.media_norm, req.model_type)
     settings["prompt"] = req.prompt
-    if req.resolution:
+    if req.resolution and req.media_norm != "audio":
         settings["resolution"] = req.resolution
     if req.steps:
         settings["num_inference_steps"] = req.steps
@@ -184,7 +198,9 @@ def job_status(job_id: str):
 
 
 @app.get("/models")
-def models(query: str = "", family: str = "", available: str = ""):
+def models(query: str = "", family: str = "", available: str = "", task: str = ""):
+    """List WanGP models with availability. task filters by output kind:
+    image (image, no video), video (video output), tts (audio only)."""
     sess = _session()
     kwargs = {"include_availability": True}
     if query:
@@ -195,12 +211,50 @@ def models(query: str = "", family: str = "", available: str = ""):
     out = []
     for r in recs:
         av = r.get("availability") or {}
-        item = {"model_type": r.get("model_type"), "name": r.get("name"), "status": av.get("status")}
-        if available == "1":
-            if item["status"] != "available":
-                continue
-        out.append(item)
+        status = av.get("status")
+        if available == "1" and status != "available":
+            continue
+        md = r  # metadata record: family_label / outputs / inputs live at top level
+        outputs = md.get("outputs") or []
+        inputs = md.get("inputs") or []
+        if task == "image" and not ("image" in outputs and "video" not in outputs):
+            continue
+        if task == "video" and "video" not in outputs:
+            continue
+        if task == "tts" and not ("audio" in outputs and "video" not in outputs):
+            continue
+        out.append({
+            "model_type": r.get("model_type"),
+            "name": r.get("name"),
+            "status": status,
+            "family": md.get("family_label") or md.get("family") or "",
+            "outputs": outputs,
+            "inputs": inputs,
+        })
     return {"models": out}
+
+
+@app.get("/model/{model_type}")
+def model_detail(model_type: str):
+    """Default settings + capability schema for one WanGP model (drives studio UI)."""
+    sess = _session()
+    try:
+        defaults = sess.get_default_settings(model_type)
+    except Exception as e:
+        return {"error": f"unknown model_type: {model_type} ({e})"}
+    schema = sess.get_model_schema(model_type) or {}
+    md = schema.get("metadata") or {}
+    defaults.pop("settings_version", None)
+    return {
+        "model_type": model_type,
+        "name": md.get("name") or model_type,
+        "family": md.get("family_label") or md.get("family") or "",
+        "outputs": md.get("outputs") or [],
+        "inputs": md.get("inputs") or [],
+        "media_inputs": md.get("media_inputs") or {},
+        "defaults": defaults,
+        "availability": sess.get_model_availability(model_type).get("status"),
+    }
 
 
 @app.post("/free-comfy")

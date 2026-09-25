@@ -4199,11 +4199,12 @@ async def wangp_health():
 
 
 @app.get("/api/wangp/models")
-async def wangp_models(query: str = "", available: str = ""):
-    """List WanGP models with local availability, optionally filtered."""
+async def wangp_models(query: str = "", available: str = "", task: str = ""):
+    """List WanGP models with local availability, optionally filtered by query,
+    availability, or task kind (image | video | tts)."""
     import requests as _rq
     try:
-        r = _rq.get(f"{_wangp_bridge_host()}/models", params={"query": query, "available": available}, timeout=30)
+        r = _rq.get(f"{_wangp_bridge_host()}/models", params={"query": query, "available": available, "task": task}, timeout=60)
         return r.json()
     except Exception as e:
         return {"models": [], "error": str(e)}
@@ -4256,6 +4257,57 @@ def wangp_generate_image_wait(data: dict = Body(...)):
     ComfyUI's output folder so existing UI flows (preview via /view, upscale,
     save-image) work unchanged. Returns {success, filename, engine:'wangp'}.
     """
+    data.setdefault("media", "image")
+    return _wangp_wait_and_ingest(data, default_wait=1500)
+
+
+@app.post("/api/wangp/generate/video/wait")
+def wangp_generate_video_wait(data: dict = Body(...)):
+    """i2v/t2v through WanGP: submit, wait, ingest the mp4 into ComfyUI's output
+    folder. Accepts input_image (absolute or project-relative path) like the
+    ComfyUI i2v endpoint; it is mapped to WanGP's image_start frame injection.
+    Returns the ComfyUI-style {success, filename, subfolder} shape so existing
+    video flows work unchanged.
+    """
+    payload = {
+        "prompt": data.get("prompt", ""),
+        "media": "video",
+        "wait_timeout": data.get("wait_timeout", 5400),
+    }
+    for key in ("model_type", "seed", "resolution", "video_length", "duration_seconds"):
+        if data.get(key) is not None:
+            payload[key] = data[key]
+    input_image = data.get("input_image")
+    if input_image:
+        p = Path(input_image)
+        if not p.is_absolute():
+            p = Path(data.get("project_path", "")) / input_image
+        payload["extra"] = {"image_start": [str(p)]}
+    if data.get("ref_images"):
+        payload["ref_images"] = data["ref_images"]
+    return _wangp_wait_and_ingest(payload, default_wait=5400)
+
+
+@app.post("/api/wangp/generate/audio/wait")
+def wangp_generate_audio_wait(data: dict = Body(...)):
+    """TTS / audio generation through WanGP: submit, wait, ingest the file into
+    ComfyUI's output folder. Returns {success, filename} for playback via /view.
+    """
+    payload = {
+        "prompt": data.get("prompt", ""),
+        "media": "audio",
+        "wait_timeout": data.get("wait_timeout", 1500),
+    }
+    for key in ("model_type", "seed", "duration_seconds"):
+        if data.get(key) is not None:
+            payload[key] = data[key]
+    if data.get("extra"):
+        payload["extra"] = data["extra"]
+    return _wangp_wait_and_ingest(payload, default_wait=900)
+
+
+def _wangp_wait_and_ingest(data: dict, default_wait: int):
+    """Shared submit -> poll -> ingest-into-ComfyUI-output routine for WanGP jobs."""
     import requests as _rq
     import shutil
     bridge = _wangp_bridge_host()
@@ -4267,7 +4319,7 @@ def wangp_generate_image_wait(data: dict = Body(...)):
     if not job_id:
         return {"success": False, "error": sub.get("error", "no job_id"), "engine": "wangp"}
 
-    deadline = time.time() + int(data.get("wait_timeout", 1500))
+    deadline = time.time() + int(data.get("wait_timeout", default_wait))
     job = {}
     while time.time() < deadline:
         try:
@@ -4290,18 +4342,31 @@ def wangp_generate_image_wait(data: dict = Body(...)):
     if not src.exists():
         return {"success": False, "error": f"WanGP output missing: {src}", "engine": "wangp", "job_id": job_id}
     try:
-        existing = [f for f in out_dir.glob("WanGP_*") if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        import re as _re
+        existing = list(out_dir.glob("WanGP_*"))
         idx = 1
         for f in existing:
-            stem = f.stem.split("_")[-1]
-            if stem.isdigit():
-                idx = max(idx, int(stem) + 1)
+            m = _re.match(r"WanGP_(\d+)_", f.stem)
+            if m:
+                idx = max(idx, int(m.group(1)) + 1)
         dest = out_dir / f"WanGP_{idx:05d}_{src.stem[:40].replace(' ', '_')}{src.suffix or '.png'}"
         shutil.copyfile(src, dest)
     except Exception as e:
         return {"success": False, "error": f"Ingest failed: {e}", "engine": "wangp", "job_id": job_id}
     logger.info("WanGP ingest: %s -> %s", src.name, dest.name)
-    return {"success": True, "filename": dest.name, "engine": "wangp", "provider_used": "wangp", "job_id": job_id}
+    return {"success": True, "filename": dest.name, "subfolder": "",
+            "engine": "wangp", "provider_used": "wangp", "job_id": job_id}
+
+
+@app.get("/api/wangp/model/{model_type}")
+async def wangp_model_detail(model_type: str):
+    """Default settings + capability schema for one WanGP model (drives the UI)."""
+    import requests as _rq
+    try:
+        r = _rq.get(f"{_wangp_bridge_host()}/model/{model_type}", timeout=60)
+        return r.json()
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.post("/api/settings")
 async def save_settings_endpoint(data: dict):
