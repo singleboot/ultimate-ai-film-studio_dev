@@ -1965,7 +1965,10 @@ async def generate_t2i_endpoint(request: Request):
             final_prompt, workflow_name, seed=seed, steps=steps, resolution=resolution,
             loras=names, lora_strengths=strengths)
 
-    return await loop.run_in_executor(None, _run_generation)
+    result = await loop.run_in_executor(None, _run_generation)
+    if isinstance(result, dict) and result.get("success"):
+        result.setdefault("workflow", workflow_name)
+    return result
 
 
 @app.post("/api/comfyui/generate/t2v")
@@ -2462,7 +2465,10 @@ async def generate_i2v_endpoint(request: Request):
             input_images=[abs_image] if abs_image else None
         )
 
-    return await loop.run_in_executor(None, _run_generation)
+    result = await loop.run_in_executor(None, _run_generation)
+    if isinstance(result, dict) and result.get("success"):
+        result.setdefault("workflow", workflow_name)
+    return result
 
 @app.post("/api/projects/save-image")
 def save_project_image(data: dict = Body(...)):
@@ -4250,6 +4256,7 @@ from collections import deque
 _gen_events: deque = deque(maxlen=400)
 _gen_event_seq = 0
 _gen_job_labels: dict = {}   # job_id -> {"model": str, "task": str}
+_wangp_pending_origin: dict = {}   # job_id -> origin/seed/model captured at submit
 
 
 def _log_gen_event(engine: str, task: str, status: str, detail: str = "", job_id: str = ""):
@@ -4299,7 +4306,8 @@ def _classify_task(path: str) -> str:
 
 @app.middleware("http")
 async def _gen_event_middleware(request: Request, call_next):
-    """Record engine activity for generation endpoints into the console log."""
+    """Record engine activity for generation endpoints into the console log
+    and the on-disk history gallery (origin, engine, model, seed)."""
     path = request.url.path
     ingest = path.startswith("/api/wangp/job/") and path.endswith("/ingest")
     watch = (
@@ -4311,6 +4319,41 @@ async def _gen_event_middleware(request: Request, call_next):
         return await call_next(request)
     engine = "wangp" if path.startswith("/api/wangp") else "comfyui"
     task = _classify_task(path)
+    # Read the request body for origin/seed/model. Starlette caches it in
+    # request._body, so the endpoint handler can still read it afterwards.
+    req_meta = {}
+    if request.method == "POST":
+        try:
+            rb = await request.body()
+            rj = json.loads(rb) if rb else {}
+            if isinstance(rj, dict):
+                req_meta = rj
+        except Exception:
+            req_meta = {}
+    # Origin: the scene/asset the generation started from (basename only).
+    origin = ""
+    src = req_meta.get("input_image") or req_meta.get("input_images") or ""
+    if isinstance(src, list):
+        src = src[0] if src else ""
+    if src:
+        origin = str(src).replace("\\", "/")
+        m = _re_mod.search(r"scenes/([^/]+?)\.\w+$", origin, _re_mod.I)
+        origin = m.group(1) if m else origin.rstrip("/").split("/")[-1]
+        origin = origin[:120]
+    # Which UI flow triggered it (best effort from the payload shape).
+    source = str(req_meta.get("flow") or req_meta.get("source") or "")[:40]
+    if not source:
+        ol = origin.lower()
+        if "shot_" in ol or "scene_" in ol:
+            source = "storyboard"
+        elif task == "audio" or "tts" in path:
+            source = "tts"
+        elif req_meta.get("input_images"):
+            source = "consistent-shot"
+        else:
+            source = "direct"
+    req_model = str(req_meta.get("model_type") or req_meta.get("workflow_name") or req_meta.get("model") or "")
+    req_seed = req_meta.get("seed")
     if engine == "comfyui" and request.method == "POST":
         # Pre-log the queued line so the live progress endpoint has an active
         # line to attach to while the blocking handler runs, and point the
@@ -4352,19 +4395,35 @@ async def _gen_event_middleware(request: Request, call_next):
             _comfy_prog_label["task"] = task
     if ingest:
         if data.get("success"):
-            _log_gen_event(engine, task, "done", str(data.get("filename") or "output saved"), jid)
+            fname = str(data.get("filename") or "output saved")
+            _log_gen_event(engine, task, "done", fname, jid)
+            pend = _wangp_pending_origin.pop(jid, {}) or {}
+            _gen_hist_record(engine, task, fname, jid,
+                             origin=pend.get("origin") or origin,
+                             seed=pend.get("seed", req_seed),
+                             model=pend.get("model") or req_model,
+                             source=pend.get("source") or source)
         else:
             _log_gen_event(engine, task, "error", str(data.get("error") or "ingest failed"), jid)
     elif data.get("success") is False and data.get("error"):
         _log_gen_event(engine, task, "error", str(data.get("error")), jid)
     elif jid and (path.endswith("/generate/video") or path.endswith("/generate/image")):
-        model = str(((data.get("settings") or {}).get("model_type")) or "")
+        model = str(((data.get("settings") or {}).get("model_type")) or req_model)
         _gen_remember_job(jid, model=model, task=task)
+        _wangp_pending_origin[jid] = {"origin": origin, "seed": req_seed,
+                                      "model": model, "source": source}
+        if len(_wangp_pending_origin) > 100:
+            _wangp_pending_origin.pop(next(iter(_wangp_pending_origin)))
         _log_gen_event(engine, task, "queued", model or "queued on bridge", jid)
     else:
         status = "done" if data.get("success") else "error"
         detail = str(data.get("filename") or data.get("error") or "")
         _log_gen_event(engine, task, status, detail, jid)
+        if status == "done":
+            _gen_hist_record(engine, task, str(data.get("filename") or ""), jid,
+                             origin=origin, seed=req_seed,
+                             model=req_model or str(data.get("workflow") or ""),
+                             source=source)
     return Response(content=body, status_code=response.status_code,
                     headers=dict(response.headers), media_type=response.media_type)
 
@@ -4383,6 +4442,85 @@ async def wangp_progress(data: dict = Body(...)):
 async def gen_log():
     """Recent generation events (newest first) for the UI console."""
     return {"events": list(_gen_events)[::-1]}
+
+
+# ---------------- Generation history (gallery) ----------------
+# Every successful generation is recorded with its origin (source image /
+# scene), engine, model, seed and which UI flow triggered it. Persisted to
+# disk so the gallery survives studio restarts.
+
+_gen_hist_lock = threading.Lock()
+_gen_hist_path = Path(__file__).parent / "gen_history.json"
+
+
+def _gen_hist_load() -> list:
+    try:
+        with open(_gen_hist_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+_gen_hist: list = _gen_hist_load()
+
+
+def _gen_hist_save():
+    try:
+        with open(_gen_hist_path, "w", encoding="utf-8") as f:
+            json.dump(_gen_hist[-400:], f, ensure_ascii=False)
+    except Exception as e:
+        logger.warning("gen-history save failed: %s", e)
+
+
+def _gen_hist_record(engine: str, task: str, filename: str, job_id: str = "",
+                     origin: str = "", seed=None, model: str = "", source: str = ""):
+    """Record one successful generation for the history gallery."""
+    if not filename:
+        return
+    rec = {
+        "id": f"{time.time():.3f}-{job_id or 'x'}",
+        "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "engine": engine,
+        "task": task,
+        "filename": str(filename)[:200],
+        "job_id": job_id,
+        "origin": str(origin or "")[:160],
+        "seed": seed if isinstance(seed, (int, float, str)) else None,
+        "model": str(model or "")[:80],
+        "source": str(source or "")[:40],
+    }
+    with _gen_hist_lock:
+        _gen_hist.append(rec)
+        if len(_gen_hist) > 400:
+            del _gen_hist[:len(_gen_hist) - 400]
+        _gen_hist_save()
+
+
+def _gen_item_url(filename: str) -> str:
+    """Servable URL for a generated file (all ingest goes through ComfyUI's
+    output folder, so the studio view proxy serves images, videos and audio)."""
+    from urllib.parse import quote
+    return f"/api/comfyui/view?filename={quote(str(filename))}"
+
+
+@app.get("/api/gen-history")
+async def gen_history():
+    """Recent successful generations (newest first) with origin metadata."""
+    with _gen_hist_lock:
+        items = list(_gen_hist)[::-1]
+    for it in items:
+        it["url"] = _gen_item_url(it.get("filename", ""))
+    return {"items": items}
+
+
+@app.delete("/api/gen-history")
+async def gen_history_clear():
+    """Clear the generation history (gallery + disk file)."""
+    with _gen_hist_lock:
+        _gen_hist.clear()
+        _gen_hist_save()
+    return {"ok": True}
 
 
 @app.delete("/api/gen-log")

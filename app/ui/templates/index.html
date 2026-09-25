@@ -2515,6 +2515,19 @@
         </div>
     </div>
 
+    <!-- Generation history drawer (recent outputs + origin metadata) -->
+    <div id="gen-history" style="position:fixed;top:0;right:0;bottom:37px;width:360px;z-index:498;display:none;background:var(--bg-secondary);border-left:1px solid var(--border-color);box-shadow:-6px 0 18px rgba(0,0,0,0.3);">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border-color);">
+            <span style="font-size:0.75rem;font-weight:600;letter-spacing:0.04em;">GENERATION HISTORY</span>
+            <span style="display:flex;gap:12px;align-items:center;">
+                <button type="button" onclick="openGenHistory(true)" style="background:none;border:none;color:var(--text-secondary);font-size:0.7rem;cursor:pointer;">refresh</button>
+                <button type="button" onclick="clearGenHistory()" style="background:none;border:none;color:var(--text-secondary);font-size:0.7rem;cursor:pointer;">clear</button>
+                <button type="button" onclick="openGenHistory(false)" style="background:none;border:none;color:var(--text-secondary);font-size:0.8rem;cursor:pointer;">&#10005;</button>
+            </span>
+        </div>
+        <div id="gen-history-list" style="position:absolute;top:36px;bottom:0;left:0;right:0;overflow-y:auto;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start;"></div>
+    </div>
+
     <!-- Generation console (collapsible log of ComfyUI / WanGP activity) -->
     <div id="gen-console" style="position:fixed;left:0;right:0;bottom:37px;z-index:499;display:none;background:var(--bg-secondary);border-top:1px solid var(--border-color);box-shadow:0 -4px 14px rgba(0,0,0,0.25);">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 20px;border-bottom:1px solid var(--border-color);">
@@ -2541,6 +2554,8 @@
             <span id="gen-console-toggle" onclick="toggleGenConsole()" title="Generation activity log (ComfyUI / WanGP)" style="cursor:pointer;">
                 <span class="status-dot" id="gen-console-dot" style="background:#6b7280;">●</span> <span id="gen-console-text">Console</span>
             </span>
+            <span>|</span>
+            <span id="gen-history-toggle" onclick="openGenHistory()" title="Recent generations with origin, engine, model, seed" style="cursor:pointer;">&#128444; History</span>
         </span>
     </footer>
 
@@ -5749,6 +5764,61 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
 
         function _genLocalEvent(engine, task, status, detail) {
             genConsoleEvent({ seq: -1, ts: new Date().toTimeString().slice(0, 8), engine, task, status, detail: detail || '' });
+        }
+
+        // === GENERATION HISTORY (recent outputs with origin metadata) ===
+        let _genHistoryOpen = false;
+
+        function _histThumb(item) {
+            const url = item.url || ('/api/comfyui/view?filename=' + encodeURIComponent(item.filename));
+            if (item.task === 'video') {
+                return `<video src="${url}" muted preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>`;
+            }
+            if (item.task === 'audio') {
+                return '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:1.6rem;">\ud83d\udd0a</div>';
+            }
+            return `<img src="${url}" loading="lazy" style="width:100%;height:100%;object-fit:cover;">`;
+        }
+
+        function renderGenHistory(items) {
+            const box = document.getElementById('gen-history-list');
+            if (!box) return;
+            if (!items.length) {
+                box.innerHTML = '<div style="grid-column:1/-1;color:var(--text-secondary);font-size:0.75rem;padding:14px 6px;">No generations yet — render a shot or an image and it will appear here.</div>';
+                return;
+            }
+            box.innerHTML = items.map(it => {
+                const url = it.url || ('/api/comfyui/view?filename=' + encodeURIComponent(it.filename));
+                const badge = `${it.engine || '?'} \u00b7 ${it.task || 'gen'}`;
+                const meta = [it.model, it.origin, (it.seed != null && it.seed !== '' ? 'seed ' + it.seed : '')].filter(Boolean).join(' \u00b7 ');
+                return `<div style="border:1px solid var(--border-color);border-radius:8px;overflow:hidden;background:var(--bg-primary);cursor:pointer;" onclick="window.open('${url}','_blank')" title="${_genEscape(meta)}\n${_genEscape(it.filename)}">` +
+                    `<div style="height:110px;background:rgba(0,0,0,0.15);">${_histThumb(it)}</div>` +
+                    `<div style="padding:6px 8px;font-size:0.68rem;line-height:1.5;">` +
+                    `<div style="display:flex;justify-content:space-between;gap:6px;"><b style="text-transform:uppercase;letter-spacing:0.04em;">${_genEscape(badge)}</b>` +
+                    `<span style="color:var(--text-secondary);">${_genEscape((it.ts || '').split(' ')[1] || '')}</span></div>` +
+                    `<div style="color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_genEscape(meta || '\u2014')}</div>` +
+                    `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_genEscape(it.filename)}">${_genEscape(it.filename)}</div>` +
+                    `</div></div>`;
+            }).join('');
+        }
+
+        async function openGenHistory(force) {
+            _genHistoryOpen = force != null ? force : !_genHistoryOpen;
+            const el = document.getElementById('gen-history');
+            if (el) el.style.display = _genHistoryOpen ? 'block' : 'none';
+            if (!_genHistoryOpen) return;
+            try {
+                const data = await fetch('/api/gen-history').then(r => r.json());
+                renderGenHistory(data.items || []);
+            } catch (e) {
+                const box = document.getElementById('gen-history-list');
+                if (box) box.textContent = 'Failed to load history: ' + e.message;
+            }
+        }
+
+        function clearGenHistory() {
+            fetch('/api/gen-history', { method: 'DELETE' }).catch(() => {});
+            renderGenHistory([]);
         }
 
         // === SERVICE STATUS POLLING ===
