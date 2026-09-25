@@ -106,9 +106,10 @@ def _default_settings(sess, media, model_type):
         return {"model_type": model_type}
     return {
         "image": {"model_type": "qwen_image_21_7B"},
-        # MiniMax H3 Ref2VA Pruned 20B: video + real generated audio, refs/start-frame,
-        # native 832x480 @ 24fps, 20 steps - the 12GB-card H3 variant.
-        "video": {"model_type": "minimax_h3_ref2va_pruned"},
+        # MiniMax H3 VDN 8-Step 33B: video + real generated audio, only 8 denoise
+        # steps (Grouped Row Denoising) - far faster than the 20-step Ref2VA and
+        # still fits the 12GB card. User pick for shot videos.
+        "video": {"model_type": "minimax_h3_vdn"},
         # Zero-shot text-only TTS (small download); voice-clone models that need a
         # reference clip (IndexTTS2/2.5, MiniMax H3 Voice Clone) stay in the picker.
         "audio": {"model_type": "qwen3_tts_customvoice"},
@@ -161,8 +162,11 @@ def health():
 
 @app.post("/generate")
 def generate(req: GenerateRequest):
-    sess = _session()
-    settings = _default_settings(sess, req.media_norm, req.model_type)
+    # NOTE: do NOT touch the session here. First-use WanGP init can take minutes
+    # (runtime import + kernels); doing it on the request thread made the submit
+    # POST time out while the studio waited. The worker thread resolves the
+    # session instead, so submission is always instant.
+    settings = {"model_type": (req.model_type or _default_settings(None, req.media_norm, None)["model_type"])}
     settings["prompt"] = req.prompt
     if req.resolution and req.media_norm != "audio":
         settings["resolution"] = req.resolution
