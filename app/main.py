@@ -4179,6 +4179,58 @@ async def get_settings():
     """Get settings."""
     return load_settings()
 
+
+# ---------------- WanGP bridge (alternate generation engine) ----------------
+
+def _wangp_bridge_host() -> str:
+    s = load_settings()
+    return (s.get("wangp") or {}).get("bridge_host") or "http://127.0.0.1:8189"
+
+
+@app.get("/api/wangp/health")
+async def wangp_health():
+    """Proxy the WanGP bridge health (version, init state, job count)."""
+    import requests as _rq
+    try:
+        r = _rq.get(f"{_wangp_bridge_host()}/health", timeout=5)
+        return r.json()
+    except Exception as e:
+        return {"status": "unreachable", "error": str(e), "bridge": _wangp_bridge_host()}
+
+
+@app.get("/api/wangp/models")
+async def wangp_models(query: str = "", available: str = ""):
+    """List WanGP models with local availability, optionally filtered."""
+    import requests as _rq
+    try:
+        r = _rq.get(f"{_wangp_bridge_host()}/models", params={"query": query, "available": available}, timeout=30)
+        return r.json()
+    except Exception as e:
+        return {"models": [], "error": str(e)}
+
+
+@app.post("/api/wangp/generate/image")
+async def wangp_generate_image(request: Request):
+    """Submit an image job to the WanGP bridge. Returns a job_id for polling."""
+    import requests as _rq
+    data = await request.json()
+    try:
+        r = _rq.post(f"{_wangp_bridge_host()}/generate", json=data, timeout=60)
+        return r.json()
+    except Exception as e:
+        return {"success": False, "error": f"WanGP bridge unreachable: {e}"}
+
+
+@app.get("/api/wangp/job/{job_id}")
+async def wangp_job(job_id: str):
+    """Poll a WanGP bridge job (status, phase, output files)."""
+    import requests as _rq
+    try:
+        r = _rq.get(f"{_wangp_bridge_host()}/job/{job_id}", timeout=10)
+        return r.json()
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
 @app.post("/api/settings")
 async def save_settings_endpoint(data: dict):
     """Save settings, preserving genres and other non-overlapping keys."""
