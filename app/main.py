@@ -4702,7 +4702,9 @@ async def wangp_job(job_id: str):
         r = _rq.get(f"{_wangp_bridge_host()}/job/{job_id}", timeout=10)
         return r.json()
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        # Transport hiccup — do NOT report as the bridge job's status ('error'
+        # would abort the UI's wait loop and orphan a still-running render).
+        return {"status": "unreachable", "error": str(e)}
 
 
 def _comfy_lora_stack(task: str):

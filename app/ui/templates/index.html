@@ -12359,7 +12359,11 @@ Project visual language: ${projVL}`;
                 try { job = await fetchJson('/api/wangp/job/' + encodeURIComponent(sub.job_id)); }
                 catch (e) { if (e.name === 'AbortError') throw e; continue; }
                 const st = job.status || 'queued';
-                if (st === 'done' || st === 'error') break;
+                // A real bridge job error carries the full job shape (settings);
+                // a bare {status:'error'} is a transport hiccup from the studio
+                // proxy — keep polling until the deadline instead of aborting.
+                const realErr = st === 'error' && job.settings !== undefined;
+                if (st === 'done' || realErr) break;
                 let txt = 'Rendering on WanGP...';
                 const phase = job.phase ? String(job.phase).replace(/[_-]+/g, ' ').trim() : '';
                 if (phase) txt = phase.charAt(0).toUpperCase() + phase.slice(1);
@@ -13918,6 +13922,7 @@ Project visual language: ${projVL}`;
                         <span style="margin-left:auto;display:inline-flex;gap:2px;">
                             <button class="btn btn-primary" onclick="event.stopPropagation();generateSceneImages(${sceneIdx})" style="padding:0 3px;font-size:0.5rem;line-height:1.2;" title="Generate scene images">🎨</button>
                             <button class="btn btn-success" onclick="event.stopPropagation();approveSceneImages(${sceneIdx})" style="padding:0 3px;font-size:0.5rem;line-height:1.2;" title="Approve scene images">✅</button>
+                            <button class="btn btn-secondary" onclick="event.stopPropagation();sbTlSceneOverrides(${sceneIdx})" style="padding:0 3px;font-size:0.5rem;line-height:1.2;${sbTlSceneHasOverrides(sceneIdx) ? 'box-shadow:0 0 0 1px var(--accent-primary) inset;' : ''}" title="Apply a workflow/model override to every shot in this scene (⚙ scene override)">⚙</button>
                         </span>
                     </div>
                     <div style="flex:1;display:flex;min-height:0;">${segs}</div>
@@ -14164,6 +14169,85 @@ Project visual language: ${projVL}`;
             delete sel.sh._ov_img_kind; delete sel.sh._ov_vid_kind;
             scheduleSaveState();
             sbTlRenderShotInfo();
+        }
+
+        // ── Per-scene overrides: apply one workflow/model to every shot in a scene ──
+        function sbTlSceneShots(sceneIdx) {
+            const s = screenplayData?.scenes?.[sceneIdx];
+            return (s && s.shots) ? s.shots : [];
+        }
+
+        function sbTlSceneHasOverrides(sceneIdx) {
+            return sbTlSceneShots(sceneIdx).some(sh => sh && (sh._ov_img || sh._ov_vid));
+        }
+
+        async function sbTlSceneOverrides(sceneIdx) {
+            const shots = sbTlSceneShots(sceneIdx);
+            if (!shots.length) return;
+            const scene = screenplayData.scenes[sceneIdx];
+            const sceneId = scene ? (scene.scene_id || '#' + (scene.scene_number || sceneIdx + 1)) : '?';
+
+            // Build the option lists once (same sources as the per-shot ⚙ row).
+            const wfs = await sbTlWorkflows();
+            let imgOpts = '', vidOpts = '';
+            let imgKind = 'comfyui', vidKind = 'comfyui';
+            if (await isWanGP('i2i')) {
+                imgKind = 'wangp';
+                try {
+                    const d = await fetch('/api/wangp/models?task=image').then(r => r.json());
+                    (d.models || []).filter(m => m.status === 'available').sort((a, b) => a.name.localeCompare(b.name)).forEach(m => {
+                        imgOpts += `<option value="${escapeHtml(m.model_type)}">${escapeHtml(m.name)}</option>`;
+                    });
+                } catch (e) {}
+            } else {
+                wfs.forEach(w => { imgOpts += `<option value="${escapeHtml(w)}">${escapeHtml('wf: ' + w)}</option>`; });
+            }
+            if (await isWanGP('i2v')) {
+                vidKind = 'wangp';
+                try {
+                    const d = await fetch('/api/wangp/models?task=video').then(r => r.json());
+                    (d.models || []).filter(m => m.status === 'available').sort((a, b) => a.name.localeCompare(b.name)).forEach(m => {
+                        vidOpts += `<option value="${escapeHtml(m.model_type)}">${escapeHtml(m.name)}</option>`;
+                    });
+                } catch (e) {}
+            } else {
+                wfs.forEach(w => { vidOpts += `<option value="${escapeHtml(w)}">${escapeHtml('wf: ' + w)}</option>`; });
+            }
+
+            const apply = (img, vid) => {
+                shots.forEach(sh => {
+                    if (!sh) return;
+                    if (img) { sh._ov_img = img; sh._ov_img_kind = imgKind; }
+                    else { delete sh._ov_img; delete sh._ov_img_kind; }
+                    if (vid) { sh._ov_vid = vid; sh._ov_vid_kind = vidKind; }
+                    else { delete sh._ov_vid; delete sh._ov_vid_kind; }
+                });
+                scheduleSaveState();
+                const cont = document.getElementById('storyboard-container');
+                if (cont && document.getElementById('sb-timeline-root')) renderStoryboardTimeline(cont);
+                else renderStoryboard();
+                sbTlRenderShotInfo();
+            };
+
+            const imgLabel = imgKind === 'wangp' ? 'WanGP image model' : 'ComfyUI workflow';
+            const vidLabel = vidKind === 'wangp' ? 'WanGP video model' : 'ComfyUI workflow';
+            const cur = shots.find(sh => sh && (sh._ov_img || sh._ov_vid));
+            const pre = `Scene ${escapeHtml(sceneId)} — apply the same override to all ${shots.length} shot${shots.length === 1 ? '' : 's'} in this scene.\n\nImage ${imgLabel} for the whole scene (blank = engine default / clear):`;
+            const imgSel = prompt(pre, (cur && cur._ov_img) || '');
+            if (imgSel === null) return;
+            if (imgSel) {
+                if (imgKind === 'comfyui' && !wfs.includes(imgSel)) { notify('Unknown workflow', `"${imgSel}" is not in the ComfyUI workflow list.`, '⚠️'); return; }
+                if (imgKind === 'wangp' && !imgOpts.includes(`value="${escapeHtml(imgSel)}"`)) { notify('Unknown model', `"${imgSel}" is not an available WanGP image model.`, '⚠️'); return; }
+            }
+            const vidSel = prompt(`Video ${vidLabel} for the whole scene (blank = engine default / clear):`, (cur && cur._ov_vid) || '');
+            if (vidSel === null) return;
+            if (vidSel) {
+                if (vidKind === 'comfyui' && !wfs.includes(vidSel)) { notify('Unknown workflow', `"${vidSel}" is not in the ComfyUI workflow list.`, '⚠️'); return; }
+                if (vidKind === 'wangp' && !vidOpts.includes(`value="${escapeHtml(vidSel)}"`)) { notify('Unknown model', `"${vidSel}" is not an available WanGP video model.`, '⚠️'); return; }
+            }
+            if (!imgSel && !vidSel && !sbTlSceneHasOverrides(sceneIdx)) { notify('Nothing to do', 'No overrides entered — scene stays on engine defaults.', 'ℹ️'); return; }
+            apply(imgSel, vidSel);
+            notify('Scene overrides applied', `${sceneId}: ${shots.length} shot${shots.length === 1 ? '' : 's'} now use ${[imgSel ? '🖼 ' + imgSel : null, vidSel ? '🎥 ' + vidSel : null].filter(Boolean).join(' + ') || 'engine defaults'}.`, '⚙', 3500);
         }
 
         function sbTlGenerateSelectedImage() {
@@ -15012,6 +15096,9 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             // apply (e.g. Qwen Image 2.1 wants its native 25, not a turbo-style 10).
             const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps;
             const seedOverride = sh._genSeed || seed;
+            // Per-shot/per-scene override pinned to a ComfyUI workflow: pass it through
+            // to /api/orchestrator/generate-consistent-shot (backend already accepts it).
+            const ovWorkflow = (sh._ov_img && sh._ov_img_kind === 'comfyui') ? sh._ov_img : '';
 
             // Engine routing: WanGP renders the shot through the bridge (refs become
             // image_refs; no VLM consistency loop on that path yet).
@@ -15043,6 +15130,7 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                         character_image: prevFramePath,
                         aspect_ratio: aspectRatio,
                         resolution: imgResolution,
+                        workflow_name: ovWorkflow,
                         scene_context: {
                             scene_synopsis: s.synopsis || '',
                             emotional_tone: s.emotional_tone || '',
@@ -15834,13 +15922,14 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                 const seed = Math.floor(Math.random() * 999999999) + 1;
                 try {
                     let data;
-                    if (await isWanGP('i2v')) {
+                    const useWanGP = (await isWanGP('i2v')) && !(sh._ov_vid && sh._ov_vid_kind === 'comfyui');
+                    if (useWanGP) {
                         let vprompt = sh.video_prompt;
                         if (llmEnhanceEnabled()) {
                             updateShotSpinnerPhase(sceneIdx, shotIdx, '✨ Polishing prompt...');
                             vprompt = await polishVideoPrompt(sh, 'wangp');
                         }
-                        data = await wangpWaitVideo({ prompt: vprompt, seed, input_image: inputImagePath, project_path: currentProject?.path || '', signal }, p => {
+                        data = await wangpWaitVideo({ prompt: vprompt, seed, input_image: inputImagePath, project_path: currentProject?.path || '', model_type: (sh._ov_vid && sh._ov_vid_kind === 'wangp') ? sh._ov_vid : null, signal }, p => {
                             updateShotSpinnerPhase(sceneIdx, shotIdx, p && p.text ? p.text : 'Rendering on WanGP...');
                         });
                     } else {
@@ -15854,7 +15943,8 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                                 input_image: inputImagePath,
                                 scene_index: sceneIdx,
                                 steps: storyboardVideoSteps(),
-                                refine: llmEnhanceEnabled()
+                                refine: llmEnhanceEnabled(),
+                                workflow_name: (sh._ov_vid && sh._ov_vid_kind === 'comfyui') ? sh._ov_vid : undefined
                             })
                         });
                         data = await res.json();
