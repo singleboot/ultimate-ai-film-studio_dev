@@ -2666,11 +2666,22 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
             "shot": shot,
         }
 
-    def pace_shots(self, shots: list) -> Dict:
-        """Ask the LLM to time every shot by its content (2-12s) so the
-        timeline reflects real pacing instead of a flat default."""
+    def pace_shots(self, shots: list, min_s: float = 2.0, max_s: float = 12.0) -> Dict:
+        """Ask the LLM to time every shot by its content so the timeline reflects
+        real pacing instead of a flat default. min_s/max_s bound every duration
+        (the UI exposes them as the per-page Shot len range)."""
+        try:
+            min_s = float(min_s); max_s = float(max_s)
+        except (TypeError, ValueError):
+            min_s, max_s = 2.0, 12.0
+        if not (0.5 <= min_s <= 119.0):
+            min_s = 2.0
+        if not (0.5 <= max_s <= 120.0) or max_s < min_s:
+            max_s = min(max_s, 120.0) if 0.5 <= max_s <= 120.0 else 12.0
+            if max_s < min_s:
+                max_s = min(min_s + 0.5, 120.0)
         self._reset_progress()
-        self.set_progress(10, f"Timing {len(shots)} shots by content...")
+        self.set_progress(10, f"Timing {len(shots)} shots by content ({min_s}-{max_s}s)...")
         durations: Dict[str, float] = {}
         batch_size = 24
         total_batches = max(1, (len(shots) + batch_size - 1) // batch_size)
@@ -2682,25 +2693,28 @@ Generate a fresh cinematic interpretation of this shot that feels meaningfully d
                 f"{' (dialogue in scene)' if s.get('has_dialogue') else ''}"
                 for s in batch
             )
+            lo_ex = round(min_s + (max_s - min_s) * 0.25, 1)
+            hi_ex = round(min_s + (max_s - min_s) * 0.8, 1)
             prompt = (
                 "You are a film editor timing a storyboard. For each shot, estimate how many seconds "
                 "it should hold on screen based on its content, motion and story weight.\n\n"
                 f"SHOTS:\n{listing}\n\n"
-                "Rules: quick action or tension cuts 2-3s; standard dialogue, reaction or walk-and-talk "
-                "4-6s; establishing shots, reveals and slow emotional beats 7-12s. Vary the rhythm — "
-                "do NOT give every shot the same number."
+                f"Rules: every duration MUST be between {min_s} and {max_s} seconds. Quick action or "
+                f"tension cuts stay near {min_s}s; standard dialogue, reaction or walk-and-talk sits in "
+                f"the middle of the range; establishing shots, reveals and slow emotional beats stretch "
+                f"toward {max_s}s. Vary the rhythm — do NOT give every shot the same number."
             )
             suffix = (
                 'You MUST respond with ONLY a JSON object mapping each shot_id to a number of seconds '
-                'between 2.0 and 12.0. Example: {"SHOT_SC_001_001": 3.5, "SHOT_SC_001_002": 6.0}'
+                f'between {min_s} and {max_s}. Example: {{"SHOT_SC_001_001": {lo_ex}, "SHOT_SC_001_002": {hi_ex}}}'
             )
             result = self._call_llm(prompt, system_suffix=suffix, json_output=True, use_master=False)
             if result.get("success") and isinstance(result.get("data"), dict):
                 for sid, val in result["data"].items():
                     try:
                         v = float(val)
-                        if 1.0 <= v <= 30.0:
-                            durations[sid] = round(max(2.0, min(12.0, v)), 1)
+                        if 0.5 <= v <= 120.0:
+                            durations[sid] = round(max(min_s, min(max_s, v)), 1)
                     except (TypeError, ValueError):
                         continue
             else:

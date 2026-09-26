@@ -1580,7 +1580,14 @@
                 <button class="btn btn-primary" type="button" onclick="generateAllStoryboardImages()" style="padding:4px 8px;font-size:0.7rem;" title="Generate all images">🎨 Gen Img</button>
                 <button class="btn btn-secondary" type="button" onclick="storyboardUpscaleAll()" style="padding:4px 8px;font-size:0.7rem;" title="Upscale all images to 4K">🔍 4K All</button>
                 <button class="btn btn-secondary" type="button" id="sb-verify-all-btn" onclick="sbVerifyAllScenes()" style="padding:4px 8px;font-size:0.7rem;" title="Re-grade every generated shot with the vision LLM, scene by scene — one report listing all failing shots">👁️ Verify All</button>
-                <button class="btn btn-secondary" type="button" id="sb-pace-shots-btn" onclick="sbPaceAllShots()" style="padding:4px 8px;font-size:0.7rem;" title="Ask the LLM to time every shot (2-12s by content and motion) so the timeline shows real pacing instead of a flat 4 seconds">⏱ Pace Shots</button>
+                <button class="btn btn-secondary" type="button" id="sb-pace-shots-btn" onclick="sbPaceAllShots()" style="padding:4px 8px;font-size:0.7rem;" title="Ask the LLM to time every shot by content and motion — durations stay inside the Shot len min/max range — so the timeline shows real pacing instead of a flat 4 seconds">⏱ Pace Shots</button>
+                <span style="display:inline-flex;align-items:center;gap:3px;color:var(--text-secondary);" title="Shot duration range for LLM pacing — every paced shot stays between these bounds (per project)">
+                    <label>Shot len</label>
+                    <input type="number" id="sb-pace-min" min="0.5" max="119" step="0.5" style="width:46px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;">
+                    <span>–</span>
+                    <input type="number" id="sb-pace-max" min="1" max="120" step="0.5" style="width:46px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:2px 4px;font-size:0.7rem;">
+                    <label>s</label>
+                </span>
                 <button class="btn btn-secondary" type="button" onclick="regenerateAllInconsistent()" style="padding:4px 8px;font-size:0.7rem;color:#f59e0b;" title="Regenerate all shots that failed QC (score < 7)">🔄 Regen Failed</button>
                 <button class="btn btn-success" type="button" onclick="approveAllImages()" style="padding:4px 8px;font-size:0.7rem;" title="Approve all images">✅ App Img</button>
                 <button class="btn btn-primary" type="button" id="sb-generate-all-videos-btn" onclick="generateAllStoryboardVideos()" style="padding:4px 8px;font-size:0.7rem;opacity:0.4;pointer-events:none;" title="Generate all videos">🎥 Gen Vid</button>
@@ -1607,7 +1614,7 @@
 
                 <label style="color:var(--text-secondary);display:flex;align-items:center;gap:3px;cursor:pointer;" title="Use the previous shot's approved frame as the character reference (Krea 2 char+bg workflow) so the character stays consistent across consecutive shots"><input type="checkbox" id="sb-prev-frame-ref" style="width:auto;margin:0;accent-color:var(--accent-primary);"> ↩ Prev</label>
                 <button class="btn btn-secondary" onclick="storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">📥 Apply</button>
-                <button class="btn btn-secondary" onclick="document.getElementById('sb-global-cfg').value='1.0';document.getElementById('sb-global-steps').value='8';document.getElementById('sb-global-video-steps').value='8';document.getElementById('sb-global-seed').value='';storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">↺ Reset</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('sb-global-cfg').value='1.0';document.getElementById('sb-global-steps').value='8';document.getElementById('sb-global-video-steps').value='8';document.getElementById('sb-global-seed').value='';sbSetPaceRange(2,12);storyboardApplyAllSettings()" style="padding:4px 8px;font-size:0.7rem;">↺ Reset</button>
             </div>
 
             <!-- Container for Scene Rows -->
@@ -14379,6 +14386,7 @@ Project visual language: ${projVL}`;
             initLlmEnhanceToggle();
             initRefTypeSelector();
             initStyleDna();
+            initPaceRangeInputs();
 
             if (!screenplayData || !screenplayData.scenes || !screenplayData.scenes.length) {
                 container.innerHTML = '<div style="background:var(--bg-secondary);padding:40px;border-radius:8px;text-align:center;color:var(--text-secondary);font-size:0.9rem;">Select a story idea from the Ideas page, then click "Generate Screenplay".</div>';
@@ -20448,10 +20456,57 @@ Output all prompts in one block, separated by blank lines.`;
         // ================= Pace Shots: LLM-driven dynamic shot timing =================
         let sbPacing = false;
 
+        // ── Shot length range for LLM pacing (persisted per project + UI default) ──
+        function sbPaceRange() {
+            const minEl = document.getElementById('sb-pace-min');
+            const maxEl = document.getElementById('sb-pace-max');
+            let min = minEl ? parseFloat(minEl.value) : NaN;
+            let max = maxEl ? parseFloat(maxEl.value) : NaN;
+            if (isNaN(min) || min < 0.5) min = 2;
+            if (isNaN(max) || max > 120) max = 12;
+            if (max < min) max = min;                      // degenerate range: everything at min
+            if (max === min) max = Math.min(min + 0.5, 120); // keep a sliver of dynamics
+            return { min, max };
+        }
+
+        function sbSetPaceRange(min, max) {
+            const minEl = document.getElementById('sb-pace-min');
+            const maxEl = document.getElementById('sb-pace-max');
+            if (minEl) minEl.value = min;
+            if (maxEl) maxEl.value = max;
+        }
+
+        function initPaceRangeInputs() {
+            const minEl = document.getElementById('sb-pace-min');
+            const maxEl = document.getElementById('sb-pace-max');
+            if (!minEl || !maxEl) return;
+            // Re-read per project: opening a different project swaps its saved range in
+            const projKey = currentProject?.name || '';
+            if (minEl.dataset.init === projKey) return;
+            minEl.dataset.init = projKey;
+            const proj = currentProject || {};
+            if (!proj.settings) proj.settings = {};
+            const ps = proj.settings.paceRange || {};
+            const min = parseFloat(ps.min) || 2;
+            const max = parseFloat(ps.max) || 12;
+            minEl.value = min; maxEl.value = max;
+            const save = () => {
+                const r = sbPaceRange();
+                proj.settings.paceRange = { min: r.min, max: r.max };
+                scheduleSaveState();
+                localStorage.setItem('sb_pace_range', JSON.stringify({ min: r.min, max: r.max }));
+                // A degenerate range would flatten the whole timeline — fix the inputs live
+                if (r.max === r.min) { minEl.value = r.min; maxEl.value = r.max; }
+            };
+            minEl.onchange = save; maxEl.onchange = save;
+            minEl.oninput = () => { if (parseFloat(maxEl.value) < parseFloat(minEl.value)) maxEl.value = minEl.value; };
+        }
+
         async function sbPaceAllShots() {
             if (sbPacing) return;
             if (!requireProject()) return;
             if (!screenplayData || !screenplayData.scenes) { notify('No Screenplay', 'Generate a screenplay first.', '⚠️'); return; }
+            initPaceRangeInputs();
             const shots = [];
             screenplayData.scenes.forEach((s, si) => {
                 (s.shots || []).forEach((sh, hi) => {
@@ -20474,9 +20529,10 @@ Output all prompts in one block, separated by blank lines.`;
             const btn = document.getElementById('sb-pace-shots-btn');
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Pacing…'; }
             try {
+                const range = sbPaceRange();
                 const res = await fetch('/api/orchestrator/pace-shots', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ shots, project_path: currentProject?.path || '' })
+                    body: JSON.stringify({ shots, project_path: currentProject?.path || '', min_s: range.min, max_s: range.max })
                 });
                 const data = await res.json();
                 if (data.success && data.durations) {
@@ -20495,12 +20551,12 @@ Output all prompts in one block, separated by blank lines.`;
                                 }
                             }
                         });
-                    });
-                    scheduleSaveState();
-                    if (typeof getStoryboardViewMode === 'function' && getStoryboardViewMode() === 'timeline') renderStoryboard();
+                    });            scheduleSaveState();
+            if (typeof getStoryboardViewMode === 'function' && getStoryboardViewMode() === 'timeline') renderStoryboard();
                     const min = Math.min(...Object.values(durMap).map(Number).filter(n => !isNaN(n) && n > 0));
                     const max = Math.max(...Object.values(durMap).map(Number).filter(n => !isNaN(n) && n > 0));
-                    notify('Pacing Applied', `${applied} shots timed by content — range ${min.toFixed(1)}s–${max.toFixed(1)}s. The timeline widths now follow the story.`, '⏱');
+                    const rr = sbPaceRange();
+                    notify('Pacing Applied', `${applied} shots timed by content — ${min.toFixed(1)}s–${max.toFixed(1)}s (within your ${rr.min}–${rr.max}s range). The timeline widths now follow the story.`, '⏱');
                 } else {
                     notify('Pacing Failed', data.error || 'LLM did not return durations.', '❌');
                 }

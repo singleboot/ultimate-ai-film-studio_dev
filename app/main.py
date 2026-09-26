@@ -1258,7 +1258,11 @@ async def pace_shots_endpoint(data: dict):
         return {"success": False, "error": "shots list is required"}
     if not orchestrator:
         return {"success": False, "error": "Orchestrator not available"}
-    return orchestrator.pace_shots(shots)
+    return orchestrator.pace_shots(
+        shots,
+        min_s=data.get("min_s", 2.0),
+        max_s=data.get("max_s", 12.0),
+    )
 
 
 @app.post("/api/orchestrator/verify-scene-consistency")
