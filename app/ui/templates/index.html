@@ -14170,6 +14170,7 @@ Project visual language: ${projVL}`;
             const container = document.getElementById('storyboard-container');
             if (!container) return;
             initPrevFrameRefToggle();
+            initLlmEnhanceToggle();
             initRefTypeSelector();
             initStyleDna();
 
@@ -14735,6 +14736,32 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 notify('Error', e.message);
             }
             if (btn) { btn.disabled = false; btn.textContent = '🔄 Regenerate Prompt'; }
+        }
+
+        async function polishVideoPrompt(sh, engine) {
+            // Optional LLM polish of a shot's motion prompt (agent-style rewrite).
+            // Never throws: returns the original prompt on any failure.
+            const orig = sh && sh.video_prompt ? sh.video_prompt : '';
+            if (!orig.trim()) return orig;
+            try {
+                const res = await fetch('/api/llm/polish-video-prompt', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        prompt: orig,
+                        context: {
+                            shot_type: Array.isArray(sh.shot_type) ? sh.shot_type.join(', ') : (sh.shot_type || ''),
+                            emotion: Array.isArray(sh.emotion) ? sh.emotion.join(', ') : (sh.emotion || ''),
+                            action: Array.isArray(sh.action) ? sh.action.join(', ') : (sh.action || '')
+                        }
+                    })
+                });
+                const data = await res.json();
+                if (data.success && data.prompt) return data.prompt;
+                _genLocalEvent(engine || 'wangp', 'video', 'error', 'prompt polish failed: ' + String(data.error || 'unknown').substring(0, 60));
+            } catch (e) {
+                _genLocalEvent(engine || 'wangp', 'video', 'error', 'prompt polish failed: ' + String(e.message || e).substring(0, 60));
+            }
+            return orig;
         }
 
         // --- Batch timing tracker ---
@@ -15708,7 +15735,12 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                 try {
                     let data;
                     if (await isWanGP('i2v')) {
-                        data = await wangpWaitVideo({ prompt: sh.video_prompt, seed, input_image: inputImagePath, project_path: currentProject?.path || '', signal }, p => {
+                        let vprompt = sh.video_prompt;
+                        if (llmEnhanceEnabled()) {
+                            updateShotSpinnerPhase(sceneIdx, shotIdx, '✨ Polishing prompt...');
+                            vprompt = await polishVideoPrompt(sh, 'wangp');
+                        }
+                        data = await wangpWaitVideo({ prompt: vprompt, seed, input_image: inputImagePath, project_path: currentProject?.path || '', signal }, p => {
                             updateShotSpinnerPhase(sceneIdx, shotIdx, p && p.text ? p.text : 'Rendering on WanGP...');
                         });
                     } else {
@@ -15917,6 +15949,14 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
             return !!(el && el.checked);
         }
 
+        function initLlmEnhanceToggle() {
+            const el = document.getElementById('sb-llm-enhance');
+            if (!el) return;
+            const saved = localStorage.getItem('sb_llm_enhance');
+            if (saved !== null) el.checked = saved === '1';
+            el.onchange = () => localStorage.setItem('sb_llm_enhance', el.checked ? '1' : '0');
+        }
+
         function prevFrameRefEnabled() {
             const el = document.getElementById('sb-prev-frame-ref');
             return !!(el && el.checked);
@@ -16098,7 +16138,12 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                 body.refine = llmEnhanceEnabled();
                 let data;
                 if (await isWanGP('i2v')) {
-                    data = await wangpWaitVideo({ prompt: body.prompt, seed: body.seed, input_image: body.input_image, project_path: body.project_path }, p => {
+                    let vprompt = body.prompt;
+                    if (llmEnhanceEnabled()) {
+                        updateShotSpinnerPhase(sceneIdx, shotIdx, '✨ Polishing prompt...');
+                        vprompt = await polishVideoPrompt(sh, 'wangp');
+                    }
+                    data = await wangpWaitVideo({ prompt: vprompt, seed: body.seed, input_image: body.input_image, project_path: body.project_path }, p => {
                         updateShotSpinnerPhase(sceneIdx, shotIdx, p && p.text ? p.text : 'Rendering on WanGP...');
                     });
                 } else {
@@ -17619,7 +17664,12 @@ Raw JSON only, no markdown.`;
                 try {
                     let data;
                     if (await isWanGP('i2v')) {
-                        data = await wangpWaitVideo({ prompt: sh.video_prompt, seed, input_image: `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`, project_path: currentProject?.path || '', signal: window._sceneAbortController.signal }, p => {
+                        let vprompt = sh.video_prompt;
+                        if (llmEnhanceEnabled()) {
+                            updateShotSpinnerPhase(sIdx, shIdx, '✨ Polishing prompt...');
+                            vprompt = await polishVideoPrompt(sh, 'wangp');
+                        }
+                        data = await wangpWaitVideo({ prompt: vprompt, seed, input_image: `${currentProject?.path || ''}/scenes/${sh.storyboard_image}`, project_path: currentProject?.path || '', signal: window._sceneAbortController.signal }, p => {
                             updateShotSpinnerPhase(sIdx, shIdx, p && p.text ? p.text : 'Rendering video...');
                         });
                     } else {
@@ -19019,7 +19069,13 @@ Output all prompts in one block, separated by blank lines.`;
             try {
                 let data;
                 if (await isWanGP('i2v')) {
-                    data = await wangpWaitVideo({ prompt: prompt, seed, input_image: nleTempImageFile, project_path: currentProject?.path || '' }, p => {
+                    let vprompt = prompt;
+                    if (llmEnhanceEnabled()) {
+                        const elP = document.getElementById('nle-i2v-progress');
+                        if (elP) elP.textContent = '✨ Polishing prompt...';
+                        vprompt = await polishVideoPrompt({ video_prompt: prompt }, 'wangp');
+                    }
+                    data = await wangpWaitVideo({ prompt: vprompt, seed, input_image: nleTempImageFile, project_path: currentProject?.path || '' }, p => {
                         const el = document.getElementById('nle-i2v-progress');
                         if (el && p && p.text) el.textContent = p.text.substring(0, 90);
                     });

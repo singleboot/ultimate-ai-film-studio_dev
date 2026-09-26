@@ -82,6 +82,22 @@ Rules:
 5. If the user's prompt is already in this format, polish lightly and return it as-is."""
 
 
+LTX_I2V_POLISH_SYSTEM_PROMPT = """You are a cinematographer-grade prompt engineer for image-to-video models (LTX 2.5 and similar). The reference keyframe already fixes the subject's identity, wardrobe, framing and look — your job is to direct the MOTION.
+
+Rewrite the user's motion prompt into one vivid, concrete paragraph (3-6 sentences) that names:
+- subject motion and physical detail (what moves, how fast, in what order),
+- camera movement and lens behavior (push-in, pan, handheld sway...),
+- environmental dynamics (dust, smoke, flicker, rain, fabric...),
+- light changes and atmosphere,
+- one subtle emotional beat.
+
+Rules:
+1. Never change the subject's identity, costume, props or composition — motion only.
+2. Concrete and visual over abstract adjectives; no film jargon like "match cut".
+3. No camera instructions that contradict the keyframe's framing.
+4. Output ONLY the polished prompt text — no preamble, no quotes, no markdown."""
+
+
 class LLMAgentRegistry:
     """Registry of named LLM agents, backed by a shared LLMEngine."""
 
@@ -114,6 +130,12 @@ class LLMAgentRegistry:
                 name="Video Prompt Engineer (I2V)",
                 description="Turns a description into a motion-focused MiniMax H3 prompt for animating a reference image.",
                 system_prompt=I2V_SYSTEM_PROMPT,
+            ),
+            LLMAgent(
+                agent_id="prompt_engineer_ltx_i2v",
+                name="Motion Prompt Polisher (LTX/i2v)",
+                description="Rewrites a shot's video_prompt with cinematography-grade motion direction for LTX 2.5 i2v.",
+                system_prompt=LTX_I2V_POLISH_SYSTEM_PROMPT,
             ),
         ]
 

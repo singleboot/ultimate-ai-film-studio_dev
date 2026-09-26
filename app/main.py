@@ -1939,6 +1939,58 @@ def _refine_prompt_via_agent(agent_id: str, prompt: str, refine: bool) -> str:
     return prompt
 
 
+@app.post("/api/llm/polish-video-prompt")
+async def polish_video_prompt(data: dict):
+    """Rewrite a shot's video_prompt with the LTX i2v motion-polisher agent.
+
+    Optional LLM step before rendering: never fails the flow — on any problem it
+    returns success=False and the caller keeps the original prompt.
+    """
+    prompt = (data.get("prompt") or "").strip()
+    if not prompt:
+        return {"success": False, "error": "No prompt provided"}
+    if not llm_agents:
+        return {"success": False, "error": "LLM agents not available"}
+
+    context = data.get("context") or {}
+    ctx_lines = []
+    if context.get("shot_type"):
+        ctx_lines.append(f"Shot type: {context['shot_type']}")
+    if context.get("emotion"):
+        ctx_lines.append(f"Emotion: {context['emotion']}")
+    if context.get("action"):
+        ctx_lines.append(f"Action: {context['action']}")
+    if context.get("scene_synopsis"):
+        ctx_lines.append(f"Scene: {context['scene_synopsis']}")
+    user_text = prompt if not ctx_lines else "\n".join(ctx_lines) + "\n\nMotion prompt to polish:\n" + prompt
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    def _run():
+        return llm_agents.run(
+            "prompt_engineer_ltx_i2v",
+            user_text,
+            provider=data.get("provider"),
+            model=data.get("model"),
+            api_key=data.get("api_key"),
+            host=data.get("host"),
+        )
+
+    try:
+        result = await loop.run_in_executor(None, _run)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    if not result.get("success") or not (result.get("response") or "").strip():
+        return {"success": False, "error": result.get("error") or "LLM returned empty response"}
+    polished = result["response"].strip()
+    # strip common wrapper artifacts the LLM might add
+    polished = polished.strip('`"')
+    if polished.lower().startswith("polished prompt:"):
+        polished = polished[len("polished prompt:"):].strip()
+    return {"success": True, "prompt": polished, "original": prompt}
+
+
 @app.post("/api/comfyui/generate/t2i")
 async def generate_t2i_endpoint(request: Request):
     """Generate image using T2I workflow from settings (defaults to the Krea 2 Turbo preset)."""
