@@ -12331,7 +12331,7 @@ Project visual language: ${projVL}`;
             if (opts.seed != null) payload.seed = opts.seed;
             if (opts.input_image) payload.input_image = opts.input_image;
             if (opts.project_path) payload.project_path = opts.project_path;
-            const m = engines.wangpModels?.video;
+            const m = opts.model_type || engines.wangpModels?.video;
             if (m) payload.model_type = m;
             const signal = opts.signal || null;
             const report = (txt, pct) => { try { if (onProgress) onProgress({ text: txt, pct: pct }); } catch (e) {} };
@@ -12513,12 +12513,13 @@ Project visual language: ${projVL}`;
         // Submit to WanGP through the studio proxy and wait for the ingested file.
         // The backend copies the result into ComfyUI's output folder (WanGP_*.png),
         // so preview / upscale / save flows work exactly like a ComfyUI render.
-        async function wangpWaitImage(prompt, seed, steps, resolution, refImages) {
+        async function wangpWaitImage(prompt, seed, steps, resolution, refImages, ovModelType) {
             const payload = { prompt, media: 'image' };
             if (seed != null) payload.seed = seed;
             if (steps) payload.steps = steps;
             if (resolution) payload.resolution = resolution;
             if (refImages && refImages.length) payload.ref_images = refImages;
+            if (ovModelType) payload.model_type = ovModelType;
             _genLocalEvent('wangp', 'image', 'queued', 'submitting t2i job (blocking wait)...');
             const res = await fetch('/api/wangp/generate/image/wait', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -12528,14 +12529,14 @@ Project visual language: ${projVL}`;
         }
 
         // Storyboard shot render through WanGP (mirrors the ComfyUI post-success flow).
-        async function generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, enrichedPrompt, seedOverride, stepsOverride, imgResolution, inputImages) {
+        async function generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, enrichedPrompt, seedOverride, stepsOverride, imgResolution, inputImages, ovModelType) {
             const s = screenplayData.scenes[sceneIdx];
             const sh = s.shots[shotIdx];
             try {
                 updateShotSpinnerPhase(sceneIdx, shotIdx, '🎨 Rendering on WanGP...');
                 const base = (currentProject?.path || '').replace(/[\\/]+$/, '');
                 const absRefs = base ? (inputImages || []).map(p => /^[a-zA-Z]:/.test(p) ? p : base + '/' + p.replace(/^[\\/]+/, '')) : [];
-                const data = await wangpWaitImage(enrichedPrompt, seedOverride, stepsOverride || null, imgResolution, absRefs);
+                const data = await wangpWaitImage(enrichedPrompt, seedOverride, stepsOverride || null, imgResolution, absRefs, ovModelType || null);
                 if (!data.success) {
                     hideShotSpinner(sceneIdx, shotIdx);
                     notify('❌ WanGP Failed', data.error || 'Generation failed', '❌', 5000);
@@ -14051,6 +14052,29 @@ Project visual language: ${projVL}`;
             return sh ? { sceneIdx: parts[0], shotIdx: parts[1], sh } : null;
         }
 
+        // ── Per-shot engine overrides (persisted on the shot) ────────
+        let _sbTlWfCache = null;
+        async function sbTlWorkflows() {
+            if (_sbTlWfCache) return _sbTlWfCache;
+            try {
+                const d = await fetch('/api/workflows').then(r => r.json());
+                _sbTlWfCache = (d.workflows || []).map(w => w.name).sort();
+            } catch (e) { _sbTlWfCache = []; }
+            return _sbTlWfCache;
+        }
+        function sbTlWgpModelsSync(task, sel) {
+            sel.innerHTML = '<option value="">default</option>';
+            fetch('/api/wangp/models?task=' + task).then(r => r.json()).then(d => {
+                (d.models || []).filter(m => m.status === 'available').sort((a, b) => a.name.localeCompare(b.name)).forEach(m => {
+                    const o = document.createElement('option');
+                    o.value = m.model_type;
+                    o.textContent = m.name;
+                    sel.appendChild(o);
+                });
+                sel.value = '';
+            }).catch(() => {});
+        }
+
         function sbTlRenderShotInfo() {
             const box = document.getElementById('sb-tl-shot-info');
             if (!box) return;
@@ -14069,7 +14093,7 @@ Project visual language: ${projVL}`;
                 '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">' +
                     '<strong style="color:var(--accent-primary);">' + esc(sh.shot_id || ('SHOT_' + sbTlSelectedShot)) + '</strong>' +
                     '<span>· ' + esc(sceneId) + ' · ' + sbTlFmtTime(sbTlShotDuration(sh, sbTlSelectedShot)) + (hasVideo ? ' · 🎬 video' : (hasImage ? ' · 🖼 image only' : ' · no media')) + '</span>' +
-                    '<span style="margin-left:auto;display:inline-flex;gap:4px;">' +
+                    '<span style="margin-left:auto;display:inline-flex;gap:4px;flex-wrap:wrap;">' +
                         (!sh.storyboard_image
                             ? '<button class="btn btn-primary" onclick="sbTlGenerateSelectedImage()" style="padding:2px 10px;font-size:0.65rem;">🎨 Generate Image</button>'
                             : '<button class="btn btn-secondary" onclick="sbTlGenerateSelectedImage()" style="padding:2px 10px;font-size:0.65rem;">🔄 Redo Image</button>') +
@@ -14081,8 +14105,65 @@ Project visual language: ${projVL}`;
                         '<button class="btn btn-secondary" onclick="sbTlOpenTheater()" style="padding:2px 10px;font-size:0.65rem;">⛶ Large</button>' +
                     '</span>' +
                 '</div>' +
+                '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:0.62rem;color:var(--text-secondary);margin:2px 0;">' +
+                    '<span title="Workflow/model used just for THIS shot (blank = the global engine settings)">⚙ This shot:</span>' +
+                    '<select id="sb-tl-ov-img" style="max-width:200px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:1px 4px;font-size:0.62rem;" onchange="sbTlShotOverrideChanged()"><option value="">img: engine default</option></select>' +
+                    '<select id="sb-tl-ov-vid" style="max-width:200px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:1px 4px;font-size:0.62rem;" onchange="sbTlShotOverrideChanged()"><option value="">vid: engine default</option></select>' +
+                    '<button class="btn btn-ghosted" onclick="sbTlShotOverrideClear()" style="padding:1px 6px;font-size:0.6rem;" title="Clear this shot\'s overrides back to engine defaults">⨯ reset</button>' +
+                    (sh._ov_img || sh._ov_vid ? '<span style="color:var(--accent-primary);">· overrides active</span>' : '') +
+                '</div>' +
                 '<div style="opacity:0.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (esc((sh.action || sh.description || '').slice(0, 160)) || '<span style="opacity:0.6;">no action text</span>') + '</div>' +
                 (sh.video_prompt ? '<div style="opacity:0.65;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🎥 ' + esc(String(sh.video_prompt).slice(0, 140)) + '</div>' : '');
+            // Fill the two override selects asynchronously (workflows + WanGP models for the active engine)
+            (async () => {
+                const imgSel = document.getElementById('sb-tl-ov-img');
+                const vidSel = document.getElementById('sb-tl-ov-vid');
+                if (!imgSel || !vidSel) return;
+                if (await isWanGP('i2i')) {
+                    sbTlWgpModelsSync('image', imgSel);
+                    imgSel.dataset.kind = 'wangp';
+                } else {
+                    imgSel.dataset.kind = 'comfyui';
+                    const wfs = await sbTlWorkflows();
+                    wfs.forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = 'wf: ' + w; imgSel.appendChild(o); });
+                    imgSel.value = sh._ov_img || '';
+                }
+                if (await isWanGP('i2v')) {
+                    sbTlWgpModelsSync('video', vidSel);
+                    vidSel.dataset.kind = 'wangp';
+                } else {
+                    vidSel.dataset.kind = 'comfyui';
+                    const wfs = await sbTlWorkflows();
+                    wfs.forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = 'wf: ' + w; vidSel.appendChild(o); });
+                    vidSel.value = sh._ov_vid || '';
+                }
+                imgSel.value = sh._ov_img || '';
+                vidSel.value = sh._ov_vid || '';
+            })();
+        }
+
+        function sbTlShotOverrideChanged() {
+            const sel = sbTlSelectedShotObj();
+            if (!sel) return;
+            const { sh } = sel;
+            const imgSel = document.getElementById('sb-tl-ov-img');
+            const vidSel = document.getElementById('sb-tl-ov-vid');
+            if (!imgSel || !vidSel) return;
+            sh._ov_img = imgSel.value || null;
+            sh._ov_vid = vidSel.value || null;
+            if (imgSel.dataset.kind) sh._ov_img_kind = imgSel.dataset.kind;
+            if (vidSel.dataset.kind) sh._ov_vid_kind = vidSel.dataset.kind;
+            scheduleSaveState();
+            sbTlRenderShotInfo();
+        }
+
+        function sbTlShotOverrideClear() {
+            const sel = sbTlSelectedShotObj();
+            if (!sel) return;
+            delete sel.sh._ov_img; delete sel.sh._ov_vid;
+            delete sel.sh._ov_img_kind; delete sel.sh._ov_vid_kind;
+            scheduleSaveState();
+            sbTlRenderShotInfo();
         }
 
         function sbTlGenerateSelectedImage() {
@@ -14934,8 +15015,17 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
 
             // Engine routing: WanGP renders the shot through the bridge (refs become
             // image_refs; no VLM consistency loop on that path yet).
+            // Per-shot override (_ov_img): a WanGP model_type or a ComfyUI workflow name.
             if (await isWanGP('i2i')) {
-                return await generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, enrichedPrompt, seedOverride, stepsOverride, imgResolution, inputImages);
+                if (sh._ov_img && sh._ov_img_kind === 'wangp') {
+                    return await generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, enrichedPrompt, seedOverride, stepsOverride, imgResolution, inputImages, sh._ov_img);
+                }
+                if (sh._ov_img && sh._ov_img_kind === 'comfyui') {
+                    // shot pinned to a ComfyUI workflow while the engine switch says WanGP
+                    // falls through to the ComfyUI path below
+                } else {
+                    return await generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, enrichedPrompt, seedOverride, stepsOverride, imgResolution, inputImages);
+                }
             }
 
             try {
@@ -16146,14 +16236,15 @@ Image Prompt: [cinematic details, framing, environment, lighting, character deta
                 };
                 body.steps = storyboardVideoSteps();
                 body.refine = llmEnhanceEnabled();
+                if (sh._ov_vid && sh._ov_vid_kind === 'comfyui') body.workflow_name = sh._ov_vid;
                 let data;
-                if (await isWanGP('i2v')) {
+                if (await isWanGP('i2v') && !(sh._ov_vid && sh._ov_vid_kind === 'comfyui')) {
                     let vprompt = body.prompt;
                     if (llmEnhanceEnabled()) {
                         updateShotSpinnerPhase(sceneIdx, shotIdx, '✨ Polishing prompt...');
                         vprompt = await polishVideoPrompt(sh, 'wangp');
                     }
-                    data = await wangpWaitVideo({ prompt: vprompt, seed: body.seed, input_image: body.input_image, project_path: body.project_path }, p => {
+                    data = await wangpWaitVideo({ prompt: vprompt, seed: body.seed, input_image: body.input_image, project_path: body.project_path, model_type: (sh._ov_vid && sh._ov_vid_kind === 'wangp') ? sh._ov_vid : null }, p => {
                         updateShotSpinnerPhase(sceneIdx, shotIdx, p && p.text ? p.text : 'Rendering on WanGP...');
                     });
                 } else {

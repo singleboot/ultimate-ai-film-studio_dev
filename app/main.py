@@ -1729,7 +1729,7 @@ def generate_video_endpoint(data: dict):
         # so the endpoint works without the caller naming a workflow — same
         # convention as the t2v endpoint.
         settings = load_settings()
-        workflow_name = settings.get("workflows", {}).get("i2v", "") or DEFAULT_I2V_WORKFLOW
+        workflow_name = (data.get("workflow_name") or "").strip() or settings.get("workflows", {}).get("i2v", "") or DEFAULT_I2V_WORKFLOW
     return image_engine.generate_video(
         provider_id=provider,
         model=data.get("model", ""),
