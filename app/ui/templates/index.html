@@ -6544,7 +6544,7 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     s.shots.forEach(sh => {
                         const status = sh.storyboard_status || 'pending';
                         const statusColor = status === 'approved' ? '#4caf50' : (status === 'enriched' || status === 'regenerated' ? '#ff9800' : '#555');
-                        const lighting = (sh.lighting_language || '').toLowerCase();
+                        const lighting = _str(sh.lighting_language).toLowerCase();
                         const todIcon = (lighting.includes('night') || lighting.includes('dark') || lighting.includes('moon') || lighting.includes('shadow')) ? '🌙' : '☀️';
                         function _str(v) { return Array.isArray(v) ? v.join(', ') : (v || ''); }
                         const charsStr = (sh.characters_present || []).join(', ') || '—';
@@ -13892,6 +13892,8 @@ Project visual language: ${projVL}`;
                     const hasImage = !!(savedImg || tempImg);
                     const imgStatus = sh.storyboard_status || 'pending';
                     const borderColor = imgStatus === 'approved' ? '#4caf50' : (imgStatus === 'generated' ? '#ff9800' : 'var(--border-color)');
+                    const hasOv = !!(sh._ov_img || sh._ov_vid);
+                    const ovHint = [sh._ov_img ? 'img: ' + sh._ov_img : null, sh._ov_vid ? 'vid: ' + sh._ov_vid : null].filter(Boolean).join('\n');
                     const media = hasImage
                         ? `<img src="${thumbUrl}" draggable="false" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">`
                         : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:0.6rem;">No Image</div>`;
@@ -13903,7 +13905,8 @@ Project visual language: ${projVL}`;
                         ondblclick="expandStoryboardShot(${sceneIdx}, ${shotIdx})"
                         style="position:relative;flex:0 0 ${Math.max(dur * pps, 34).toFixed(0)}px;height:100%;border-right:1px solid var(--bg-secondary);outline:2px solid ${borderColor};outline-offset:-2px;overflow:hidden;cursor:pointer;user-select:none;">
                         ${media}
-                        ${hasVideo ? `<span style="position:absolute;top:2px;left:2px;font-size:0.5rem;padding:0 3px;border-radius:2px;background:var(--accent-primary);color:#fff;font-weight:700;">🎬</span>` : ''}
+                        ${hasOv ? `<span data-tl-ov="1" title="Override active\n${escapeHtml(ovHint)}" style="position:absolute;top:2px;left:2px;font-size:0.5rem;line-height:1.2;padding:0 3px;border-radius:2px;background:#7c3aed;color:#fff;font-weight:700;">⚙</span>` : ''}
+                        ${hasVideo ? `<span style="position:absolute;top:2px;left:${hasOv ? '13px' : '2px'};font-size:0.5rem;padding:0 3px;border-radius:2px;background:var(--accent-primary);color:#fff;font-weight:700;">🎬</span>` : ''}
                         <span onclick="sbTlEditDuration(event, ${sceneIdx}, ${shotIdx})" title="Click to edit this shot's duration" style="position:absolute;top:2px;right:2px;font-size:0.5rem;padding:0 3px;border-radius:2px;background:rgba(0,0,0,0.65);color:#ddd;font-variant-numeric:tabular-nums;cursor:pointer;">${sbTlFmtTime(dur)}</span>
                         <span style="position:absolute;bottom:2px;left:3px;font-size:0.5rem;color:#fff;background:rgba(0,0,0,0.65);padding:0 3px;border-radius:2px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(sh.shot_id || 'SHOT_?')}</span>
                         <div style="position:absolute;bottom:2px;right:2px;display:flex;gap:1px;opacity:0.85;">
@@ -14150,7 +14153,7 @@ Project visual language: ${projVL}`;
         function sbTlShotOverrideChanged() {
             const sel = sbTlSelectedShotObj();
             if (!sel) return;
-            const { sh } = sel;
+            const { sceneIdx, shotIdx, sh } = sel;
             const imgSel = document.getElementById('sb-tl-ov-img');
             const vidSel = document.getElementById('sb-tl-ov-vid');
             if (!imgSel || !vidSel) return;
@@ -14160,15 +14163,42 @@ Project visual language: ${projVL}`;
             if (vidSel.dataset.kind) sh._ov_vid_kind = vidSel.dataset.kind;
             scheduleSaveState();
             sbTlRenderShotInfo();
+            sbTlSyncShotBadge(sceneIdx, shotIdx);
         }
 
         function sbTlShotOverrideClear() {
             const sel = sbTlSelectedShotObj();
             if (!sel) return;
+            const { sceneIdx, shotIdx } = sel;
             delete sel.sh._ov_img; delete sel.sh._ov_vid;
             delete sel.sh._ov_img_kind; delete sel.sh._ov_vid_kind;
             scheduleSaveState();
             sbTlRenderShotInfo();
+            sbTlSyncShotBadge(sceneIdx, shotIdx);
+        }
+
+        // Keep a single block's ⚙ override badge in sync without a full timeline
+        // re-render (the per-shot override row in the shot-info panel edits one
+        // shot at a time; the scene-override flow just re-renders everything).
+        function sbTlSyncShotBadge(sceneIdx, shotIdx) {
+            const el = document.getElementById(`shot-card-${sceneIdx}_${shotIdx}`);
+            const sh = sbTlGetShot(sceneIdx, shotIdx);
+            if (!el || !sh) return;
+            const has = !!(sh._ov_img || sh._ov_vid);
+            let b = el.querySelector(':scope > span[data-tl-ov]');
+            if (has && !b) {
+                b = document.createElement('span');
+                b.dataset.tlOv = '1';
+                b.textContent = '⚙';
+                b.style.cssText = 'position:absolute;top:2px;left:2px;font-size:0.5rem;line-height:1.2;padding:0 3px;border-radius:2px;background:#7c3aed;color:#fff;font-weight:700;';
+                el.insertBefore(b, el.firstChild);
+            } else if (!has && b) {
+                b.remove();
+                b = null;
+            }
+            if (b) b.title = 'Override active\n' + [sh._ov_img ? 'img: ' + sh._ov_img : null, sh._ov_vid ? 'vid: ' + sh._ov_vid : null].filter(Boolean).join('\n');
+            const vidBadge = Array.from(el.children).find(c => c.tagName === 'SPAN' && (c.textContent || '').trim() === '🎬');
+            if (vidBadge) vidBadge.style.left = has ? '13px' : '2px';
         }
 
         // ── Per-scene overrides: apply one workflow/model to every shot in a scene ──
