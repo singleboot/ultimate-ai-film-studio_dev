@@ -41,3 +41,4 @@ models/
 # External projects
 comfyui-mcp-server/
 app/gen_history.json
+app/core/gen_qa_cache.json

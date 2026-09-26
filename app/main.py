@@ -4542,6 +4542,12 @@ def _gen_hist_record(engine: str, task: str, filename: str, job_id: str = "",
         "model": str(model or "")[:80],
         "source": str(source or "")[:40],
     }
+    try:
+        qa = _gen_hist_qa(rec)
+        if qa:
+            rec["qa"] = qa
+    except Exception:
+        pass
     with _gen_hist_lock:
         _gen_hist.append(rec)
         if len(_gen_hist) > 400:
@@ -4549,20 +4555,83 @@ def _gen_hist_record(engine: str, task: str, filename: str, job_id: str = "",
         _gen_hist_save()
 
 
-def _gen_item_url(filename: str) -> str:
+def _gen_item_url(filename: str, subfolder: str = "") -> str:
     """Servable URL for a generated file (all ingest goes through ComfyUI's
     output folder, so the studio view proxy serves images, videos and audio)."""
     from urllib.parse import quote
-    return f"/api/comfyui/view?filename={quote(str(filename))}"
+    u = f"/api/comfyui/view?filename={quote(str(filename))}"
+    if subfolder:
+        u += f"&subfolder={quote(subfolder)}"
+    return u
+
+
+def _find_output_file(out_dir, fname: str):
+    """Locate a history file in the output tree (handles subfoldered saves).
+    Returns (abs_path, subfolder) or (None, None)."""
+    p = out_dir / fname
+    if p.exists():
+        return p, ""
+    try:
+        hits = list(out_dir.rglob(fname))
+        if hits:
+            rel = hits[0].parent.relative_to(out_dir).as_posix()
+            return hits[0], rel
+    except Exception:
+        pass
+    return None, None
+
+
+def _gen_hist_qa(rec: dict, out_dir=None) -> dict | None:
+    """Objective QA for a history item (sharpness/motion/jitter for video,
+    sharpness for images, RMS/peak/silence for audio). Best effort."""
+    try:
+        from core.media_qa import compute_qa
+    except Exception:
+        try:
+            from app.core.media_qa import compute_qa
+        except Exception:
+            return None
+    task = rec.get("task")
+    if task not in ("image", "video", "audio"):
+        return None
+    if out_dir is None:
+        out_dir = _comfyui_output_dir()
+    if not out_dir:
+        return None
+    fname = str(rec.get("filename", ""))
+    path = out_dir / fname if "/" not in fname else out_dir / fname.replace("/", os.sep)
+    return compute_qa(str(path), task)
 
 
 @app.get("/api/gen-history")
 async def gen_history():
-    """Recent successful generations (newest first) with origin metadata."""
+    """Recent successful generations (newest first) with origin metadata + QA."""
     with _gen_hist_lock:
         items = list(_gen_hist)[::-1]
+    out_dir = _comfyui_output_dir()
+    qa_deadline = time.time() + 10  # time-boxed backfill; rest fill in on later polls
     for it in items:
-        it["url"] = _gen_item_url(it.get("filename", ""))
+        fname = it.get("filename", "")
+        sub = it.get("subfolder") or ""
+        it["url"] = _gen_item_url(fname, sub)
+        if it.get("qa") is None and out_dir and time.time() <= qa_deadline:
+            path, found_sub = _find_output_file(out_dir, str(fname).replace("/", os.sep))
+            if path:
+                if found_sub and not sub:
+                    # heal the servable URL for files saved into subfolders
+                    it["url"] = _gen_item_url(fname, found_sub)
+                    it["subfolder"] = found_sub
+                qa = _gen_hist_qa({"task": it.get("task"), "filename": str(path)}, out_dir)
+                if qa:
+                    it["qa"] = qa
+                    # persist so we never recompute for this file
+                    with _gen_hist_lock:
+                        for stored in _gen_hist:
+                            if stored.get("id") == it.get("id"):
+                                stored["qa"] = qa
+                                if found_sub and not stored.get("subfolder"):
+                                    stored["subfolder"] = found_sub
+                        _gen_hist_save()
     return {"items": items}
 
 

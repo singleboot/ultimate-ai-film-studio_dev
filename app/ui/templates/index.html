@@ -5791,6 +5791,15 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                 const url = it.url || ('/api/comfyui/view?filename=' + encodeURIComponent(it.filename));
                 const badge = `${it.engine || '?'} \u00b7 ${it.task || 'gen'}`;
                 const meta = [it.model, it.origin, (it.seed != null && it.seed !== '' ? 'seed ' + it.seed : '')].filter(Boolean).join(' \u00b7 ');
+                let qaTxt = '';
+                const qa = it.qa || {};
+                if (it.task === 'video' && qa.sharpness != null) {
+                    qaTxt = `QA: sharp ${qa.sharpness} · motion ${qa.motion} · jitter ${qa.jitter}`;
+                } else if (it.task === 'image' && qa.sharpness != null) {
+                    qaTxt = `QA: sharp ${qa.sharpness}`;
+                } else if (it.task === 'audio' && qa.rms != null) {
+                    qaTxt = `QA: rms ${qa.rms} dB · peak ${qa.peak} dB` + (qa.silence_pct != null ? ` · sil ${qa.silence_pct}%` : '');
+                }
                 return `<div style="border:1px solid var(--border-color);border-radius:8px;overflow:hidden;background:var(--bg-primary);cursor:pointer;" onclick="window.open('${url}','_blank')" title="${_genEscape(meta)}\n${_genEscape(it.filename)}">` +
                     `<div style="height:110px;background:rgba(0,0,0,0.15);">${_histThumb(it)}</div>` +
                     `<div style="padding:6px 8px;font-size:0.68rem;line-height:1.5;">` +
@@ -5798,6 +5807,7 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     `<span style="color:var(--text-secondary);">${_genEscape((it.ts || '').split(' ')[1] || '')}</span></div>` +
                     `<div style="color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_genEscape(meta || '\u2014')}</div>` +
                     `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_genEscape(it.filename)}">${_genEscape(it.filename)}</div>` +
+                    (qaTxt ? `<div style="color:var(--accent-primary);font-size:0.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_genEscape(qaTxt)}</div>` : '') +
                     `</div></div>`;
             }).join('');
         }
