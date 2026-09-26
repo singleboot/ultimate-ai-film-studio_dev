@@ -200,7 +200,11 @@ class StudioBridge:
         try:
             import requests
             dest_dir.mkdir(parents=True, exist_ok=True)
-            r = requests.get(f"{self.comfyui.host}/view", params={"filename": comfy_filename, "type": "output"}, timeout=180)
+            sub = ""
+            name = comfy_filename
+            if "/" in comfy_filename:
+                sub, name = comfy_filename.split("/", 1)
+            r = requests.get(f"{self.comfyui.host}/view", params={"filename": name, "subfolder": sub, "type": "output"}, timeout=180)
             if r.status_code != 200:
                 return None
             dest = dest_dir / dest_name
