@@ -14109,6 +14109,7 @@ Project visual language: ${projVL}`;
                         (sh.storyboard_image
                             ? '<button class="btn btn-primary" onclick="sbTlGenerateSelectedVideo()" style="padding:2px 10px;font-size:0.65rem;" title="Render this shot to video with the configured i2v workflow">🎥 Generate Video</button>'
                             : '') +
+                        '<button class="btn btn-secondary" onclick="sbTlCompareShot(' + sceneIdx + ', ' + shotIdx + ')" style="padding:2px 10px;font-size:0.65rem;" title="Render this shot with two different models/workflows side by side and pick a keeper">⚖ A/B</button>' +
                         '<button class="btn btn-secondary" onclick="sbTlPlaySelected()" style="padding:2px 10px;font-size:0.65rem;" title="Play this shot in the monitor">▶ Play</button>' +
                         '<button class="btn btn-secondary" onclick="sbTlOpenTheater()" style="padding:2px 10px;font-size:0.65rem;">⛶ Large</button>' +
                     '</span>' +
@@ -15015,10 +15016,12 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             }
         }
 
-        async function generateShotImage(sceneIdx, shotIdx, abortSignal) {
+        // ── Shared shot-image prep: enriched prompt, refs, resolution, seed/steps ──
+        // Used by generateShotImage AND the A/B compare bench so every render path
+        // feeds the exact same request into whichever engine/workflow is chosen.
+        function sbTlShotImagePrep(sceneIdx, shotIdx) {
             const s = screenplayData.scenes[sceneIdx];
             const sh = s.shots[shotIdx];
-            const btn = document.getElementById(`shot-t2i-btn-${sceneIdx}-${shotIdx}`);
 
             let enrichedPrompt = sh.storyboard_prompt || sh.image_prompt || '';
             // Style DNA: one locked style sentence shared by every shot in this project
@@ -15077,26 +15080,6 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                 enrichedPrompt += `\n\nSTYLE (apply exactly this look to every shot): ${styleDna}`;
             }
 
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = '⏳...';
-                const abortBtn = document.getElementById(`shot-abort-btn-${sceneIdx}-${shotIdx}`);
-                if (abortBtn) {
-                    btn.style.display = 'none';
-                    abortBtn.style.display = 'inline-block';
-                }
-            }
-            showShotSpinner(sceneIdx, shotIdx, 'Queued for ComfyUI');
-            
-            if (!window._sbBatchTotal) {
-                window._sbBatchTotal = 1;
-                window._sbBatchCompleted = 0;
-            }
-            if (!window._sbBatchStartTime) window._sbBatchStartTime = Date.now();
-            const _shotGenStartMs = Date.now();
-
-            updateStoryboardProgressUI();
-
             const seed = Math.floor(Math.random() * 999999999) + 1;
             let inputImages = getSavedInputImages(shotChars, s.location_id);
             
@@ -15126,6 +15109,310 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             // apply (e.g. Qwen Image 2.1 wants its native 25, not a turbo-style 10).
             const stepsOverride = sh._genSteps || parseInt(document.getElementById('scene-gen-steps')?.value) || currentProject?.settings?.steps;
             const seedOverride = sh._genSeed || seed;
+
+            return { enrichedPrompt, inputImages, prevFramePath, aspectRatio, imgResolution, cfgOverride, stepsOverride, seedOverride };
+        }
+
+        // ── A/B compare bench: render the same shot with two different models/
+        // workflows and show both results side by side to pick a keeper. The
+        // keeper is saved into the project like a normal generated frame and its
+        // workflow/model is pinned as the shot's image (and optionally video)
+        // override, so regens keep the winning look. Variants render sequentially —
+        // the WanGP bridge rejects concurrent jobs on its single session.
+        async function sbTlCompareShot(sceneIdx, shotIdx) {
+            const s = screenplayData?.scenes?.[sceneIdx];
+            const sh = s?.shots?.[shotIdx];
+            if (!sh) return;
+            if (document.getElementById('sb-compare-overlay')) return;
+
+            // Option lists follow the active engine (same sources as the override pickers)
+            const wfList = await sbTlWorkflows();
+            let imgKind = 'comfyui', imgOpts = '', vidKind = 'comfyui', vidOpts = '';
+            if (await isWanGP('i2i')) {
+                imgKind = 'wangp';
+                try {
+                    const d = await fetch('/api/wangp/models?task=image').then(r => r.json());
+                    (d.models || []).filter(m => m.status === 'available').sort((a, b) => a.name.localeCompare(b.name)).forEach(m => {
+                        imgOpts += `<option value="${escapeHtml(m.model_type)}">${escapeHtml(m.name)}</option>`;
+                    });
+                } catch (e) {}
+            } else {
+                wfList.forEach(w => { imgOpts += `<option value="${escapeHtml(w)}">wf: ${escapeHtml(w)}</option>`; });
+            }
+            if (await isWanGP('i2v')) {
+                vidKind = 'wangp';
+                try {
+                    const d = await fetch('/api/wangp/models?task=video').then(r => r.json());
+                    (d.models || []).filter(m => m.status === 'available').sort((a, b) => a.name.localeCompare(b.name)).forEach(m => {
+                        vidOpts += `<option value="${escapeHtml(m.model_type)}">${escapeHtml(m.name)}</option>`;
+                    });
+                } catch (e) {}
+            } else {
+                wfList.forEach(w => { vidOpts += `<option value="${escapeHtml(w)}">wf: ${escapeHtml(w)}</option>`; });
+            }
+
+            window.sbTlCompareState = { sceneIdx, shotIdx, imgKind, vidKind, results: {}, vid: {}, running: false };
+            const shotLabel = escapeHtml(sh.shot_id || ('SHOT_' + sceneIdx + '_' + shotIdx));
+            const curOv = sh._ov_img ? escapeHtml(sh._ov_img) : 'engine default';
+            const imgLabel = imgKind === 'wangp' ? 'WanGP image model' : 'ComfyUI workflow';
+            const vidLabel = vidKind === 'wangp' ? 'WanGP video model' : 'ComfyUI workflow';
+            const selCss = 'max-width:220px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;padding:2px 4px;font-size:0.7rem;';
+
+            const overlay = document.createElement('div');
+            overlay.id = 'sb-compare-overlay';
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:10002;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;';
+            overlay.innerHTML =
+                '<div style="width:min(1100px,94vw);max-height:92vh;overflow:auto;background:var(--bg-primary,#111);border:1px solid var(--border-color);border-radius:10px;padding:14px;">' +
+                    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">' +
+                        '<strong style="color:var(--accent-primary);">⚖ A/B Compare — ' + shotLabel + '</strong>' +
+                        '<span style="font-size:0.7rem;color:var(--text-secondary);">current image override: ' + curOv + ' · pick a keeper to pin it</span>' +
+                        '<span style="margin-left:auto;display:inline-flex;gap:6px;">' +
+                            '<button class="btn btn-secondary" id="sb-cmp-rerun" style="padding:2px 10px;font-size:0.7rem;">🔄 Re-run</button>' +
+                            '<button class="btn btn-ghosted" id="sb-cmp-close" style="padding:2px 10px;font-size:0.7rem;">✕ Close</button>' +
+                        '</span>' +
+                    '</div>' +
+                    '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:0.72rem;color:var(--text-secondary);">' +
+                        '<label style="display:inline-flex;align-items:center;gap:4px;color:var(--text-primary);">A <select id="sb-cmp-a" style="' + selCss + '">' + imgOpts + '</select></label>' +
+                        '<label style="display:inline-flex;align-items:center;gap:4px;color:var(--text-primary);">B <select id="sb-cmp-b" style="' + selCss + '">' + imgOpts + '</select></label>' +
+                        '<label style="display:inline-flex;align-items:center;gap:4px;"><input type="checkbox" id="sb-cmp-sameseed" checked> same seed</label>' +
+                        '<span id="sb-cmp-kind">(' + imgLabel + ')</span>' +
+                    '</div>' +
+                    (sh.storyboard_image
+                        ? '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:0.72rem;color:var(--text-secondary);">' +
+                          '<span>🎬 video compare (from current image, optional):</span>' +
+                          '<label style="display:inline-flex;align-items:center;gap:4px;color:var(--text-primary);">A <select id="sb-cmp-va" style="' + selCss + '"><option value="">— none —</option>' + vidOpts + '</select></label>' +
+                          '<label style="display:inline-flex;align-items:center;gap:4px;color:var(--text-primary);">B <select id="sb-cmp-vb" style="' + selCss + '"><option value="">— none —</option>' + vidOpts + '</select></label>' +
+                          '<span>(' + vidLabel + ')</span></div>'
+                        : '') +
+                    '<div style="display:flex;gap:10px;">' +
+                        '<div id="sb-cmp-pane-a" style="flex:1;min-width:0;border:1px solid var(--border-color);border-radius:8px;padding:8px;"></div>' +
+                        '<div id="sb-cmp-pane-b" style="flex:1;min-width:0;border:1px solid var(--border-color);border-radius:8px;padding:8px;"></div>' +
+                    '</div>' +
+                '</div>';
+            (document.getElementById('sb-timeline-root') || document.body).appendChild(overlay);
+            document.getElementById('sb-cmp-close').onclick = () => sbTlCompareClose();
+            document.getElementById('sb-cmp-rerun').onclick = () => sbTlCompareRun();
+            await sbTlCompareRun();
+        }
+
+        function sbTlCompareClose() {
+            const el = document.getElementById('sb-compare-overlay');
+            if (el) el.remove();
+            window.sbTlCompareState = null;
+        }
+
+        async function sbTlCompareRun() {
+            const st = window.sbTlCompareState;
+            if (!st || st.running) return;
+            const sceneIdx = st.sceneIdx, shotIdx = st.shotIdx;
+            const s = screenplayData?.scenes?.[sceneIdx];
+            const sh = s?.shots?.[shotIdx];
+            const aSel = document.getElementById('sb-cmp-a');
+            const bSel = document.getElementById('sb-cmp-b');
+            if (!sh || !aSel || !bSel) return;
+            const aVal = aSel.value, bVal = bSel.value;
+            if (!aVal || !bVal) { notify('Pick two entries', 'Choose a model/workflow for both A and B.', '⚠️'); return; }
+            if (aVal === bVal) { notify('Same model', 'A and B are identical — pick two different entries to compare.', '⚠️'); return; }
+            st.running = true;
+            const rerunBtn = document.getElementById('sb-cmp-rerun');
+            if (rerunBtn) rerunBtn.disabled = true;
+            const sameSeed = document.getElementById('sb-cmp-sameseed')?.checked !== false;
+            const va = document.getElementById('sb-cmp-va')?.value || '';
+            const vb = document.getElementById('sb-cmp-vb')?.value || '';
+            st.results = {}; st.vid = {};
+
+            const esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const pane = which => document.getElementById('sb-cmp-pane-' + which);
+            const renderOne = async (which, val) => {
+                const p = pane(which);
+                const prep = sbTlShotImagePrep(sceneIdx, shotIdx);
+                const seed = sameSeed ? prep.seedOverride : (Math.floor(Math.random() * 999999999) + 1);
+                const head = extra => '<div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong style="color:var(--text-primary);">' + which.toUpperCase() + '</strong> · ' + esc(val) + ' · seed ' + seed + (extra || '') + '</div>';
+                p.innerHTML = head() + '<div style="padding:26px;text-align:center;color:var(--text-secondary);font-size:0.75rem;">⏳ Rendering…</div>';
+                const t0 = Date.now();
+                let imgData = null, err = null;
+                try {
+                    if (st.imgKind === 'wangp') {
+                        imgData = await wangpWaitImage(prep.enrichedPrompt, seed, prep.stepsOverride, prep.imgResolution, prep.inputImages, val);
+                    } else {
+                        const res = await fetch('/api/orchestrator/generate-consistent-shot', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                prompt: prep.enrichedPrompt,
+                                seed: seed,
+                                steps: prep.stepsOverride,
+                                cfg: prep.cfgOverride,
+                                project_path: currentProject?.path || '',
+                                input_images: prep.inputImages,
+                                character_image: prep.prevFramePath,
+                                aspect_ratio: prep.aspectRatio,
+                                resolution: prep.imgResolution,
+                                workflow_name: val,
+                                scene_context: {
+                                    scene_synopsis: s.synopsis || '',
+                                    emotional_tone: s.emotional_tone || '',
+                                    location: s.location_id || '',
+                                    characters_present: s.characters_present || []
+                                }
+                            })
+                        });
+                        imgData = await res.json();
+                    }
+                } catch (e) { err = String((e && e.message) || e); }
+                const secs = ((Date.now() - t0) / 1000).toFixed(1);
+                if (!imgData || !imgData.success) {
+                    p.innerHTML = head(' · ' + secs + 's') + '<div style="padding:18px;text-align:center;color:var(--accent-danger,#ef4444);font-size:0.75rem;">❌ ' + esc((imgData && imgData.error) || err || 'generation failed') + '</div>';
+                    return null;
+                }
+                const fname = imgData.filename || '';
+                const sub = imgData.subfolder || '';
+                const url = '/api/comfyui/view?filename=' + encodeURIComponent(fname) + (sub ? '&subfolder=' + encodeURIComponent(sub) : '');
+                p.innerHTML = head(' · ' + secs + 's') +
+                    '<img src="' + url + '" style="width:100%;border-radius:6px;cursor:pointer;" title="Click to pick this one as the keeper">' +
+                    '<div style="font-size:0.62rem;color:var(--text-secondary);margin-top:3px;text-align:center;">click image to pick</div>';
+                p.querySelector('img').onclick = () => sbTlComparePick(which);
+                return { val, fname, subfolder: sub, secs, seedUsed: seed };
+            };
+
+            // Sequential: the WanGP bridge serves one session and rejects parallel jobs
+            st.results.a = await renderOne('a', aVal);
+            st.results.b = await renderOne('b', bVal);
+
+            // Optional video compare wave (from the shot's current image)
+            if ((va || vb) && sh.storyboard_image) {
+                const vidOne = async (which, val) => {
+                    const p = pane(which);
+                    if (!val) return null;
+                    const t0 = Date.now();
+                    p.querySelectorAll('[data-cmp-vid], [data-cmp-vidmsg]').forEach(n => n.remove());
+                    const msg = document.createElement('div');
+                    msg.setAttribute('data-cmp-vidmsg', '1');
+                    msg.style.cssText = 'font-size:0.65rem;color:var(--text-secondary);margin-top:5px;';
+                    msg.textContent = '⏳ video ' + which.toUpperCase() + ' rendering…';
+                    p.appendChild(msg);
+                    const inputImagePath = (currentProject?.path || '').replace(/[\\/]+$/, '') + '/scenes/' + sh.storyboard_image;
+                    let data = null;
+                    try {
+                        if (st.vidKind === 'wangp') {
+                            data = await wangpWaitVideo({ prompt: sh.video_prompt || sh.action || '', seed: Math.floor(Math.random() * 999999999) + 1, input_image: inputImagePath, project_path: currentProject?.path || '', model_type: val });
+                        } else {
+                            const res = await fetch('/api/comfyui/generate/i2v', {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ prompt: sh.video_prompt || sh.action || '', seed: Math.floor(Math.random() * 999999999) + 1, project_path: currentProject?.path || '', input_image: inputImagePath, workflow_name: val })
+                            });
+                            data = await res.json();
+                        }
+                    } catch (e) { data = { success: false, error: String((e && e.message) || e) }; }
+                    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+                    msg.remove();
+                    if (!data || !data.success) {
+                        const e2 = document.createElement('div');
+                        e2.setAttribute('data-cmp-vidmsg', '1');
+                        e2.style.cssText = 'font-size:0.65rem;color:var(--accent-danger,#ef4444);margin-top:5px;';
+                        e2.textContent = '❌ video failed: ' + ((data && data.error) || 'unknown').substring(0, 80);
+                        p.appendChild(e2);
+                        return null;
+                    }
+                    const vUrl = '/api/comfyui/view?filename=' + encodeURIComponent(data.filename || '') + (data.subfolder ? '&subfolder=' + encodeURIComponent(data.subfolder) : '');
+                    const v = document.createElement('video');
+                    v.setAttribute('data-cmp-vid', '1');
+                    v.src = vUrl; v.controls = true; v.muted = true; v.loop = true;
+                    v.style.cssText = 'width:100%;border-radius:6px;margin-top:5px;';
+                    p.appendChild(v);
+                    const cap = document.createElement('div');
+                    cap.setAttribute('data-cmp-vidmsg', '1');
+                    cap.style.cssText = 'font-size:0.62rem;color:var(--text-secondary);margin-top:2px;text-align:center;';
+                    cap.textContent = '🎬 ' + val + ' · ' + secs + 's';
+                    p.appendChild(cap);
+                    return { val, fname: data.filename, subfolder: data.subfolder || '', secs };
+                };
+                st.vid.a = await vidOne('a', va);
+                st.vid.b = await vidOne('b', vb);
+            }
+            st.running = false;
+            if (rerunBtn) rerunBtn.disabled = false;
+        }
+
+        async function sbTlComparePick(which) {
+            const st = window.sbTlCompareState;
+            const res = st && st.results && st.results[which];
+            if (!st || !res || !res.fname) return;
+            const sh = screenplayData?.scenes?.[st.sceneIdx]?.shots?.[st.shotIdx];
+            if (!sh) return;
+            // Save the winner into the project exactly like a normal generated frame
+            try {
+                const saveRes = await fetch('/api/projects/save-image', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_name: currentProject?.name || '',
+                        project_path: currentProject?.path || '',
+                        stage: 'scenes',
+                        filename: res.fname,
+                        subfolder: res.subfolder || '',
+                        card_name: 'scene_' + (st.sceneIdx + 1) + '_shot_' + (st.shotIdx + 1)
+                    })
+                });
+                const saveData = await saveRes.json();
+                if (saveData.success) sh._temp_storyboard_image = 'scenes/' + saveData.path.split(/[\\/]/).pop();
+                else sh._temp_storyboard_image = res.fname;
+            } catch (e) {
+                sh._temp_storyboard_image = res.fname;
+            }
+            sh.storyboard_status = 'generated';
+            sh.storyboard_history = sh.storyboard_history || [];
+            if (!sh.storyboard_history.includes(res.fname)) sh.storyboard_history.push(res.fname);
+            sh._gen_provider = st.imgKind === 'wangp' ? 'wangp' : 'comfyui';
+            sh._gen_model = res.val;
+            sh._genSeed = res.seedUsed;
+            // Pin the winner as this shot's override so regens keep the chosen look
+            sh._ov_img = res.val;
+            sh._ov_img_kind = st.imgKind;
+            const vids = st.vid && st.vid[which];
+            if (vids && vids.fname) {
+                sh._temp_video_clip = vids.fname;
+                sh._temp_video_subfolder = vids.subfolder || '';
+                sh.video_status = 'generated';
+                sh._ov_vid = vids.val;
+                sh._ov_vid_kind = st.vidKind;
+            }
+            scheduleSaveState();
+            sbTlCompareClose();
+            renderStoryboard();
+            sbTlRenderShotInfo();
+            sbTlSyncShotBadge(st.sceneIdx, st.shotIdx);
+            notify('Keeper saved', (sh.shot_id || '') + ' ← ' + res.val + (vids && vids.fname ? ' + video' : '') + ' · override pinned (⚙ to change)', '⚖', 4000);
+        }
+
+        async function generateShotImage(sceneIdx, shotIdx, abortSignal) {
+            const s = screenplayData.scenes[sceneIdx];
+            const sh = s.shots[shotIdx];
+            const btn = document.getElementById(`shot-t2i-btn-${sceneIdx}-${shotIdx}`);
+
+            // Shared prep (enriched prompt, reference images, resolution, steps/seed)
+            // — byte-identical inputs for the normal render and the A/B compare bench.
+            const prep = sbTlShotImagePrep(sceneIdx, shotIdx);
+
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳...';
+                const abortBtn = document.getElementById(`shot-abort-btn-${sceneIdx}-${shotIdx}`);
+                if (abortBtn) {
+                    btn.style.display = 'none';
+                    abortBtn.style.display = 'inline-block';
+                }
+            }
+            showShotSpinner(sceneIdx, shotIdx, 'Queued for ComfyUI');
+            
+            if (!window._sbBatchTotal) {
+                window._sbBatchTotal = 1;
+                window._sbBatchCompleted = 0;
+            }
+            if (!window._sbBatchStartTime) window._sbBatchStartTime = Date.now();
+            const _shotGenStartMs = Date.now();
+
+            updateStoryboardProgressUI();
+
+
             // Per-shot/per-scene override pinned to a ComfyUI workflow: pass it through
             // to /api/orchestrator/generate-consistent-shot (backend already accepts it).
             const ovWorkflow = (sh._ov_img && sh._ov_img_kind === 'comfyui') ? sh._ov_img : '';
@@ -15135,13 +15422,13 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
             // Per-shot override (_ov_img): a WanGP model_type or a ComfyUI workflow name.
             if (await isWanGP('i2i')) {
                 if (sh._ov_img && sh._ov_img_kind === 'wangp') {
-                    return await generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, enrichedPrompt, seedOverride, stepsOverride, imgResolution, inputImages, sh._ov_img);
+                    return await generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, prep.enrichedPrompt, prep.seedOverride, prep.stepsOverride, prep.imgResolution, prep.inputImages, sh._ov_img);
                 }
                 if (sh._ov_img && sh._ov_img_kind === 'comfyui') {
                     // shot pinned to a ComfyUI workflow while the engine switch says WanGP
                     // falls through to the ComfyUI path below
                 } else {
-                    return await generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, enrichedPrompt, seedOverride, stepsOverride, imgResolution, inputImages);
+                    return await generateShotImageWanGP(sceneIdx, shotIdx, abortSignal, prep.enrichedPrompt, prep.seedOverride, prep.stepsOverride, prep.imgResolution, prep.inputImages);
                 }
             }
 
@@ -15151,15 +15438,15 @@ Video Prompt: [Describe motion and temporal changes here. ${selectedVisualStyle 
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     signal: abortSignal,
                     body: JSON.stringify({
-                        prompt: enrichedPrompt,
-                        seed: seedOverride,
-                        steps: stepsOverride,
-                        cfg: cfgOverride,
+                        prompt: prep.enrichedPrompt,
+                        seed: prep.seedOverride,
+                        steps: prep.stepsOverride,
+                        cfg: prep.cfgOverride,
                         project_path: currentProject?.path || '',
-                        input_images: inputImages,
-                        character_image: prevFramePath,
-                        aspect_ratio: aspectRatio,
-                        resolution: imgResolution,
+                        input_images: prep.inputImages,
+                        character_image: prep.prevFramePath,
+                        aspect_ratio: prep.aspectRatio,
+                        resolution: prep.imgResolution,
                         workflow_name: ovWorkflow,
                         scene_context: {
                             scene_synopsis: s.synopsis || '',
