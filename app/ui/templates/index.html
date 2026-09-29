@@ -3116,6 +3116,7 @@
                     personality: ch.personality || '',
                     visual_identity: ch.visual_identity || '',
                     ai_prompt: ch.ai_prompt || '',
+                    sheet_workflow: ch.sheet_workflow || ''
                 }));
             }
             if (state.locationData && state.locationData.length) {
@@ -8635,6 +8636,7 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     </div>
                     <div style="flex:1;overflow-y:auto;padding:6px 8px;font-size:0.65rem;color:var(--text-primary);line-height:1.5;display:flex;flex-direction:column;gap:3px;">
                         <div style="color:var(--text-secondary);font-size:0.6rem;">${ch.full_name || ch.character_name || ''}</div>
+                        ${_charSheetWorkflowSelectHtml(cid, 'char-sheet-wf-' + cid, 'style="width:100%;margin-top:2px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:1px 4px;font-size:0.55rem;" title="Sheet workflow for this character (default: global setting)"')}
                         <div style="color:var(--text-secondary);font-size:0.55rem;margin-top:2px;">I2I input: approved character image → turnaround sheet</div>
                     </div>
                     <div style="display:flex;gap:2px;padding:3px 5px;flex-wrap:wrap;">
@@ -8754,6 +8756,45 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                 };
                 container.appendChild(card);
             });
+        }
+
+        // === PER-CHARACTER SHEET WORKFLOW ===
+        // Characters can override the global sheet workflow: '' = use the
+        // global setting, otherwise one of the installed workflows (e.g. the
+        // Qwen 2.1 auto pipeline, its REF variant, or the classic sheet).
+        function _charSheetWorkflowOptions() {
+            const names = [];
+            document.querySelectorAll('#wf-sheet option').forEach(o => {
+                if (o.value && o.value !== '-- None --') names.push(o.value);
+            });
+            return names;
+        }
+
+        function getCharSheetWorkflow(charId) {
+            const ch = (_assetStudioData.character_bible || []).find(c => (c.character_id || c.id) === charId);
+            return (ch && ch.sheet_workflow) || '';
+        }
+
+        function setCharSheetWorkflow(charId, wfName) {
+            const ch = (_assetStudioData.character_bible || []).find(c => (c.character_id || c.id) === charId);
+            if (ch) ch.sheet_workflow = wfName || '';
+            // charData is a parallel graph persisted by saveProjectState — keep both in sync
+            const cd = (typeof charData !== 'undefined' ? charData : []).find(c => (c.character_id || c.id) === charId);
+            if (cd) cd.sheet_workflow = wfName || '';
+            if (ch || cd) scheduleSaveState();
+            const sel = document.getElementById('char-sheet-wf-' + charId);
+            if (sel) sel.value = wfName || '';
+            const selModal = document.getElementById('char-sheet-wf-modal-' + charId);
+            if (selModal) selModal.value = wfName || '';
+        }
+
+        function _charSheetWorkflowSelectHtml(charId, domId, styleAttr) {
+            const opts = _charSheetWorkflowOptions();
+            const cur = getCharSheetWorkflow(charId);
+            const options = ['<option value="">⚙ Global setting</option>']
+                .concat(opts.map(n => `<option value="${n}" ${n === cur ? 'selected' : ''}>${n}</option>`))
+                .join('');
+            return `<select id="${domId}" onchange="setCharSheetWorkflow('${charId}', this.value)" ${styleAttr}>${options}</select>`;
         }
 
         async function generateCharacterSheet(charId, abortSignal) {
@@ -8900,8 +8941,8 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                 const model = imgSettings.model || '';
                 const host = imgSettings.host || '';
                 const apiKey = imgSettings.apiKey || '';
-                const wfSetting = settings.workflows?.sheet || '';
-                const workflowName = wfSetting || 'image_flux2_klein_charactersheet_v2';
+                // Per-character override wins over the global sheet workflow
+                const workflowName = getCharSheetWorkflow(charId) || settings.workflows?.sheet || 'image_flux2_klein_charactersheet_v2';
                 // Qwen 2.1 auto character pipeline (generator + sheet in one
                 // pass): view prompts are baked into the workflow, the caller
                 // prompt only seeds the stage-0 identity portrait. Edit passes
@@ -9959,7 +10000,9 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     <b>Visual Identity:</b> ${asset.visual_identity || '—'}<br>
                     <b>Costume Continuity:</b> ${asset.costume_continuity || '—'}<br>
                     <b>Signature Items:</b> ${asset.signature_items || '—'}<br>
-                    <b>Cinematic Presence:</b> ${asset.cinematic_presence || '—'}
+                    <b>Cinematic Presence:</b> ${asset.cinematic_presence || '—'}<br><br>
+                    <b>Sheet Workflow:</b><br>
+                    ${_charSheetWorkflowSelectHtml(id, 'char-sheet-wf-modal-' + id, 'style="width:100%;margin-top:4px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:3px;padding:4px 6px;font-size:0.75rem;" title="Sheet workflow override for this character (default: global setting)"')}
                 `;
             } else {
                 metaDiv.innerHTML = `
