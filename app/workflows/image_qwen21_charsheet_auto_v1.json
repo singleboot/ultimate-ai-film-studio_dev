@@ -1,0 +1,1643 @@
+{
+  "100": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP (Stage 0)"
+    }
+  },
+  "101": {
+    "inputs": {
+      "unet_name": "W4A8\\Krea-2-Turbo-w4a8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model (Stage 0)"
+    }
+  },
+  "102": {
+    "inputs": {
+      "attention": "comfy kitchen attention",
+      "model": [
+        "101",
+        0
+      ]
+    },
+    "class_type": "ModelAttentionBackend",
+    "_meta": {
+      "title": "Model Attention Backend (Stage 0)"
+    }
+  },
+  "103": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE (Stage 0)"
+    }
+  },
+  "104": {
+    "inputs": {
+      "text": "Character portrait of a film character, medium close-up, neutral grey studio background, soft even lighting, photorealistic",
+      "clip": [
+        "100",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Stage 0 Prompt)"
+    }
+  },
+  "105": {
+    "inputs": {
+      "conditioning": [
+        "104",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Conditioning Zero Out (Stage 0)"
+    }
+  },
+  "106": {
+    "inputs": {
+      "width": 1088,
+      "height": 1920,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "STAGE0 LATENT"
+    }
+  },
+  "107": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "102",
+        0
+      ],
+      "positive": [
+        "104",
+        0
+      ],
+      "negative": [
+        "105",
+        0
+      ],
+      "latent_image": [
+        "106",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "STAGE0 KSAMPLER"
+    }
+  },
+  "108": {
+    "inputs": {
+      "samples": [
+        "107",
+        0
+      ],
+      "vae": [
+        "103",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode (Stage 0)"
+    }
+  },
+  "109": {
+    "inputs": {
+      "filename_prefix": "CharsheetStage0/portrait",
+      "images": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Stage-0 Portrait"
+    }
+  },
+  "110": {
+    "inputs": {
+      "clip_name": "qwen3vl_8b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP (Sheet Views)"
+    }
+  },
+  "111": {
+    "inputs": {
+      "unet_name": "qwen_image_2.1_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model (Sheet Views)"
+    }
+  },
+  "112": {
+    "inputs": {
+      "attention": "comfy kitchen attention",
+      "model": [
+        "111",
+        0
+      ]
+    },
+    "class_type": "ModelAttentionBackend",
+    "_meta": {
+      "title": "Model Attention Backend (Sheet Views)"
+    }
+  },
+  "113": {
+    "inputs": {
+      "lora_name": "QI2.1_AnyAngle.safetensors",
+      "strength_model": 1,
+      "model": [
+        "112",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA (AnyAngle)"
+    }
+  },
+  "114": {
+    "inputs": {
+      "shift": 3,
+      "sampling": "flow",
+      "model": [
+        "113",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "115": {
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE (Sheet Views)"
+    }
+  },
+  "116": {
+    "inputs": {
+      "value": 1560
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Sheet Width"
+    }
+  },
+  "117": {
+    "inputs": {
+      "value": 1560
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Sheet Height"
+    }
+  },
+  "118": {
+    "inputs": {
+      "value": 1.5
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "Ref Megapixels"
+    }
+  },
+  "130": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": [
+        "118",
+        0
+      ],
+      "resolution_steps": 1,
+      "image": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Ref Prep (face left)"
+    }
+  },
+  "131": {
+    "inputs": {
+      "resize_type": "scale to multiple",
+      "resize_type.multiple": 16,
+      "scale_method": "lanczos",
+      "input": [
+        "130",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Ref Round 16 (face left)"
+    }
+  },
+  "132": {
+    "inputs": {
+      "string": "Change the camera angle to a 45-degree three-quarter side profile facing left of the subject's face, close-up shot of her face, same character identity and facial structure. Light neutral grey background"
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "VIEW: face 45deg left"
+    }
+  },
+  "133": {
+    "inputs": {
+      "prompt": [
+        "132",
+        0
+      ],
+      "clip": [
+        "110",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ],
+      "image1": [
+        "131",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Encode (face left)"
+    }
+  },
+  "134": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "133",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Ref Method (face left)"
+    }
+  },
+  "135": {
+    "inputs": {
+      "conditioning": [
+        "133",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Negative (face left)"
+    }
+  },
+  "136": {
+    "inputs": {
+      "width": [
+        "116",
+        0
+      ],
+      "height": [
+        "117",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "SHEET PANEL"
+    }
+  },
+  "137": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "114",
+        0
+      ],
+      "positive": [
+        "134",
+        0
+      ],
+      "negative": [
+        "135",
+        0
+      ],
+      "latent_image": [
+        "136",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sample (face left)"
+    }
+  },
+  "138": {
+    "inputs": {
+      "samples": [
+        "137",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode (face left)"
+    }
+  },
+  "140": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": [
+        "118",
+        0
+      ],
+      "resolution_steps": 1,
+      "image": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Ref Prep (face right)"
+    }
+  },
+  "141": {
+    "inputs": {
+      "resize_type": "scale to multiple",
+      "resize_type.multiple": 16,
+      "scale_method": "lanczos",
+      "input": [
+        "140",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Ref Round 16 (face right)"
+    }
+  },
+  "142": {
+    "inputs": {
+      "string": "Change the camera angle to a 45-degree three-quarter side profile facing right of the subject's face, close-up shot of her face, same character identity and facial structure. Light neutral grey background"
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "VIEW: face 45deg right"
+    }
+  },
+  "143": {
+    "inputs": {
+      "prompt": [
+        "142",
+        0
+      ],
+      "clip": [
+        "110",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ],
+      "image1": [
+        "141",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Encode (face right)"
+    }
+  },
+  "144": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "143",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Ref Method (face right)"
+    }
+  },
+  "145": {
+    "inputs": {
+      "conditioning": [
+        "143",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Negative (face right)"
+    }
+  },
+  "146": {
+    "inputs": {
+      "width": [
+        "116",
+        0
+      ],
+      "height": [
+        "117",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "HALFWIDTH PANEL"
+    }
+  },
+  "147": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "114",
+        0
+      ],
+      "positive": [
+        "144",
+        0
+      ],
+      "negative": [
+        "145",
+        0
+      ],
+      "latent_image": [
+        "146",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sample (face right)"
+    }
+  },
+  "148": {
+    "inputs": {
+      "samples": [
+        "147",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode (face right)"
+    }
+  },
+  "150": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": [
+        "118",
+        0
+      ],
+      "resolution_steps": 1,
+      "image": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Ref Prep (full front)"
+    }
+  },
+  "151": {
+    "inputs": {
+      "resize_type": "scale to multiple",
+      "resize_type.multiple": 16,
+      "scale_method": "lanczos",
+      "input": [
+        "150",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Ref Round 16 (full front)"
+    }
+  },
+  "152": {
+    "inputs": {
+      "string": "Create a full-body front portrait of the subject, camera facing directly forward, show the entire body from head to feet with visible floor below both feet, standing naturally in a relaxed pose, same character and identity and facial structure. Light neutral grey background."
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "VIEW: full body front"
+    }
+  },
+  "153": {
+    "inputs": {
+      "prompt": [
+        "152",
+        0
+      ],
+      "clip": [
+        "110",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ],
+      "image1": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Encode (full front)"
+    }
+  },
+  "154": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "153",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Ref Method (full front)"
+    }
+  },
+  "155": {
+    "inputs": {
+      "conditioning": [
+        "153",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Negative (full front)"
+    }
+  },
+  "156": {
+    "inputs": {
+      "width": [
+        "116",
+        0
+      ],
+      "height": [
+        "117",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "SHEET PANEL"
+    }
+  },
+  "157": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "114",
+        0
+      ],
+      "positive": [
+        "154",
+        0
+      ],
+      "negative": [
+        "155",
+        0
+      ],
+      "latent_image": [
+        "156",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sample (full front)"
+    }
+  },
+  "158": {
+    "inputs": {
+      "samples": [
+        "157",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode (full front)"
+    }
+  },
+  "160": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": [
+        "118",
+        0
+      ],
+      "resolution_steps": 1,
+      "image": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Ref Prep (hand accessory)"
+    }
+  },
+  "161": {
+    "inputs": {
+      "resize_type": "scale to multiple",
+      "resize_type.multiple": 16,
+      "scale_method": "lanczos",
+      "input": [
+        "160",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Ref Round 16 (hand accessory)"
+    }
+  },
+  "162": {
+    "inputs": {
+      "string": "close up product photo of the hand accessory only. Light neutral grey background."
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "VIEW: hand accessory"
+    }
+  },
+  "163": {
+    "inputs": {
+      "prompt": [
+        "162",
+        0
+      ],
+      "clip": [
+        "110",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ],
+      "image1": [
+        "161",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Encode (hand accessory)"
+    }
+  },
+  "164": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "163",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Ref Method (hand accessory)"
+    }
+  },
+  "165": {
+    "inputs": {
+      "conditioning": [
+        "163",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Negative (hand accessory)"
+    }
+  },
+  "166": {
+    "inputs": {
+      "width": [
+        "116",
+        0
+      ],
+      "height": [
+        "117",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "SHEET PANEL"
+    }
+  },
+  "167": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "114",
+        0
+      ],
+      "positive": [
+        "164",
+        0
+      ],
+      "negative": [
+        "165",
+        0
+      ],
+      "latent_image": [
+        "166",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sample (hand accessory)"
+    }
+  },
+  "168": {
+    "inputs": {
+      "samples": [
+        "167",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode (hand accessory)"
+    }
+  },
+  "170": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": [
+        "118",
+        0
+      ],
+      "resolution_steps": 1,
+      "image": [
+        "158",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Ref Prep (shoe, from full front)"
+    }
+  },
+  "171": {
+    "inputs": {
+      "resize_type": "scale to multiple",
+      "resize_type.multiple": 16,
+      "scale_method": "lanczos",
+      "input": [
+        "170",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Ref Round 16 (shoe)"
+    }
+  },
+  "172": {
+    "inputs": {
+      "string": "close up of her shoe isolated. Light neutral grey background."
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "VIEW: shoe close-up"
+    }
+  },
+  "173": {
+    "inputs": {
+      "prompt": [
+        "172",
+        0
+      ],
+      "clip": [
+        "110",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ],
+      "image1": [
+        "171",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Encode (shoe)"
+    }
+  },
+  "174": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "173",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Ref Method (shoe)"
+    }
+  },
+  "175": {
+    "inputs": {
+      "conditioning": [
+        "173",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Negative (shoe)"
+    }
+  },
+  "176": {
+    "inputs": {
+      "width": [
+        "116",
+        0
+      ],
+      "height": [
+        "117",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "SHEET PANEL"
+    }
+  },
+  "177": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "114",
+        0
+      ],
+      "positive": [
+        "174",
+        0
+      ],
+      "negative": [
+        "175",
+        0
+      ],
+      "latent_image": [
+        "176",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sample (shoe)"
+    }
+  },
+  "178": {
+    "inputs": {
+      "samples": [
+        "177",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode (shoe)"
+    }
+  },
+  "180": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": [
+        "118",
+        0
+      ],
+      "resolution_steps": 1,
+      "image": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Ref Prep (full back)"
+    }
+  },
+  "181": {
+    "inputs": {
+      "resize_type": "scale to multiple",
+      "resize_type.multiple": 16,
+      "scale_method": "lanczos",
+      "input": [
+        "180",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Ref Round 16 (full back)"
+    }
+  },
+  "182": {
+    "inputs": {
+      "string": "Create a full-body front portrait of the subject back , camera facing directly backward, show the entire body from head to feet with visible floor below both feet, standing naturally in a relaxed pose, same character and identity and facial structure. Light neutral grey background."
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "VIEW: full body back"
+    }
+  },
+  "183": {
+    "inputs": {
+      "prompt": [
+        "182",
+        0
+      ],
+      "clip": [
+        "110",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ],
+      "image1": [
+        "181",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Encode (full back)"
+    }
+  },
+  "184": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "183",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Ref Method (full back)"
+    }
+  },
+  "185": {
+    "inputs": {
+      "conditioning": [
+        "183",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Negative (full back)"
+    }
+  },
+  "186": {
+    "inputs": {
+      "width": [
+        "116",
+        0
+      ],
+      "height": [
+        "117",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "HALFWIDTH PANEL"
+    }
+  },
+  "187": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "114",
+        0
+      ],
+      "positive": [
+        "184",
+        0
+      ],
+      "negative": [
+        "185",
+        0
+      ],
+      "latent_image": [
+        "186",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sample (full back)"
+    }
+  },
+  "188": {
+    "inputs": {
+      "samples": [
+        "187",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode (full back)"
+    }
+  },
+  "190": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": [
+        "118",
+        0
+      ],
+      "resolution_steps": 1,
+      "image": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Ref Prep (hairline)"
+    }
+  },
+  "191": {
+    "inputs": {
+      "resize_type": "scale to multiple",
+      "resize_type.multiple": 16,
+      "scale_method": "lanczos",
+      "input": [
+        "190",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Ref Round 16 (hairline)"
+    }
+  },
+  "192": {
+    "inputs": {
+      "string": "Create a tight close-up crop of the woman’s upper head area, starting precisely from the eyebrow line upward. Show only the forehead, hairline, and top portion of the head, with the lower face completely excluded from the frame. Preserve her exact hair texture, hairstyle, hairline, skin tone, and natural proportions. Straight-on view, centered composition, sharp high-detail facial and hair texture, realistic studio photography. Place the subject against a clean, seamless light neutral grey background with soft, even lighting and minimal shadows."
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "VIEW: hairline close-up"
+    }
+  },
+  "193": {
+    "inputs": {
+      "prompt": [
+        "192",
+        0
+      ],
+      "clip": [
+        "110",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ],
+      "image1": [
+        "191",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Encode (hairline)"
+    }
+  },
+  "194": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "193",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Ref Method (hairline)"
+    }
+  },
+  "195": {
+    "inputs": {
+      "conditioning": [
+        "193",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Negative (hairline)"
+    }
+  },
+  "196": {
+    "inputs": {
+      "width": [
+        "116",
+        0
+      ],
+      "height": [
+        "117",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "SHEET PANEL"
+    }
+  },
+  "197": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "114",
+        0
+      ],
+      "positive": [
+        "194",
+        0
+      ],
+      "negative": [
+        "195",
+        0
+      ],
+      "latent_image": [
+        "196",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sample (hairline)"
+    }
+  },
+  "198": {
+    "inputs": {
+      "samples": [
+        "197",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode (hairline)"
+    }
+  },
+  "200": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": [
+        "118",
+        0
+      ],
+      "resolution_steps": 1,
+      "image": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "Ref Prep (back eye-level)"
+    }
+  },
+  "201": {
+    "inputs": {
+      "resize_type": "scale to multiple",
+      "resize_type.multiple": 16,
+      "scale_method": "lanczos",
+      "input": [
+        "200",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Ref Round 16 (back eye-level)"
+    }
+  },
+  "202": {
+    "inputs": {
+      "string": "<sks> back view  eye-level shot medium shot. Light neutral grey background."
+    },
+    "class_type": "String Literal",
+    "_meta": {
+      "title": "VIEW: back eye-level medium"
+    }
+  },
+  "203": {
+    "inputs": {
+      "prompt": [
+        "202",
+        0
+      ],
+      "clip": [
+        "110",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ],
+      "image1": [
+        "201",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "Encode (back eye-level)"
+    }
+  },
+  "204": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "203",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Ref Method (back eye-level)"
+    }
+  },
+  "205": {
+    "inputs": {
+      "conditioning": [
+        "203",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Negative (back eye-level)"
+    }
+  },
+  "206": {
+    "inputs": {
+      "width": [
+        "116",
+        0
+      ],
+      "height": [
+        "117",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "SHEET PANEL"
+    }
+  },
+  "207": {
+    "inputs": {
+      "seed": 12345,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "114",
+        0
+      ],
+      "positive": [
+        "204",
+        0
+      ],
+      "negative": [
+        "205",
+        0
+      ],
+      "latent_image": [
+        "206",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sample (back eye-level)"
+    }
+  },
+  "208": {
+    "inputs": {
+      "samples": [
+        "207",
+        0
+      ],
+      "vae": [
+        "115",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode (back eye-level)"
+    }
+  },
+  "210": {
+    "inputs": {
+      "direction": "down",
+      "match_image_size": true,
+      "spacing_width": 0,
+      "spacing_color": "white",
+      "image1": [
+        "148",
+        0
+      ],
+      "image2": [
+        "138",
+        0
+      ]
+    },
+    "class_type": "ImageStitch",
+    "_meta": {
+      "title": "Stitch faces column"
+    }
+  },
+  "211": {
+    "inputs": {
+      "direction": "right",
+      "match_image_size": true,
+      "spacing_width": 0,
+      "spacing_color": "white",
+      "image1": [
+        "158",
+        0
+      ],
+      "image2": [
+        "188",
+        0
+      ]
+    },
+    "class_type": "ImageStitch",
+    "_meta": {
+      "title": "Stitch front+back row"
+    }
+  },
+  "212": {
+    "inputs": {
+      "direction": "right",
+      "match_image_size": true,
+      "spacing_width": 0,
+      "spacing_color": "white",
+      "image1": [
+        "211",
+        0
+      ],
+      "image2": [
+        "210",
+        0
+      ]
+    },
+    "class_type": "ImageStitch",
+    "_meta": {
+      "title": "Stitch row+faces"
+    }
+  },
+  "213": {
+    "inputs": {
+      "direction": "left",
+      "match_image_size": true,
+      "spacing_width": 0,
+      "spacing_color": "white",
+      "image1": [
+        "212",
+        0
+      ],
+      "image2": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "ImageStitch",
+    "_meta": {
+      "title": "Stitch + stage-0 base"
+    }
+  },
+  "214": {
+    "inputs": {
+      "direction": "right",
+      "match_image_size": true,
+      "spacing_width": 0,
+      "spacing_color": "white",
+      "image1": [
+        "168",
+        0
+      ],
+      "image2": [
+        "178",
+        0
+      ]
+    },
+    "class_type": "ImageStitch",
+    "_meta": {
+      "title": "Stitch hand+shoe"
+    }
+  },
+  "215": {
+    "inputs": {
+      "direction": "right",
+      "match_image_size": true,
+      "spacing_width": 0,
+      "spacing_color": "white",
+      "image1": [
+        "198",
+        0
+      ],
+      "image2": [
+        "214",
+        0
+      ]
+    },
+    "class_type": "ImageStitch",
+    "_meta": {
+      "title": "Stitch hairline+details"
+    }
+  },
+  "216": {
+    "inputs": {
+      "direction": "right",
+      "match_image_size": true,
+      "spacing_width": 0,
+      "spacing_color": "white",
+      "image1": [
+        "208",
+        0
+      ],
+      "image2": [
+        "215",
+        0
+      ]
+    },
+    "class_type": "ImageStitch",
+    "_meta": {
+      "title": "Stitch details row"
+    }
+  },
+  "217": {
+    "inputs": {
+      "direction": "down",
+      "match_image_size": true,
+      "spacing_width": 0,
+      "spacing_color": "white",
+      "image1": [
+        "213",
+        0
+      ],
+      "image2": [
+        "216",
+        0
+      ]
+    },
+    "class_type": "ImageStitch",
+    "_meta": {
+      "title": "Stitch final sheet"
+    }
+  },
+  "219": {
+    "inputs": {
+      "filename_prefix": "CharacterSheet/qwen",
+      "images": [
+        "217",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Character Sheet"
+    }
+  }
+}

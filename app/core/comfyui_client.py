@@ -654,7 +654,12 @@ class ComfyUIClient:
             # Pad style-only detail so short prompts clear the threshold.
             # The pad reuses the project's Style DNA so every padded prompt steers
             # toward the same look instead of the built-in default.
-            if _is_krea2_workflow(workflow) and len(prompt.strip()) < KREA2_T2I_MIN_PROMPT_CHARS:
+            # Character-sheet workflows run their own multi-stage pipeline with
+            # baked view prompts; the generic short-prompt pad would skew the
+            # stage-0 identity portrait, so they are excluded.
+            if (_is_krea2_workflow(workflow)
+                    and "charsheet" not in str(workflow_name).lower()
+                    and len(prompt.strip()) < KREA2_T2I_MIN_PROMPT_CHARS):
                 style_dna = _project_style_dna()
                 pad = f" {style_dna}" if style_dna else KREA2_T2I_STYLE_SUFFIX
                 padded = prompt.rstrip() + pad
@@ -971,6 +976,39 @@ class ComfyUIClient:
                                 debug_log.append(f"ResolutionSelector {node_id} -> {ar} @ {mp}MP (from {w}x{h})")
                 except (ValueError, IndexError):
                     debug_log.append(f"Failed to parse resolution: {resolution}")
+
+            # Phase 4b: character-sheet auto pipeline geometry fixup.
+            # Stage 0 must stay 9:16 portrait (the identity seed for all edit
+            # views) and the sheet panels must keep the workflow's own custom
+            # width/height, so generic EmptyLatentImage overrides are reverted
+            # here; the caller's steps/cfg apply only to the sheet edit passes.
+            try:
+                _cs_is_auto = any(
+                    isinstance(nd, dict) and nd.get("class_type") == "String Literal"
+                    for nd in workflow.values()
+                )
+                if _cs_is_auto:
+                    stage0 = workflow.get("106")
+                    if isinstance(stage0, dict) and stage0.get("class_type") == "EmptyLatentImage":
+                        stage0["inputs"]["width"] = 1088
+                        stage0["inputs"]["height"] = 1920
+                        debug_log.append("Charsheet: stage-0 latent pinned to 1088x1920 (9:16)")
+                    for _nid in ("136", "146", "156", "166", "176", "186", "196", "206"):
+                        _nd = workflow.get(_nid)
+                        if isinstance(_nd, dict) and _nd.get("class_type") == "EmptyLatentImage":
+                            _nd["inputs"]["width"] = ["116", 0]
+                            _nd["inputs"]["height"] = ["117", 0]
+                    if steps is not None:
+                        s0 = workflow.get("107")
+                        if isinstance(s0, dict) and s0.get("class_type") == "KSampler":
+                            s0["inputs"]["steps"] = 8
+                            debug_log.append("Charsheet: stage-0 steps kept at 8 (turbo)")
+                    if cfg is not None:
+                        s0 = workflow.get("107")
+                        if isinstance(s0, dict) and s0.get("class_type") == "KSampler":
+                            s0["inputs"]["cfg"] = 1
+            except Exception as _cs_err:
+                debug_log.append(f"Charsheet fixup error: {_cs_err}")
 
             # Phase 5: LoRA substitution
             try:

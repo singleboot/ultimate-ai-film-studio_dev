@@ -8900,7 +8900,18 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                 const model = imgSettings.model || '';
                 const host = imgSettings.host || '';
                 const apiKey = imgSettings.apiKey || '';
-                const workflowName = settings.workflows?.sheet || 'image_flux2_klein_charactersheet_v2';
+                const wfSetting = settings.workflows?.sheet || '';
+                const workflowName = wfSetting || 'image_flux2_klein_charactersheet_v2';
+                // Qwen 2.1 auto character pipeline (generator + sheet in one
+                // pass): view prompts are baked into the workflow, the caller
+                // prompt only seeds the stage-0 identity portrait. Edit passes
+                // run 20 steps at cfg=1. The _ref_ variant works from an approved
+                // reference image instead of generating its own portrait.
+                const isQwen21Auto = (workflowName === 'image_qwen21_charsheet_auto_v1'
+                    || workflowName === 'image_qwen21_charsheet_auto_ref_v1');
+                const isQwen21AutoT2I = (workflowName === 'image_qwen21_charsheet_auto_v1');
+                const effSteps = isQwen21Auto ? 20 : stepsVal;
+                const effCfg = isQwen21Auto ? 1 : cfgVal;
 
                 notify('Generating', `Sending to ${provider}...`, '🎨');
 
@@ -8911,12 +8922,43 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     signal: abortSignal,
                     body: JSON.stringify({
                         provider, model, prompt: finalPrompt, host, workflow_name: workflowName, api_key: apiKey,
-                        seed: seed, steps: stepsVal, cfg: cfgVal, resolution: csResolution,
+                        seed: seed, steps: effSteps, cfg: effCfg, resolution: csResolution,
                         project_path: currentProject?.path || '',
-                        input_images: [approvedImg]
+                        input_images: approvedImg ? [approvedImg] : []
                     })
                 });
                 const data = await res.json();
+                // Auto variant: also save the stage-0 identity portrait so the
+                // character's portrait and sheet come from the same generation.
+                if (isQwen21AutoT2I && data.success && (data.filename || data.image_url)) {
+                    setSheetProgress(92, 'Saving character portrait...');
+                    try {
+                        const szSave = await fetch('/api/projects/save-image', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            signal: abortSignal,
+                            body: JSON.stringify({
+                                project_name: currentProject?.name || '',
+                                project_path: currentProject?.path || '',
+                                stage: 'characters',
+                                filename: data.filename || data.image_url,
+                                subfolder: data.subfolder || '',
+                                card_name: charId + '_autoportrait_' + seed
+                            })
+                        });
+                        const szData = await szSave.json();
+                        if (szData.success && szData.path) {
+                            const sheets = _assetStudioData.character_sheets || {};
+                            const entry = sheets[charId] || {};
+                            if (!entry.portrait_image) {
+                                await fetch('/api/orchestrator/save-character-sheet', {
+                                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                                    signal: abortSignal,
+                                    body: JSON.stringify({ character_id: charId, portrait_image: szData.path })
+                                });
+                            }
+                        }
+                    } catch (szErr) { console.warn('Stage-0 portrait save failed:', szErr); }
+                }
                 pollingActive = false;
                 setAssetCardSpinner(charId, 'char_sheet', false);
                 const isBatch = window._sheetBatchActive;

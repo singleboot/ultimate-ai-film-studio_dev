@@ -1093,12 +1093,17 @@ def save_character_sheet(data: dict):
         return {"success": False, "error": "Orchestrator not available"}
     character_id = data.get("character_id", "")
     sheet_image = data.get("sheet_image", "")
+    portrait_image = data.get("portrait_image", "")
     approved = data.get("approved", False)
     if not character_id:
         return {"success": False, "error": "character_id required"}
     pg = orchestrator.memory.project_graph
     sheets = pg.setdefault("character_sheets", {})
     entry = sheets.get(character_id, {"character_id": character_id, "generation_history": []})
+    if portrait_image:
+        # Stage-0 identity portrait from the auto character pipeline (not a
+        # turnaround sheet; stored separately from sheet_image).
+        entry["portrait_image"] = portrait_image
     if sheet_image:
         entry["sheet_image"] = sheet_image
         history = entry.setdefault("generation_history", [])
