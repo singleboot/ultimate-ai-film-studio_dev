@@ -1,0 +1,48 @@
+{
+  "1": {
+    "inputs": {
+      "model": "MOSS-SoundEffect-v2.0",
+      "device": "auto",
+      "dtype": "auto",
+      "inference_steps": 100,
+      "cfg_scale": 4.0,
+      "sigma_shift": 5.0,
+      "negative_prompt": ""
+    },
+    "class_type": "MossSoundEffectV2EngineNode",
+    "_meta": {
+      "title": "MOSS SoundEffect v2 Engine (prompt node)"
+    }
+  },
+  "2": {
+    "inputs": {
+      "TTS_engine": [
+        "1",
+        0
+      ],
+      "description": "cinematic ambient scene foley, subtle room tone, distant wind, soft footsteps on stone",
+      "duration_seconds": 8.0,
+      "seed": 42,
+      "crossfade_seconds": 1.0,
+      "enable_audio_cache": false
+    },
+    "class_type": "UnifiedSoundEffectsNode",
+    "_meta": {
+      "title": "Sound Effects (seconds node)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "audio": [
+        "2",
+        0
+      ],
+      "filename_prefix": "audio/sfx",
+      "quality": "320k"
+    },
+    "class_type": "SaveAudioMP3",
+    "_meta": {
+      "title": "Save Audio MP3"
+    }
+  }
+}

@@ -13281,6 +13281,75 @@ Project visual language: ${projVL}`;
             }
         }
 
+        // ── Timeline audio engine: plays ♪ clips in sync during playback ──
+        let sbTlAudioEls = {};          // clipId -> HTMLAudioElement (active clips)
+        let sbTlShotAudioMuted = localStorage.getItem('sb_tl_shot_audio') === '0';
+
+        function sbTlClipVolumeAt(c, t) {
+            // Envelope: clip gain x linear fades, evaluated at timeline time t
+            const s = c.start || 0, d = Math.max(0.2, c.duration || 4);
+            if (t < s || t > s + d) return 0;
+            const g = (c.gain === undefined ? 1 : Math.max(0, Math.min(1.5, c.gain)));
+            if (c.mute) return 0;
+            const fi = Math.max(0, c.fadeIn || 0), fo = Math.max(0, c.fadeOut || 0);
+            let v = g;
+            if (fi > 0 && t - s < fi) v *= (t - s) / fi;
+            const off = s + d - t;
+            if (fo > 0 && off < fo) v *= off / fo;
+            return Math.max(0, Math.min(1.5, v));
+        }
+
+        function sbTlAudioTick(t) {
+            // Called every animation frame during playback: start/stop/seek clips
+            const list = (window.screenplayData && screenplayData.audio_clips) || [];
+            const active = {};
+            for (const c of list) {
+                const s = c.start || 0, d = Math.max(0.2, c.duration || 4);
+                if (t < s || t > s + d) continue;
+                active[c.id] = true;
+                let el = sbTlAudioEls[c.id];
+                if (!el) {
+                    const url = sbTlAudioUrl(c);
+                    if (!url) continue;
+                    el = new Audio(url);
+                    el.preload = 'auto';
+                    sbTlAudioEls[c.id] = el;
+                    el.play().catch(() => {});
+                }
+                const off = t - s;
+                if (Math.abs(el.currentTime - off) > 0.25) { try { el.currentTime = off; } catch (e) {} }
+                el.volume = Math.min(1, sbTlClipVolumeAt(c, t));
+                el.muted = !!c.mute;
+            }
+            // Stop clips that fell out of range
+            for (const id of Object.keys(sbTlAudioEls)) {
+                if (!active[id]) {
+                    try { sbTlAudioEls[id].pause(); } catch (e) {}
+                    delete sbTlAudioEls[id];
+                }
+            }
+        }
+
+        function sbTlAudioStopAll() {
+            for (const id of Object.keys(sbTlAudioEls)) {
+                try { sbTlAudioEls[id].pause(); } catch (e) {}
+            }
+            sbTlAudioEls = {};
+        }
+
+        function sbTlToggleShotAudio(ev) {
+            if (ev) ev.stopPropagation();
+            sbTlShotAudioMuted = !sbTlShotAudioMuted;
+            localStorage.setItem('sb_tl_shot_audio', sbTlShotAudioMuted ? '0' : '1');
+            const btn = document.getElementById('sb-tl-shot-audio-btn');
+            if (btn) {
+                btn.textContent = sbTlShotAudioMuted ? '🔇' : '🔊';
+                btn.title = sbTlShotAudioMuted ? 'Shot audio muted — click to hear the videos’ own sound' : 'Shot audio on — click to mute the videos’ own sound (foley/BGM stays audible)';
+                btn.className = 'btn ' + (sbTlShotAudioMuted ? 'btn-secondary' : 'btn-primary');
+            }
+            if (sbTlMonitorVideo) sbTlMonitorVideo.muted = sbTlShotAudioMuted;
+        }
+
         function sbTlAudioFileOf(c) { return c.file || c.url || ''; }
 
         function sbTlAudioCount() { return sbTlAudioList().length; }
@@ -13333,6 +13402,159 @@ Project visual language: ${projVL}`;
             if (i >= 0) { list.splice(i, 1); if (sbTlSelectedAudio === id) sbTlSelectedAudio = null; sbTlSaveAudioClips(); }
             const cont = document.getElementById('storyboard-container');
             if (cont && document.getElementById('sb-timeline-root')) renderStoryboardTimeline(cont);
+        }
+
+        // ── Generated audio: foley for the selected shot + standalone SFX ──
+        function sbTlPlaceClip(file, startSec, durationSec, label) {
+            sbTlAudioList().push({
+                id: 'aud_' + Date.now() + '_' + Math.floor(Math.random() * 1e5),
+                file: file, start: Math.max(0, startSec), duration: Math.max(0.5, durationSec || 4),
+                name: label || file, src: 'project', gain: 1
+            });
+            sbTlSaveAudioClips();
+            const cont = document.getElementById('storyboard-container');
+            if (cont && document.getElementById('sb-timeline-root')) renderStoryboardTimeline(cont);
+        }
+
+        async function sbTlGenerateFoleySelected() {
+            const sel = sbTlSelectedShotObj();
+            if (!sel) { notify('No Shot', 'Click a timeline block first', '❌'); return; }
+            const { sceneIdx, shotIdx, sh } = sel;
+            const videoFile = sh.video_clip || sh._temp_video_clip || '';
+            if (!videoFile) { notify('No Video', 'Render the shot video first — foley needs the picture', '❌'); return; }
+            const shotStart = sbTlSceneOffset(sceneIdx) + sbTlShotOffset(sceneIdx, shotIdx);
+            const shotDur = sbTlShotDuration(sh, sceneIdx + '_' + shotIdx);
+            const btn = document.getElementById('sb-tl-foley-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Foley...'; }
+            notify('Foley', 'Generating scene audio for ' + (sh.shot_id || 'shot') + ' — first run downloads the MOSS model, expect a wait', '🎧');
+            try {
+                const res = await fetch('/api/comfyui/generate/foley', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_path: currentProject?.path || '',
+                        video_file: videoFile,
+                        shot: { audio_notes: sh.audio_notes || sh.foley_notes || '', description: sh.action || sh.description || '' },
+                        seconds: shotDur
+                    })
+                });
+                const data = await res.json();
+                if (data.success && data.file) {
+                    sbTlPlaceClip(data.file, shotStart, data.duration || shotDur, ' Foley · ' + (sh.shot_id || 'shot'));
+                    notify('Foley Ready', 'Placed at ' + sbTlFmtTime(shotStart), '🎧');
+                } else {
+                    notify('Foley Failed', data.error || 'Generation failed', '❌');
+                }
+            } catch (e) {
+                notify('Foley Error', e.message, '❌');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '🎧 Foley'; }
+            }
+        }
+
+        async function sbTlGenerateSfxForShot() {
+            const sel = sbTlSelectedShotObj();
+            if (!sel) { notify('No Shot', 'Click a timeline block first', '❌'); return; }
+            const { sceneIdx, shotIdx, sh } = sel;
+            const preset = String(sh.audio_notes || '').trim();
+            const prompt = prompt('Sound effect description' + (preset ? ' (prefilled from this shot\'s audio notes):' : ':'), preset || '');
+            if (prompt === null) return;
+            if (!prompt.trim()) { notify('No Prompt', 'Describe the sound to generate', '❌'); return; }
+            const shotStart = sbTlSceneOffset(sceneIdx) + sbTlShotOffset(sceneIdx, shotIdx);
+            const shotDur = sbTlShotDuration(sh, sceneIdx + '_' + shotIdx);
+            const seconds = parseFloat(prompt('Duration in seconds:', String(Math.min(30, Math.max(1, Math.round(shotDur))))));
+            const dur = (!isNaN(seconds) && seconds > 0) ? seconds : Math.min(30, Math.max(1, shotDur));
+            const btn = document.getElementById('sb-tl-sfx-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ SFX...'; }
+            try {
+                const res = await fetch('/api/comfyui/generate/sfx', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project_path: currentProject?.path || '', prompt: prompt.trim(), seconds: dur })
+                });
+                const data = await res.json();
+                if (data.success && data.file) {
+                    sbTlPlaceClip(data.file, shotStart, data.duration || dur, '✨ ' + prompt.trim().slice(0, 32));
+                    notify('SFX Ready', 'Placed at ' + sbTlFmtTime(shotStart), '✨');
+                } else {
+                    notify('SFX Failed', data.error || 'Generation failed', '❌');
+                }
+            } catch (e) {
+                notify('SFX Error', e.message, '❌');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '✨ SFX'; }
+            }
+        }
+
+        function sbTlShotOffset(sceneIdx, shotIdx) {
+            const scene = screenplayData?.scenes?.[sceneIdx];
+            if (!scene || !Array.isArray(scene.shots)) return 0;
+            let off = 0;
+            for (let i = 0; i < shotIdx && i < scene.shots.length; i++) off += sbTlShotDuration(scene.shots[i], sceneIdx + '_' + i);
+            return off;
+        }
+
+        function sbTlSceneOffset(sceneIdx) {
+            if (!screenplayData?.scenes) return 0;
+            let off = 0;
+            for (let i = 0; i < sceneIdx && i < screenplayData.scenes.length; i++) off += sbTlSceneDuration(screenplayData.scenes[i], i);
+            return off;
+        }
+
+        async function sbTlBakeMix() {
+            if (!screenplayData?.scenes?.length) { notify('Nothing to Bake', 'No scenes on the timeline', '❌'); return; }
+            const timeline = [];
+            let shotAudioAvailable = false;
+            for (let si = 0; si < screenplayData.scenes.length; si++) {
+                const scene = screenplayData.scenes[si];
+                if (!scene?.shots) continue;
+                for (let hi = 0; hi < scene.shots.length; hi++) {
+                    const sh = scene.shots[hi];
+                    const file = sh.video_clip || sh._temp_video_clip || '';
+                    if (!file) continue;
+                    if (sh.video_clip) shotAudioAvailable = true;
+                    timeline.push({
+                        file: file,
+                        duration: sbTlShotDuration(sh, si + '_' + hi),
+                        temp: !sh.video_clip,
+                        subfolder: sh._temp_video_subfolder || ''
+                    });
+                }
+            }
+            if (!timeline.length) { notify('Nothing to Bake', 'No shot videos on the timeline yet', '❌'); return; }
+            const clips = sbTlAudioList().map(c => ({
+                file: sbTlAudioFileOf(c), start: c.start || 0, duration: c.duration || 4,
+                gain: c.gain === undefined ? 1 : c.gain, fadeIn: c.fadeIn || 0,
+                fadeOut: c.fadeOut || 0, mute: !!c.mute
+            }));
+            const btn = document.getElementById('sb-tl-bake-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Baking...'; }
+            notify('Bake Mix', 'Rendering ' + timeline.length + ' shots + ' + clips.length + ' audio clips…', '📼');
+            try {
+                const res = await fetch(`/api/projects/${encodeURIComponent(currentProject?.name || '')}/bake-audio`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_path: currentProject?.path || '',
+                        timeline: timeline, clips: clips,
+                        range_in: 0, range_out: 0,
+                        shot_audio: shotAudioAvailable,
+                        mix_only: false
+                    })
+                });
+                const data = await res.json();
+                if (data.success && data.url) {
+                    // Project files are served relative to the open project;
+                    // pass ?path= so the export resolves without switching the
+                    // studio's current project.
+                    const pq = currentProject?.path ? (data.url.includes('?') ? '&' : '?') + 'path=' + encodeURIComponent(currentProject.path) : '';
+                    notify('Mix Ready', data.file + ' — opening in a new tab', '📼');
+                    window.open(data.url + pq, '_blank');
+                } else {
+                    notify('Bake Failed', data.error || 'Unknown error', '❌');
+                }
+            } catch (e) {
+                notify('Bake Error', e.message, '❌');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '📼 Bake Mix'; }
+            }
         }
 
         function sbTlToggleAudioPlay(ev) {
@@ -13567,6 +13789,7 @@ Project visual language: ${projVL}`;
             sbTlPlaying = true;
             const btn = document.getElementById('sb-tl-play-btn');
             if (btn) { btn.textContent = '⏸'; btn.className = 'btn btn-primary'; }
+            sbTlAudioStopAll();   // fresh start: no stale overlapping clips
             const monBtn = document.getElementById('sb-tl-mon-play');
             if (monBtn) { monBtn.textContent = '⏸'; monBtn.title = 'Pause (Space when the timeline is focused)'; monBtn.classList.remove('ghosted'); }
             sbTlApplyMonitorChrome();
@@ -13591,8 +13814,9 @@ Project visual language: ${projVL}`;
                     }
                 }
                 sbTlPlayLastTs = ts;
-                if (sbTlPlayheadSec >= total) { sbTlStopRange(); sbTlPlayheadSec = total; sbTlUpdatePlayhead(); sbTlUpdateMonitor(); return; }
+                if (sbTlPlayheadSec >= total) { sbTlStopRange(); sbTlPlayheadSec = total; sbTlUpdatePlayhead(); sbTlUpdateMonitor(); sbTlAudioStopAll(); return; }
                 sbTlUpdatePlayhead();
+                sbTlAudioTick(sbTlPlayheadSec);   // keep ♪ clips in sync with the playhead
                 const tcEl = document.getElementById('sb-tl-monitor-tc');
                 if (tcEl) tcEl.textContent = sbTlFmtTime(sbTlPlayheadSec);
                 const pos2 = sbTlShotMediaAt(sbTlPlayheadSec);
@@ -13620,7 +13844,8 @@ Project visual language: ${projVL}`;
             cancelAnimationFrame(sbTlPlaySyncRaf);
             sbTlPlaySyncRaf = 0;
             sbTlPlayLastTs = 0;
-            if (sbTlMonitorVideo) sbTlMonitorVideo.pause();
+            if (sbTlMonitorVideo) { sbTlMonitorVideo.pause(); sbTlMonitorVideo.muted = sbTlShotAudioMuted; }
+            sbTlAudioStopAll();   // silence ♪ clips on pause/stop
             const btn = document.getElementById('sb-tl-play-btn');
             if (btn) { btn.textContent = '▶'; btn.className = 'btn btn-secondary'; }
             const monBtn = document.getElementById('sb-tl-mon-play');
@@ -14006,7 +14231,9 @@ Project visual language: ${projVL}`;
                     <button class="btn ${rOut !== null ? 'btn-primary' : 'btn-secondary'}" onclick="sbTlSetRangePoint('out')" style="padding:2px 8px;font-size:0.65rem;" title="Set range end at playhead — snaps to the nearest shot edge (O)">Out · O</button>
                     <button class="btn btn-secondary" onclick="sbTlClearRange()" style="padding:2px 8px;font-size:0.65rem;" title="Clear the In/Out range">⨯</button>
                     <button class="btn btn-secondary" onclick="sbTlCloseGaps()" style="padding:2px 8px;font-size:0.65rem;" title="Snap every shot in range (or the whole timeline) to its real media length — clears duration overrides and stale timings">⇥ Close Gaps</button>
+                    <button class="btn ${sbTlShotAudioMuted ? 'btn-secondary' : 'btn-primary'}" id="sb-tl-shot-audio-btn" onclick="sbTlToggleShotAudio(event)" style="padding:2px 8px;font-size:0.65rem;" title="${sbTlShotAudioMuted ? 'Shot audio muted — click to hear the videos’ own sound' : 'Shot audio on — click to mute the videos’ own sound (foley/BGM stays audible)'}">${sbTlShotAudioMuted ? '🔇' : '🔊'}</button>
                     <button class="btn btn-secondary" onclick="sbTlAddAudio()" style="padding:2px 8px;font-size:0.65rem;" title="Add a music or audio clip to the overlay track">♪ Add Audio</button>
+                    <button class="btn btn-secondary" id="sb-tl-bake-btn" onclick="sbTlBakeMix()" style="padding:2px 8px;font-size:0.65rem;" title="Bake the timeline — shot videos + ♪ audio clips — into one preview MP4 with ducking and fades">📼 Bake Mix</button>
                     <span style="color:var(--text-secondary);font-size:0.7rem;">Zoom</span>
                     <input type="range" min="20" max="200" step="5" value="${pps}" oninput="storyboardTimelineZoomLive(this.value)" onchange="storyboardTimelineZoom(this.value)" style="width:110px;">
                 </span>
@@ -14159,6 +14386,8 @@ Project visual language: ${projVL}`;
                             ? '<button class="btn btn-primary" onclick="sbTlGenerateSelectedVideo()" style="padding:2px 10px;font-size:0.65rem;" title="Render this shot to video with the configured i2v workflow">🎥 Generate Video</button>'
                             : '') +
                         '<button class="btn btn-secondary" onclick="sbTlCompareShot(' + sceneIdx + ', ' + shotIdx + ')" style="padding:2px 10px;font-size:0.65rem;" title="Render this shot with two different models/workflows side by side and pick a keeper">⚖ A/B</button>' +
+                        '<button class="btn btn-secondary" id="sb-tl-foley-btn" onclick="sbTlGenerateFoleySelected()" style="padding:2px 10px;font-size:0.65rem;" title="Generate scene-synced foley audio for this shot and place it on the ♪ track">🎧 Foley</button>' +
+                        '<button class="btn btn-secondary" id="sb-tl-sfx-btn" onclick="sbTlGenerateSfxForShot()" style="padding:2px 10px;font-size:0.65rem;" title="Generate a standalone sound effect and place it at this shot\'s start">✨ SFX</button>' +
                         '<button class="btn btn-secondary" onclick="sbTlPlaySelected()" style="padding:2px 10px;font-size:0.65rem;" title="Play this shot in the monitor">▶ Play</button>' +
                         '<button class="btn btn-secondary" onclick="sbTlOpenTheater()" style="padding:2px 10px;font-size:0.65rem;">⛶ Large</button>' +
                     '</span>' +

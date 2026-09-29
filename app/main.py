@@ -2,6 +2,7 @@ import os
 import json
 import re as _re_mod
 import shutil
+import tempfile
 import platform
 import logging
 import subprocess
@@ -3857,6 +3858,551 @@ async def set_comfyui_host(host: str):
     """Set ComfyUI host."""
     comfyui_client.set_host(host)
     return {"success": True, "message": f"ComfyUI host set to {host}"}
+
+# ---------------- Timeline audio: Foley / SFX generation + Bake Mix ----------------
+# Local text-to-sound generation runs on ComfyUI (TTS Audio Suite's MOSS
+# SoundEffects v2 engine — the model auto-downloads on first run). The graph
+# JSONs live in app/workflows (audio_sfx_v1.json, audio_foley_v1.json); prompt
+# /seconds/video injection happens below so the graph can be swapped later
+# (e.g. MMAudio for video-conditioned foley) without touching these endpoints.
+
+_uaudio_busy = False
+
+
+class BakeAudioRequest(BaseModel):
+    project_path: str = ""
+    timeline: List[Dict] = []   # [{file, duration, temp?, subfolder?}] shot videos in order
+    clips: List[Dict] = []      # [{file, start, duration, gain, fadeIn, fadeOut, mute}]
+    range_in: float = 0.0
+    range_out: float = 0.0
+    shot_audio: bool = False
+    mix_only: bool = False
+    width: int = 1280
+    height: int = 720
+    fps: float = 24.0
+
+
+def _audio_job_guard() -> bool:
+    """One audio job at a time — ComfyUI queues would serialize anyway, but the
+    MOSS engine model load + torch.compile makes parallel submits wasteful."""
+    global _uaudio_busy
+    if _uaudio_busy:
+        return False
+    _uaudio_busy = True
+    return True
+
+
+def _run_media(cmd: List[str], timeout: int = 600) -> subprocess.CompletedProcess:
+    """Run an ffmpeg/ffprobe arg list (no shell) so a timeout kills the real
+    process, not just a wrapper shell. Stdin/stdout/stderr are wired to the null
+    device and temp files — never inherited handles or pipes: ffmpeg inheriting
+    the studio's hidden-window handle set deadlocks its filter scheduler
+    nondeterministically on Windows (same command runs clean from a shell)."""
+    if cmd and Path(cmd[0]).name == "ffmpeg" and "-nostdin" not in cmd:
+        cmd = [cmd[0], "-nostdin", *cmd[1:]]
+    out_f = tempfile.NamedTemporaryFile(prefix="uamedia_out_", suffix=".txt", delete=False)
+    err_f = tempfile.NamedTemporaryFile(prefix="uamedia_err_", suffix=".txt", delete=False)
+    out_f.close()
+    err_f.close()
+    try:
+        with open(out_f.name, "wb") as of, open(err_f.name, "wb") as ef:
+            r = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=of, stderr=ef,
+                               timeout=timeout)
+        r.stdout = Path(out_f.name).read_text(encoding="utf-8", errors="replace")
+        r.stderr = Path(err_f.name).read_text(encoding="utf-8", errors="replace")
+        return r
+    finally:
+        for f in (out_f.name, err_f.name):
+            try:
+                Path(f).unlink()
+            except Exception:
+                pass
+
+
+def _probe_media_duration(path: Path):
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+            capture_output=True, text=True, timeout=60)
+        return float(r.stdout.strip())
+    except Exception:
+        return None
+
+
+def _ingest_audio_output(filename: str, subfolder: str, project_path: str, stem: str) -> Dict:
+    """Download a generated audio file from ComfyUI into the project's audio/ dir."""
+    import requests
+    try:
+        params = {"filename": filename, "type": "output"}
+        if subfolder:
+            params["subfolder"] = subfolder
+        resp = requests.get(f"{comfyui_client.host}/view", params=params, timeout=180)
+        if resp.status_code != 200:
+            return {"success": False, "error": f"ComfyUI /view failed: HTTP {resp.status_code}"}
+        if project_path and Path(project_path).exists():
+            audio_dir = Path(project_path) / "audio"
+        else:
+            cur = project_manager.get_current_project_path()
+            if not cur:
+                return {"success": False, "error": "No project open — cannot save audio"}
+            audio_dir = Path(cur) / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        ext = Path(filename).suffix or ".wav"
+        dest = audio_dir / f"{stem}_{time.strftime('%Y%m%d_%H%M%S')}{ext}"
+        counter = 1
+        while dest.exists():
+            dest = audio_dir / f"{stem}_{time.strftime('%Y%m%d_%H%M%S')}_{counter}{ext}"
+            counter += 1
+        dest.write_bytes(resp.content)
+        return {"success": True, "file": dest.name, "path": str(dest),
+                "duration": _probe_media_duration(dest)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _run_audio_workflow(workflow_name: str, prompt: str, video_input: str,
+                        seconds, stem: str, project_path: str) -> Dict:
+    """Load app/workflows/<name>.json, inject prompt/seconds/seed/video, queue it
+    on ComfyUI and wait for the audio output."""
+    import requests
+    base = Path(__file__).parent / "workflows"
+    wf_path = base / workflow_name
+    if not wf_path.exists():
+        wf_path = base / (workflow_name + ".json")
+    if not wf_path.exists():
+        return {"success": False, "error": f"Audio workflow not found: {workflow_name}"}
+    try:
+        workflow = json.loads(wf_path.read_text(encoding="utf-8"))
+
+        # 1) Prompt: String-typed nodes whose title mentions 'prompt' win; any
+        #    other String text input is the fallback. The engine config node's
+        #    empty negative_prompt is skipped (empty value).
+        injected = False
+        fallback = []
+        for nid, nd in workflow.items():
+            if not isinstance(nd, dict) or ":" in str(nid):
+                continue
+            ins = nd.get("inputs", {})
+            for key, val in list(ins.items()):
+                if key in ("string", "text", "description", "prompt") and isinstance(val, str) and val.strip():
+                    if "prompt" in str(nd.get("_meta", {}).get("title", "")).lower():
+                        ins[key] = prompt
+                        injected = True
+                        break
+                    fallback.append((nid, key))
+            if injected:
+                break
+        if not injected and fallback:
+            nid, key = fallback[0]
+            workflow[nid]["inputs"][key] = prompt
+
+        # 2) Seconds (exact output duration; the suite's node exposes it as
+        #    duration_seconds, some graphs as seconds)
+        if seconds:
+            for nid, nd in workflow.items():
+                if not isinstance(nd, dict) or ":" in str(nid):
+                    continue
+                ins = nd.get("inputs", {})
+                for key in ("duration_seconds", "seconds"):
+                    if key in ins and isinstance(ins[key], (int, float)):
+                        ins[key] = float(seconds)
+
+        # 3) Fresh seed on any INT seed input (deterministic graphs otherwise
+        #    return cached audio for repeated prompts)
+        new_seed = int(time.time() * 1000) % (2 ** 31)
+        for nid, nd in workflow.items():
+            if not isinstance(nd, dict) or ":" in str(nid):
+                continue
+            ins = nd.get("inputs", {})
+            if "seed" in ins and isinstance(ins["seed"], int) and not isinstance(ins["seed"], bool):
+                ins["seed"] = new_seed
+
+        # 4) Video/image input: upload into the first loader node
+        if video_input:
+            vpath = Path(video_input)
+            if not vpath.exists():
+                return {"success": False, "error": f"Input video not found: {video_input}"}
+            loader_nid = None
+            for nid, nd in workflow.items():
+                if not isinstance(nd, dict) or ":" in str(nid):
+                    continue
+                if nd.get("class_type") in ("VHS_LoadVideo", "LoadVideo", "LoadImage", "UAIVideoSlot"):
+                    loader_nid = nid
+                    break
+            if not loader_nid:
+                # Text-only audio graph (e.g. MOSS sound effects): video input
+                # is simply not consumed by this engine.
+                logger.info("Audio workflow [%s] has no video loader — ignoring video input", workflow_name)
+            else:
+                ct = workflow[loader_nid].get("class_type")
+                field = "image" if ct == "LoadImage" else "video"
+                endpoint = f"{comfyui_client.host}/upload/image" if ct == "LoadImage" else f"{comfyui_client.host}/upload/video"
+                with open(vpath, "rb") as f:
+                    up = requests.post(endpoint, files={field: (vpath.name, f, "application/octet-stream")}, timeout=180)
+                if up.status_code != 200:
+                    return {"success": False, "error": f"ComfyUI upload failed: HTTP {up.status_code}"}
+                uploaded = (up.json() or {}).get("name") or vpath.name
+                workflow[loader_nid]["inputs"]["video" if ct != "LoadImage" else "image"] = uploaded
+
+        pid = comfyui_client.queue_prompt(workflow)
+        if not pid:
+            qerr = getattr(comfyui_client, "last_queue_error", None)
+            return {"success": False, "error": "Failed to queue audio workflow" + (f": {qerr}" if qerr else "")}
+        comfyui_client.register_job(pid, f"Audio · {stem}")
+        logger.info("Audio workflow queued [%s] id=%s", workflow_name, pid)
+        output = comfyui_client.get_output(pid, timeout=1800)
+        if not output:
+            return {"success": False, "error": "Audio generation timeout"}
+        if isinstance(output, dict) and output.get("_cancelled"):
+            return {"success": False, "error": "Generation cancelled"}
+        for nid, nout in output.items():
+            if not isinstance(nout, dict):
+                continue
+            for key in ("audios", "audio"):
+                arr = nout.get(key)
+                if arr:
+                    item = arr[0]
+                    return {"success": True, "filename": item.get("filename", ""),
+                            "subfolder": item.get("subfolder", ""), "media_type": "audio"}
+            for key in ("images", "videos", "gifs"):
+                arr = nout.get(key)
+                if arr:
+                    item = arr[0]
+                    return {"success": True, "filename": item.get("filename", ""),
+                            "subfolder": item.get("subfolder", "")}
+        if isinstance(output, dict) and output.get("_error"):
+            return {"success": False, "workflow_errored": True, "error": f"ComfyUI error: {output['_error']}"}
+        return {"success": False, "error": "No audio output generated"}
+    except Exception as e:
+        logger.exception("Audio workflow [%s] failed", workflow_name)
+        return {"success": False, "error": f"Audio workflow error: {e!r}"}
+
+
+def _resolve_shot_video(project_path: str, filename: str):
+    """Locate a shot video: project videos/ dir first, extension fallbacks,
+    then the bare path (absolute or cwd-relative)."""
+    cands = []
+    if project_path:
+        base = Path(project_path) / "videos" / filename
+        cands.append(base)
+        for ext in (".mp4", ".webm", ".mkv", ".mov", ".avi"):
+            cands.append(base.with_name(base.name + ext))
+    f = Path(filename)
+    if f.exists() or f.suffix:
+        cands.append(f)
+        for ext in (".mp4", ".webm", ".mkv", ".mov", ".avi"):
+            cands.append(f.with_name(f.name + ext))
+    for c in cands:
+        if c.exists():
+            return c
+    return None
+
+
+@app.post("/api/comfyui/generate/foley")
+def generate_foley_audio(data: dict):
+    """Generate scene-synced foley for a rendered shot video via the ComfyUI
+    audio workflow; the result lands in the project's audio/ dir ready for the
+    timeline ♪ track."""
+    global _uaudio_busy
+    if not _audio_job_guard():
+        return {"success": False, "error": "Another audio job is running — try again shortly"}
+    try:
+        project_path = data.get("project_path", "")
+        video_file = data.get("video_file", "")
+        shot = data.get("shot") or {}
+        style = (data.get("style") or "").strip()
+        if not video_file:
+            return {"success": False, "error": "video_file required (render the shot video first)"}
+        vpath = _resolve_shot_video(project_path, video_file)
+        if not vpath:
+            return {"success": False, "error": f"Shot video not found on disk: {video_file}"}
+        desc_parts = [str(shot.get("audio_notes") or shot.get("foley_notes") or "").strip()]
+        if style:
+            desc_parts.append(style)
+        scene_desc = ", ".join(p for p in desc_parts if p) or "cinematic ambient scene foley"
+        job_id = f"foley_{int(time.time() * 1000)}"
+        _log_gen_event("comfyui", "audio", "start", f"Foley: {scene_desc[:80]}", job_id=job_id)
+        result = _run_audio_workflow("audio_foley_v1.json", scene_desc, str(vpath),
+                                     data.get("seconds"), "foley", project_path)
+        if not result.get("success"):
+            _log_gen_event("comfyui", "audio", "error", result.get("error", "unknown")[:200], job_id=job_id)
+            return result
+        ingest = _ingest_audio_output(result["filename"], result.get("subfolder", ""), project_path, "foley")
+        if not ingest.get("success"):
+            _log_gen_event("comfyui", "audio", "error", ingest.get("error", "ingest failed")[:200], job_id=job_id)
+            return ingest
+        _log_gen_event("comfyui", "audio", "done", f"Foley saved: {ingest['file']}", job_id=job_id)
+        return {"success": True, "file": ingest["file"], "duration": ingest.get("duration")}
+    finally:
+        _uaudio_busy = False
+
+
+@app.post("/api/comfyui/generate/sfx")
+def generate_sfx_audio(data: dict):
+    """Generate a standalone sound effect from a text description; placed on the
+    timeline ♪ track by the caller."""
+    global _uaudio_busy
+    if not _audio_job_guard():
+        return {"success": False, "error": "Another audio job is running — try again shortly"}
+    try:
+        project_path = data.get("project_path", "")
+        prompt = (data.get("prompt") or "").strip()
+        seconds = data.get("seconds")
+        if not prompt:
+            return {"success": False, "error": "prompt required"}
+        job_id = f"sfx_{int(time.time() * 1000)}"
+        _log_gen_event("comfyui", "audio", "start", f"SFX: {prompt[:80]}", job_id=job_id)
+        result = _run_audio_workflow("audio_sfx_v1.json", prompt, None, seconds, "sfx", project_path)
+        if not result.get("success"):
+            _log_gen_event("comfyui", "audio", "error", result.get("error", "unknown")[:200], job_id=job_id)
+            return result
+        ingest = _ingest_audio_output(result["filename"], result.get("subfolder", ""), project_path, "sfx")
+        if not ingest.get("success"):
+            _log_gen_event("comfyui", "audio", "error", ingest.get("error", "ingest failed")[:200], job_id=job_id)
+            return ingest
+        _log_gen_event("comfyui", "audio", "done", f"SFX saved: {ingest['file']}", job_id=job_id)
+        return {"success": True, "file": ingest["file"], "duration": ingest.get("duration")}
+    finally:
+        _uaudio_busy = False
+
+
+@app.post("/api/projects/{name}/bake-audio")
+def bake_timeline_audio(name: str, data: BakeAudioRequest):
+    """Bake the timeline (shot videos + ♪ overlay clips) into one preview MP4:
+    segments are normalized + concatenated, ♪ clips are mixed on top with gains
+    and fades, and the shot bed is sidechain-ducked under the clips."""
+    global _uaudio_busy
+    if not _audio_job_guard():
+        return {"success": False, "error": "Another audio job is running — try again shortly"}
+    try:
+        import tempfile
+        import requests
+        if data.project_path and Path(data.project_path).exists():
+            project_dir = Path(data.project_path)
+        elif name:
+            project_manager.load_project(name)
+            _cur = project_manager.get_current_project_path()
+            project_dir = Path(_cur) if _cur else None
+        else:
+            project_dir = None
+        if not project_dir or not Path(project_dir).exists():
+            return {"success": False, "error": "Project path not found"}
+        exports_dir = Path(project_dir) / "exports"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        _log_gen_event("comfyui", "bake", "start",
+                       f"Bake mix: {len(data.timeline)} shots, {len(data.clips)} clips", job_id="bake")
+
+        with tempfile.TemporaryDirectory(prefix="uastudio_bake_") as tmp:
+            tmpd = Path(tmp)
+
+            # 1) Normalize + trim every shot segment
+            seg_files = []
+            for i, entry in enumerate(data.timeline):
+                fname = str(entry.get("file") or "")
+                if not fname:
+                    continue
+                v = Path(project_dir) / "videos" / fname
+                if not v.exists():
+                    for ext in (".mp4", ".webm", ".mkv", ".mov", ".avi"):
+                        alt = v.with_name(v.name + ext)
+                        if alt.exists():
+                            v = alt
+                            break
+                if not v.exists() and entry.get("temp"):
+                    # Unapproved shot: pull the temp render straight from ComfyUI
+                    params = {"filename": fname, "type": "output"}
+                    if entry.get("subfolder"):
+                        params["subfolder"] = entry["subfolder"]
+                    vr = requests.get(f"{comfyui_client.host}/view", params=params, timeout=180)
+                    if vr.status_code == 200:
+                        v = tmpd / f"src_{i:03d}{Path(fname).suffix or '.mp4'}"
+                        v.write_bytes(vr.content)
+                if not v.exists():
+                    return {"success": False, "error": f"Shot video not found: {fname}"}
+                dur = float(entry.get("duration") or 0)
+                if dur <= 0:
+                    return {"success": False, "error": f"Shot {i + 1} has no duration"}
+                seg = tmpd / f"seg_{i:03d}.mp4"
+                audio_opts = "-c:a aac -b:a 192k" if data.shot_audio else "-an"
+                # -filter_threads 1: this ffmpeg build deadlocks its threaded
+                # filter scheduler on multi-input graphs
+                cmd = (["ffmpeg", "-y", "-nostdin", "-filter_threads", "1",
+                        "-hide_banner", "-loglevel", "error", "-i", str(v),
+                        "-t", f"{dur:.3f}",
+                        "-vf", (f"scale={data.width}:{data.height}:force_original_aspect_ratio=decrease,"
+                                f"pad={data.width}:{data.height}:(ow-iw)/2:(oh-ih)/2,fps={data.fps}"),
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
+                       + (["-c:a", "aac", "-b:a", "192k"] if data.shot_audio else ["-an"])
+                       + [str(seg)])
+                r = _run_media(cmd, timeout=600)
+                if r.returncode != 0 or not seg.exists():
+                    return {"success": False, "error": f"ffmpeg failed on shot {i + 1}: {(r.stderr or '')[-300:]}"}
+                seg_files.append(seg)
+            if not seg_files:
+                return {"success": False, "error": "No timeline entries to bake"}
+
+            # 2) Concat (stream copy first, re-encode fallback)
+            concat_list = tmpd / "concat.txt"
+            concat_list.write_text("".join(f"file '{s.as_posix()}'\n" for s in seg_files), encoding="utf-8")
+            base_video = tmpd / "base.mp4"
+            r = _run_media(
+                ["ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+                 "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(base_video)],
+                timeout=600)
+            if r.returncode != 0 or not base_video.exists():
+                r = _run_media(
+                    ["ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+                     "-f", "concat", "-safe", "0", "-i", str(concat_list),
+                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+                     "-c:a", "aac", "-b:a", "192k", str(base_video)],
+                    timeout=900)
+                if r.returncode != 0:
+                    return {"success": False, "error": f"Concat failed: {(r.stderr or '')[-300:]}"}
+
+            final_video = base_video
+
+            # 3) Mix ♪ clips over the bed
+            if not data.mix_only and data.clips:
+                bed_probe = _run_media(
+                    ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_type",
+                     "-of", "csv=p=0", str(base_video)], timeout=60)
+                bed_audio = _probe_media_duration(base_video) is not None and bed_probe.stdout.strip().startswith("audio")
+                filters = []
+                # Extract the bed's own audio to PCM first so the mix command
+                # never carries an input whose streams the filtergraph doesn't
+                # consume (this ffmpeg build deadlocks in that case).
+                base_offset = 0
+                mix_inputs = []
+                if bed_audio:
+                    bed_wav = tmpd / "bed.wav"
+                    r = _run_media(
+                        ["ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+                         "-i", str(base_video), "-vn", "-map", "0:a", "-c:a", "pcm_s16le", str(bed_wav)],
+                        timeout=600)
+                    if r.returncode == 0 and bed_wav.exists():
+                        mix_inputs.append(bed_wav)
+                        base_offset = 1
+                    else:
+                        bed_audio = False
+                for c in data.clips:
+                    af = Path(project_dir) / "audio" / str(c.get("file") or "")
+                    if af.exists():
+                        mix_inputs.append(af)
+                for pos, c in enumerate([c for c in data.clips
+                                         if (Path(project_dir) / "audio" / str(c.get("file") or "")).exists()]):
+                    idx = base_offset + pos
+                    start = float(c.get("start") or 0) - float(data.range_in or 0)
+                    dur = float(c.get("duration") or 0)
+                    eff_gain = 0.0 if c.get("mute") else max(0.0, min(1.5, float(c.get("gain") if c.get("gain") is not None else 1.0)))
+                    fi, fo = float(c.get("fadeIn") or 0), float(c.get("fadeOut") or 0)
+                    chain = []
+                    if dur > 0:
+                        chain.append(f"atrim=0:{dur:.3f}")
+                    chain.append(f"adelay={max(0, int(start * 1000))}:all=1")
+                    chain.append(f"volume={eff_gain:.3f}")
+                    # Fades as a volume envelope (eval=frame): the afade filter
+                    # deadlocks this ffmpeg build when combined with amix in one
+                    # graph; the expression form is equivalent and safe.
+                    s = max(0.0, start)
+                    d_eff = max(0.0, dur)
+                    if fi > 0 and fo > 0 and d_eff > 0:
+                        expr = (f"if(lt(t,{s + fi:.3f}),max(0,(t-{s:.3f})/{fi:.3f}),"
+                                f"if(gt(t,{s + d_eff - fo:.3f}),max(0,({s + d_eff:.3f}-t)/{fo:.3f}),1))")
+                        chain.append(f"volume='{expr}':eval=frame")
+                    elif fi > 0:
+                        chain.append(f"volume='if(lt(t,{s + fi:.3f}),max(0,(t-{s:.3f})/{fi:.3f}),1)':eval=frame")
+                    elif fo > 0 and d_eff > 0:
+                        chain.append(f"volume='if(gt(t,{s + d_eff - fo:.3f}),max(0,({s + d_eff:.3f}-t)/{fo:.3f}),1)':eval=frame")
+                    filters.append(f"[{idx}:a]" + ",".join(chain) + f"[a{pos}]")
+                n_clips = len(mix_inputs) - base_offset
+                out_label = "[aout]"
+                if filters:
+                    # Mix clips into one combined signal, duck the bed against
+                    # it, then remix. sidechaincompress takes exactly
+                    # [main][sidechain], so the combined signal is fed twice via
+                    # asplit (filter labels cannot be consumed twice). amix or
+                    # the clip chain feeds the limiter directly — an anull in
+                    # between deadlocks this ffmpeg build's filter scheduler.
+                    if n_clips > 1:
+                        filters.append("".join(f"[a{i}]" for i in range(n_clips))
+                                       + f"amix=inputs={n_clips}:normalize=0[acomb]")
+                    comb = "[acomb]" if n_clips > 1 else "[a0]"
+                    if bed_audio:
+                        filters.append(f"{comb}asplit=2[sc1][sc2]")
+                        filters.append("[0:a][sc1]sidechaincompress=threshold=0.005:ratio=6:attack=20:release=400:knee=4[aducked]")
+                        filters.append("[aducked][sc2]amix=inputs=2:normalize=0[amx]")
+                    else:
+                        # Always end through amix (inputs=1 for a single stream):
+                        # graphs that skip amix have hit nondeterministic EOF
+                        # hangs in this ffmpeg build; amix flushes cleanly.
+                        filters.append(f"{comb}amix=inputs=1:normalize=0[amx]")
+                    filters.append("[amx]alimiter=limit=0.89:level=disabled[aout]")
+                    fc = ";".join(filters)
+                    bed_dur = _probe_media_duration(base_video) or 0
+                    # Pass 1: render the mixed AUDIO track alone (every input
+                    # is consumed by the graph; output is audio-only).
+                    mix_audio = tmpd / "mix.m4a"
+                    cmd = ["ffmpeg", "-y", "-nostdin", "-filter_threads", "1",
+                           "-hide_banner", "-loglevel", "error"]
+                    for mi in mix_inputs:
+                        cmd += ["-i", str(mi)]
+                    cmd += ["-filter_complex", fc, "-map", out_label, "-c:a", "aac", "-b:a", "192k"]
+                    if bed_dur > 0:
+                        cmd += ["-t", f"{bed_dur:.3f}"]
+                    cmd.append(str(mix_audio))
+                    r = _run_media(cmd, timeout=900)
+                    if r.returncode != 0 or not mix_audio.exists():
+                        return {"success": False, "error": f"Audio mix failed: {(r.stderr or '')[-400:]}"}
+                    # Pass 2: mux the mixed audio back onto the video (plain
+                    # stream copy; the mix is already capped to the bed length).
+                    out = tmpd / "mixed.mp4"
+                    r = _run_media(
+                        ["ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+                         "-i", str(base_video), "-i", str(mix_audio),
+                         "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "copy", str(out)],
+                        timeout=600)
+                    if r.returncode != 0 or not out.exists():
+                        return {"success": False, "error": f"Mux failed: {(r.stderr or '')[-400:]}"}
+                    final_video = out
+
+            # 4) Publish
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            dest = exports_dir / f"{name or 'timeline'}_mix_{ts}.mp4"
+            shutil.copy2(final_video, dest)
+        total = _probe_media_duration(dest) or 0
+        _log_gen_event("comfyui", "bake", "done", f"Mix saved: {dest.name} ({total:.1f}s)", job_id="bake")
+        return {"success": True, "file": dest.name, "duration": total,
+                "url": f"/api/projects/{name}/exports/{dest.name}"}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "ffmpeg timed out"}
+    except Exception as e:
+        logger.exception("bake-audio failed")
+        _log_gen_event("comfyui", "bake", "error", str(e)[:200], job_id="bake")
+        return {"success": False, "error": str(e)}
+    finally:
+        _uaudio_busy = False
+
+
+@app.get("/api/projects/{name}/exports/{filename:path}")
+async def get_project_export(name: str, filename: str, path: str = None):
+    """Serve a baked export from the project's exports/ directory."""
+    try:
+        if path:
+            export_path = Path(path) / "exports" / filename
+        else:
+            project_manager.load_project(name)
+            _cur = project_manager.get_current_project_path()
+            if not _cur:
+                return JSONResponse(status_code=404, content={"success": False, "error": "Project not found"})
+            export_path = Path(_cur) / "exports" / filename
+        if not export_path.exists():
+            return JSONResponse(status_code=404, content={"success": False, "error": "Export not found"})
+        media = "video/mp4" if export_path.suffix.lower() == ".mp4" else "application/octet-stream"
+        return FileResponse(str(export_path), media_type=media,
+                            headers={"Cache-Control": "public, max-age=31536000, immutable"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
 
 @app.post("/api/projects/{name}/export-xml")
 async def export_project_timeline_xml(name: str, data: dict):
