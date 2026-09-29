@@ -270,7 +270,7 @@
   },
   "132": {
     "inputs": {
-      "string": "Change the camera angle to a 45-degree three-quarter side profile facing left of the subject's face, close-up shot of her face, same character identity and facial structure. Light neutral grey background"
+      "string": "Change the camera angle to a 45-degree three-quarter side profile facing left of the subject's face, close-up shot of the face, same character identity and facial structure. Light neutral grey background"
     },
     "class_type": "String Literal",
     "_meta": {
@@ -424,7 +424,7 @@
   },
   "142": {
     "inputs": {
-      "string": "Change the camera angle to a 45-degree three-quarter side profile facing right of the subject's face, close-up shot of her face, same character identity and facial structure. Light neutral grey background"
+      "string": "Change the camera angle to a 45-degree three-quarter side profile facing right of the subject's face, close-up shot of the face, same character identity and facial structure. Light neutral grey background"
     },
     "class_type": "String Literal",
     "_meta": {
@@ -886,7 +886,7 @@
   },
   "172": {
     "inputs": {
-      "string": "close up of her shoe isolated. Light neutral grey background."
+      "string": "close up of the shoe isolated. Light neutral grey background."
     },
     "class_type": "String Literal",
     "_meta": {
@@ -1194,7 +1194,7 @@
   },
   "192": {
     "inputs": {
-      "string": "Create a tight close-up crop of the woman’s upper head area, starting precisely from the eyebrow line upward. Show only the forehead, hairline, and top portion of the head, with the lower face completely excluded from the frame. Preserve her exact hair texture, hairstyle, hairline, skin tone, and natural proportions. Straight-on view, centered composition, sharp high-detail facial and hair texture, realistic studio photography. Place the subject against a clean, seamless light neutral grey background with soft, even lighting and minimal shadows."
+      "string": "Create a tight close-up crop of the subject’s upper head area, starting precisely from the eyebrow line upward. Show only the forehead, hairline, and top portion of the head, with the lower face completely excluded from the frame. Preserve the subject’s exact hair texture, hairstyle, hairline, skin tone, and natural proportions. Straight-on view, centered composition, sharp high-detail facial and hair texture, realistic studio photography. Place the subject against a clean, seamless light neutral grey background with soft, even lighting and minimal shadows."
     },
     "class_type": "String Literal",
     "_meta": {
