@@ -80,6 +80,29 @@ ultimate-ai-film-studio/
 - `POST /api/projects` - Create new project
 - `POST /api/approve` - Approve/reject generated content
 
+## MCP Servers (agent control)
+
+The studio can be driven entirely by an MCP Agent — chat with an agent and it
+produces a whole film. Two stdio MCP servers ship in `app/tools/`:
+
+- **`studio_mcp_server.py`** — the film pipeline: create project, ideas,
+  screenplay, characters/locations, approvals, character sheets, storyboard,
+  shot images, shot videos, audio, timeline bake and FCP7 XML export (27 tools).
+  Requires the studio backend on port 7860; run it with a Python that has the
+  `mcp` package (e.g. WanGP's venv). See [app/tools/STUDIO_MCP.md](app/tools/STUDIO_MCP.md).
+- **`wangp_mcp_server.py`** — raw WanGP image/video generation against the
+  bridge on port 8189.
+
+Example client registration (Claude Desktop):
+
+```json
+"studio": {
+  "command": "D:/01_PINOKIO/api/wan_sep2026.git/app/venv/Scripts/python.exe",
+  "args": ["F:/MY APP/ULTIMATE AI STUDIO/ultimate-ai-film-studio-V11/app/tools/studio_mcp_server.py"],
+  "env": { "STUDIO_URL": "http://127.0.0.1:7860" }
+}
+```
+
 ## License
 
 MIT

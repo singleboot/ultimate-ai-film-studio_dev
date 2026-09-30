@@ -479,16 +479,24 @@ class ComfyUIClient:
             # Only check for cancellation after grace period AND confirm
             # ComfyUI is truly idle (not just in transition between queue and history)
             if elapsed > grace_period:
-                q = self.get_queue()
+                # Fetch the queue directly: a failed poll must NOT count as an
+                # empty queue — during cold model staging ComfyUI can be slow
+                # to answer, and faking "empty" here cancelled live jobs.
+                try:
+                    q = requests.get(f"{self.host}/queue", timeout=5).json()
+                except Exception:
+                    last_queue_check = 0
+                    time.sleep(1)
+                    continue
                 running = q.get("queue_running", [])
                 pending = q.get("queue_pending", [])
                 if not running and not pending:
                     if last_queue_check == 0:
                         # First time seeing empty queue — start a secondary grace period
                         last_queue_check = time.time()
-                    elif time.time() - last_queue_check > 5:
-                        # Queue has been empty for 5+ seconds and still no history
-                        logger.info("get_output: Queue empty for 5s and prompt not in history — cancelled")
+                    elif time.time() - last_queue_check > 20:
+                        # Queue has been empty for 20+ seconds and still no history
+                        logger.info("get_output: Queue empty for 20s and prompt not in history — cancelled")
                         return {"_cancelled": True}
                 else:
                     last_queue_check = 0  # reset if queue fills up again
