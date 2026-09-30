@@ -2157,9 +2157,12 @@ Be extremely specific. Use concrete color names. Use exact material descriptions
             images=[b64],
             use_master=False,
         )
-        description = result.get("text", "") if isinstance(result, dict) else str(result)
-        if not description:
-            description = result.get("response", "") if isinstance(result, dict) else ""
+        # _call_llm returns {success, data, raw}; text/response are legacy keys.
+        description = ""
+        if isinstance(result, dict):
+            description = result.get("raw") or result.get("data") or result.get("text") or result.get("response") or ""
+        else:
+            description = str(result)
         return {"success": True, "description": description.strip()}
     def describe_location_image(self, image_path: str) -> Dict:
         """Use LLM vision to produce a detailed visual description of a location image."""
@@ -2203,9 +2206,12 @@ Be extremely specific. This will be the SOLE reference for multi-angle generatio
             images=[b64],
             use_master=False,
         )
-        description = result.get("text", "") if isinstance(result, dict) else str(result)
-        if not description:
-            description = result.get("response", "") if isinstance(result, dict) else ""
+        # _call_llm returns {success, data, raw}; text/response are legacy keys.
+        description = ""
+        if isinstance(result, dict):
+            description = result.get("raw") or result.get("data") or result.get("text") or result.get("response") or ""
+        else:
+            description = str(result)
         return {"success": True, "description": description.strip()}
     def generate_turnaround(self, params: Dict) -> Dict:
         """Generate a turnaround sheet for an approved character."""

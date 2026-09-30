@@ -1073,8 +1073,9 @@ def describe_character_image(data: dict):
     if not image_path:
         return {"success": False, "error": "No approved image found for this character"}
     project_path = data.get("project_path", "")
-    # Resolve relative path against project directory
-    if project_path and not image_path.startswith('/') and not image_path.startswith(''):
+    # Resolve relative path against project directory (pathlib discards the
+    # base when image_path is already absolute, so one branch covers both).
+    if project_path:
         from pathlib import Path as _P
         full_path = _P(project_path) / image_path
         if full_path.exists():
