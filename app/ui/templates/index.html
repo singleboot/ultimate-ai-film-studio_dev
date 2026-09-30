@@ -2112,6 +2112,13 @@
                                         <div class="form-group" style="margin-bottom:6px;">
                                             <label class="form-label" style="font-size:0.75rem;">WanGP Bridge</label>
                                             <div id="wangp-bridge-status" style="font-size:0.75rem;color:var(--text-secondary);">\u23f3 Checking...</div>
+                                            <label style="font-size:0.75rem;display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;">
+                                                <input type="checkbox" id="wangp-auto-start"> Auto-start bridge with the app
+                                            </label>
+                                            <div style="display:flex;gap:8px;margin-top:4px;align-items:center;">
+                                                <button type="button" class="btn btn-sm btn-primary" id="wangp-start-btn" onclick="startWanGPBridge(this)">Start bridge now</button>
+                                                <span id="wangp-start-result" style="font-size:0.72rem;color:var(--text-secondary);"></span>
+                                            </div>
                                         </div>
                                         <div class="form-group" style="margin-bottom:6px;">
                                             <label class="form-label" style="font-size:0.75rem;">WanGP Image Model</label>
@@ -4797,6 +4804,9 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                         onComfyUIModelsModeChange();
                     }
                 }
+                if (s.wangp) {
+                    safeSetChecked('wangp-auto-start', s.wangp.auto_start);
+                }
                 if (s.image_gen) {
                     safeSetValue('image-provider', s.image_gen.provider || 'comfyui');
                     safeSetValue('img-apikey', s.image_gen.apiKey);
@@ -5021,6 +5031,9 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     image_strength: parseFloat(document.getElementById('wangp-lora-image-strength')?.value || '1'),
                     video: [...document.querySelectorAll('#wangp-lora-video option:checked')].map(o => o.value),
                     video_strength: parseFloat(document.getElementById('wangp-lora-video-strength')?.value || '1')
+                },
+                wangp: {
+                    auto_start: !!(document.getElementById('wangp-auto-start') && document.getElementById('wangp-auto-start').checked)
                 },
                 comfyLoras: {
                     image: [...document.querySelectorAll('#comfy-lora-image option:checked')].map(o => o.value),
@@ -5736,6 +5749,27 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
         // Real-time progress: merge the server's live snapshot into the active
         // console lines (comfy = websocket-derived step/percent, wangp = bridge
         // job phase). Display-only merge — never creates or closes lines.
+        // Footer live job indicator: while pollServiceStatus writes the base
+        // WanGP status (Connected / Offline) every 5s, pollGenProgress (2s)
+        // overlays the active bridge job's phase + percent, like the ComfyUI
+        // dot already does in the console. We restore the base text when idle.
+        let _wangpBaseStatus = { text: '', ts: 0 };
+        let _wangpOverlayActive = false, _wangpOverlayTs = 0;
+        function _wangpApplyFooter(phaseText) {
+            const el = document.getElementById('wangp-status-text');
+            if (!el) return;
+            if (phaseText) {
+                _wangpOverlayActive = true;
+                _wangpOverlayTs = Date.now();
+                el.textContent = phaseText;
+            } else if (_wangpOverlayActive) {
+                // Job finished: restore the last known base status immediately
+                // (pollServiceStatus will refine it within 5s anyway).
+                _wangpOverlayActive = false;
+                if (_wangpBaseStatus.text) el.textContent = _wangpBaseStatus.text;
+            }
+        }
+
         async function pollGenProgress() {
             let rows = null;
             try {
@@ -5755,6 +5789,9 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
                     _genRenderConsole();
                 }
             });
+            // Live WanGP footer indicator (first active bridge job wins).
+            const wr = rows.find(rw => rw && rw.engine === 'wangp' && rw.phase);
+            _wangpApplyFooter(wr ? ('\u26a1 ' + wr.phase) : null);
         }
 
         function toggleGenConsole(force) {
@@ -5877,12 +5914,22 @@ Do NOT ask me questions. Do NOT wait for approval. Execute the entire pipeline N
             try {
                 const wgRes = await fetch('/api/wangp/health');
                 const wgData = await wgRes.json();
-                const wgUp = wgData.status === 'ok';
+                // 'init-pending' = bridge process is up; WanGP's session lazy-inits on first job.
+                const wgUp = wgData.status === 'ok' || wgData.status === 'init-pending';
                 updateStatusDot('wangp-dot', wgUp ? 'green' : 'red');
                 const wgEl = document.getElementById('wangp-status-text');
                 if (wgEl) {
                     const j = wgData.jobs && wgData.jobs.count ? ' (' + wgData.jobs.count + ' job' + (wgData.jobs.count > 1 ? 's' : '') + ')' : '';
-                    wgEl.textContent = wgUp ? 'Connected' + j : 'Offline';
+                    const base = wgUp ? ((wgData.status === 'init-pending' && !wgData.version ? 'Connected (init)' : 'Connected') + j) : 'Offline';
+                    // Remember the base status and let the 2s gen-progress poll
+                    // overlay live job text; only stomp it when the bridge
+                    // actually went down (or after 90s of stale overlay).
+                    _wangpBaseStatus = { text: base, ts: Date.now() };
+                    const overlaying = _wangpOverlayActive && Date.now() - _wangpOverlayTs < 90000;
+                    if (!overlaying || !wgUp) {
+                        _wangpOverlayActive = false;
+                        wgEl.textContent = base;
+                    }
                     wgEl.title = wgUp ? ('WanGP v' + (wgData.version || '?') + (wgData.init_error ? ' \u26a0 ' + wgData.init_error : '')) : (wgData.error || 'WanGP bridge unreachable');
                 }
             } catch(e) {
@@ -12349,11 +12396,13 @@ Project visual language: ${projVL}`;
             if (!el) return;
             try {
                 const h = await fetch('/api/wangp/health').then(r => r.json());
-                const jobs = h.jobs && h.jobs.count ? h.jobs.count : 0;
-                if (h.status === 'ok') {
+                let jobs = h.jobs && h.jobs.count ? h.jobs.count : 0;
+                if (h.status === 'init-pending') jobs = 0;
+                if (h.status === 'ok' || h.status === 'init-pending') {
+                    const initNote = (h.status === 'init-pending' && !h.version) ? ' \u00b7 initializing (models load on first job)' : '';
                     const warn = h.init_error ? ' \u26a0 ' + h.init_error : '';
-                    el.innerHTML = '<span style="color:#4ade80;">\u25cf Connected</span> \u2014 WanGP v' + (h.version || '?') +
-                        ' \u00b7 ' + jobs + ' job' + (jobs === 1 ? '' : 's') + ' in history' + warn;
+                    el.innerHTML = '<span style="color:#4ade80;">\u25cf Connected</span> \u2014 WanGP' + (h.version ? ' v' + escapeHtml(String(h.version)) : '') +
+                        ' \u00b7 ' + jobs + ' job' + (jobs === 1 ? '' : 's') + ' in history' + initNote + warn;
                     el.style.color = '';
                 } else {
                     el.innerHTML = '<span style="color:#f87171;">\u25cf Offline</span>' + (h.error ? ' \u2014 ' + escapeHtml(String(h.error)) : '');
@@ -12361,6 +12410,27 @@ Project visual language: ${projVL}`;
             } catch (e) {
                 el.innerHTML = '<span style="color:#f87171;">\u25cf Unknown</span> \u2014 could not reach server';
             }
+        }
+
+        // Launch the WanGP bridge sidecar on demand (backend reuses a live bridge
+        // instead of respawning; failures surface the bridge's error-log tail).
+        async function startWanGPBridge(btn) {
+            const res = document.getElementById('wangp-start-result');
+            if (btn) { btn.disabled = true; btn.textContent = '\u23f3 Starting...'; }
+            if (res) res.textContent = 'Launching bridge (WanGP venv)...';
+            try {
+                const d = await fetch('/api/wangp/start', { method: 'POST' }).then(r => r.json());
+                if (d.success) {
+                    if (res) res.innerHTML = '<span style="color:#4ade80;">\u25cf ' + (d.already_running ? 'Already running' : 'Bridge launched') + (d.version ? ' \u2014 v' + escapeHtml(String(d.version)) : (d.status === 'init-pending' ? ' \u2014 initializing (models load on first job)' : '')) + '</span>';
+                    checkWanGPStatus();
+                } else {
+                    const tail = d.log_tail ? ' \u2014 ' + escapeHtml(String(d.log_tail).split('\n').slice(-2).join(' | ')) : '';
+                    if (res) res.innerHTML = '<span style="color:#f87171;">\u2717 ' + escapeHtml(String(d.error || 'start failed')) + escapeHtml(tail) + '</span>';
+                }
+            } catch (e) {
+                if (res) res.textContent = 'Start request failed: ' + e.message;
+            }
+            if (btn) { btn.disabled = false; btn.textContent = 'Start bridge now'; }
         }
 
         function proceedToVideoPrompts() {

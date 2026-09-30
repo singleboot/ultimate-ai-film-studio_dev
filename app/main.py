@@ -10,6 +10,8 @@ import threading
 import time
 from pathlib import Path
 from contextlib import asynccontextmanager
+
+from core.wangp_starter import ensure_running as _wangp_ensure_running, health as _wangp_starter_health
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -109,6 +111,12 @@ async def lifespan(app):
                 or_settings["port"] = 20128
                 changed = True
 
+        # WanGP bridge section (off by default — only created for discoverability
+        # in Settings; the auto-start block below reads settings.get("wangp")).
+        if "wangp" not in settings:
+            settings["wangp"] = {"auto_start": False}
+            changed = True
+
         if changed:
             save_settings(settings)
 
@@ -155,6 +163,23 @@ async def lifespan(app):
                         )
             except Exception as e:
                 logger.error(f"Error during OmniRoute auto-start: {e}")
+
+        # Auto-start the WanGP bridge sidecar if enabled (runs in WanGP's own
+        # venv, detached; reuses an already-live bridge instead of respawning).
+        wangp_settings = settings.get("wangp", {})
+        if wangp_settings.get("auto_start", False):
+            try:
+                res = _wangp_ensure_running(settings, wait_seconds=25)
+                if res.get("success"):
+                    logger.info("WanGP bridge auto-start: %s (v%s)",
+                                "already running" if res.get("already_running") else "launched",
+                                res.get("version") or "?")
+                else:
+                    logger.warning("WanGP bridge auto-start failed: %s%s",
+                                   res.get("error") or "unknown error",
+                                   (" | log: " + res["log_tail"]) if res.get("log_tail") else "")
+            except Exception as e:
+                logger.error(f"Error during WanGP bridge auto-start: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"Error during startup: {e}", exc_info=True)
     if telegram_bot:
@@ -4829,25 +4854,54 @@ async def gen_progress():
             out.append({"engine": "comfyui", "task": task, "phase": txt})
     except Exception:
         pass
-    try:
-        r = requests.get(f"{_wangp_bridge_host()}/health", timeout=3).json()
-        for jid, j in (r.get("jobs") or {}).items():
-            if jid == "count" or not isinstance(j, dict):
+    # WanGP: query the bridge's slim /jobs list (active jobs with phase and
+    # percent). Runs in a threadpool — this endpoint is polled every 2s and a
+    # stalled localhost call must never freeze the event loop (same treatment
+    # as /api/wangp/health). NOTE: the old implementation iterated health's
+    # 'jobs' field as a dict of job dicts, but the bridge reports an int count
+    # there, so it never emitted any WanGP rows.
+    def _wangp_rows() -> dict:
+        import requests as _rq
+        import urllib.request as _ur
+        bridge = _wangp_bridge_host()
+        for fetch in (
+            lambda: _rq.get(f"{bridge}/jobs", timeout=3).json(),
+            lambda: json.loads(_ur.urlopen(f"{bridge.rstrip('/')}/jobs", timeout=3)
+                               .read().decode("utf-8", "replace")),
+        ):
+            try:
+                return fetch() or {}
+            except Exception:
                 continue
-            if j.get("status") in ("done", "error"):
+        return {}
+
+    try:
+        from starlette.concurrency import run_in_threadpool
+        jobs = await run_in_threadpool(_wangp_rows)
+        for j in (jobs.get("active") or []):
+            if not isinstance(j, dict) or j.get("status") in ("done", "error"):
                 continue
             # Normalize the phase the same way the UI does so both progress
             # sources produce identical text.
             ph = _re_mod.sub(r"[_\-]+", " ", str(j.get("phase") or j.get("status") or "working")).strip()
             ph = ph[:1].upper() + ph[1:] if ph else "Working"
-            if j.get("step") and j.get("steps"):
-                ph += f" (step {j['step']}/{j['steps']})"
+            # Percent: use the bridge's raw pct only when genuinely
+            # intermediate (WanGP reports 100 during indeterminate phases like
+            # model loading); otherwise derive it from "step/total".
             pct = j.get("pct")
-            if isinstance(pct, (int, float)):
-                while pct > 100:
-                    pct /= 10
-                ph += f" \u2014 {max(0, min(99, round(pct)))}%"
-            task = (_gen_job_labels.get(str(jid)) or {}).get("task") or "video"
+            if not (isinstance(pct, (int, float)) and 0 < pct < 100):
+                pct = None
+            step = str(j.get("step") or "")
+            m = _re_mod.match(r"^(\d+)/(\d+)$", step)
+            if m and int(m.group(2)) > 0 and pct is None:
+                spct = int(m.group(1)) * 100.0 / int(m.group(2))
+                if 0 < spct < 100:
+                    pct = round(spct)
+            if step and "/" in step and "none" not in step.lower():
+                ph += f" (step {step})"
+            if pct is not None:
+                ph += f" \u2014 {round(pct)}%"
+            task = (_gen_job_labels.get(str(j.get("job_id"))) or {}).get("task") or "video"
             out.append({"engine": "wangp", "task": task, "phase": ph})
     except Exception:
         pass
@@ -5216,13 +5270,52 @@ def _wangp_bridge_host() -> str:
 
 @app.get("/api/wangp/health")
 async def wangp_health():
-    """Proxy the WanGP bridge health (version, init state, job count)."""
+    """Proxy the WanGP bridge health (version, init state, job count).
+
+    The UI polls this every 2 seconds, so the blocking probe runs in a
+    threadpool — a stalled localhost call (adapter churn) must never freeze
+    the event loop and queue up every other poll. A freshly launched bridge
+    reports status 'init-pending' (WanGP's session initializes lazily on
+    first job), which is still a connected bridge — expose it as
+    jobs.count=0 so the UI dot can go green immediately."""
     import requests as _rq
-    try:
-        r = _rq.get(f"{_wangp_bridge_host()}/health", timeout=5)
-        return r.json()
-    except Exception as e:
-        return {"status": "unreachable", "error": str(e), "bridge": _wangp_bridge_host()}
+    import urllib.request as _ur
+    from starlette.concurrency import run_in_threadpool
+    bridge = _wangp_bridge_host()
+
+    def _probe() -> dict:
+        try:
+            return _rq.get(f"{bridge}/health", timeout=3).json()
+        except Exception:
+            pass
+        try:  # fallback stack — survives requests-level connection flaps
+            with _ur.urlopen(f"{bridge.rstrip('/')}/health", timeout=3) as resp:
+                return json.loads(resp.read().decode("utf-8", "replace"))
+        except Exception as e2:
+            return {"status": "unreachable", "error": str(e2), "bridge": bridge}
+
+    h = await run_in_threadpool(_probe)
+    if h.get("status") == "init-pending":
+        h["jobs"] = {"count": 0}
+    return h
+
+
+@app.post("/api/wangp/start")
+def wangp_start():
+    """Idempotently launch the WanGP bridge sidecar (auto-start on demand).
+
+    Reuses a live bridge, otherwise spawns it with WanGP's venv and waits for
+    /health. Returns the same success/error shape as other /start endpoints so
+    the Settings 'Start now' button can surface failures.
+    """
+    return _wangp_ensure_running(load_settings(), wait_seconds=30)
+
+
+@app.get("/api/wangp/starter-status")
+def wangp_starter_status():
+    """Lightweight bridge reachability probe used by the Settings toggle."""
+    h = _wangp_starter_health(_wangp_bridge_host(), timeout=3)
+    return {"success": bool(h.get("running")), **h}
 
 
 @app.get("/api/wangp/models")
@@ -5532,6 +5625,16 @@ async def save_settings_endpoint(data: dict):
     # Ensure comfyui auto_start flag
     if "comfyui" not in data:
         data["comfyui"] = existing.get("comfyui", {"auto_start": True, "host": "http://localhost:8188", "port": 8188, "use_sage_attention": True, "path": "", "models_path": ""})
+    # Backfill the WanGP section so partial saves (browser refreshes, older
+    # UI builds) never silently drop the auto_start flag or a custom host.
+    if "wangp" not in data:
+        data["wangp"] = existing.get("wangp", {})
+    if "auto_start" not in data["wangp"]:
+        data["wangp"]["auto_start"] = bool((existing.get("wangp") or {}).get("auto_start", False))
+    if "bridge_host" not in data["wangp"]:
+        bh = (existing.get("wangp") or {}).get("bridge_host")
+        if bh:
+            data["wangp"]["bridge_host"] = bh
     save_settings(data)
     if data.get("comfyui", {}).get("host"):
         comfyui_client.set_host(data["comfyui"]["host"])

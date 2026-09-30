@@ -132,8 +132,11 @@ def _run_job(job_id: str, settings: dict):
                 d = event.data
                 phase = str(getattr(d, "phase", "") or "")
                 info["phase"] = phase
-                info["pct"] = round(float(getattr(d, "progress", 0) or 0) * 100, 1)
-                info["step"] = f"{getattr(d, 'current_step', '')}/{getattr(d, 'total_steps', '')}"
+                # Clamp: WanGP emits out-of-range progress (e.g. 10) during
+                # indeterminate phases like model loading.
+                info["pct"] = max(0.0, min(100.0, round(float(getattr(d, "progress", 0) or 0) * 100, 1)))
+                cur, tot = getattr(d, "current_step", None), getattr(d, "total_steps", None)
+                info["step"] = f"{cur}/{tot}" if cur is not None and tot is not None else ""
                 if phase != last_phase:
                     info.setdefault("log", []).append(f"phase: {phase}")
                     last_phase = phase
@@ -204,6 +207,23 @@ def generate(req: GenerateRequest):
     })
     threading.Thread(target=_run_job, args=(job_id, settings), daemon=True).start()
     return {"job_id": job_id, "status": "queued", "settings": settings}
+
+
+@app.get("/jobs")
+def jobs_list():
+    """Slim job list for the studio's live progress aggregation (active first,
+    newest first). Strips bulky fields (log, settings) the studio never uses."""
+    active, recent = [], []
+    with _state["lock"]:
+        order = list(reversed(_state["jobs_order"]))
+        for jid in order:
+            info = _state["jobs"].get(jid)
+            if not info:
+                continue
+            slim = {k: info.get(k) for k in
+                    ("job_id", "status", "phase", "pct", "step", "done_at") if k in info}
+            (active if info.get("status") in ("queued", "submitted", "running") else recent).append(slim)
+    return {"active": active, "recent": recent[:5], "active_count": len(active)}
 
 
 @app.get("/job/{job_id}")
