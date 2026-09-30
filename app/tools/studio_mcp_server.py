@@ -248,10 +248,12 @@ def studio_health() -> str:
     comfy = _call("GET", "/api/comfyui/status", timeout=15)
     wangp = _call("GET", "/api/wangp/health", timeout=15)
     llm = _call("GET", "/api/llm/status?provider=llama_cpp", timeout=15)
+    jobs = wangp.get("jobs")
+    job_count = jobs if isinstance(jobs, int) else (jobs or {}).get("count", 0)
     return _out({
         "studio": {"ok": _ping("/"), "url": STUDIO},
         "comfyui": {"running": comfy.get("running", comfy.get("connected"))},
-        "wangp_bridge": {"status": wangp.get("status"), "jobs": (wangp.get("jobs") or {}).get("count")},
+        "wangp_bridge": {"status": wangp.get("status"), "jobs": job_count},
         "llm": llm,
     })
 
